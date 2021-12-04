@@ -1,0 +1,160 @@
+/***********************************************************************
+* retro-g15/webUI G15.css
+************************************************************************
+* Copyright (c) 2021, Paul Kimpel.
+* Licensed under the MIT License, see
+*       http://www.opensource.org/licenses/mit-license.php
+************************************************************************
+* Bendix G-15 emulator home page style sheet.
+************************************************************************
+* 2021-11-30  P.Kimpel
+*   Original version, from D205.css.
+***********************************************************************/
+
+BODY {
+    position:           relative}
+
+H1 {
+    margin-top:         1em;
+    margin-bottom:      0.5em;
+    font-size:          14pt;
+    font-weight:        bold}
+
+#VersionDiv {
+    position:           absolute;
+    top:                4px;
+    right:              4px;
+    text-align:         right}
+#StatusMsg {
+    text-align:         center;
+    font-size:          85%;
+    color:              blue}
+#InfoTable {
+    margin-top:         0;
+    width:              100%}
+#CenteredBody {
+    position:           absolute;
+    text-align:         center;
+    top:                25%;
+    bottom:             25%;
+    left:               0;
+    right:              0}
+#G15Image {
+    box-shadow:         12px 12px 12px gray;
+    height:             80%}
+#StartUpBtn,
+#ConfigureBtn {
+    margin-top:         2em;
+    background-color:   #246;
+    color:              white;
+    font-family:        DejaVuSansWeb, sans-serif;
+    font-weight:        normal;
+    font-size:          12pt;
+    width:              auto;
+    height:             auto;
+    padding:            0.5em;
+    border-radius:      16px;
+    border:             2px solid #999}
+#StartUpBtn[disabled],
+#ConfigureBtn[disabled] {
+    background-color:   #468;
+    color:              #999;
+    border-color:       #666}
+#PageFooter {
+    margin-top:         2em;
+    margin-left:        calc(50% - 20em);
+    margin-right:       calc(50% - 20em);
+    font-weight:        bold;
+    color:              red;
+    text-align:         center}
+
+/* Control panel overlay <div> and controls */
+
+#FrontPanel {
+    position:           absolute;
+    top:                0;
+    left:               0;
+    width:              100%;
+    height:             calc(100% - 8px);
+    display:            none;
+    background-color:   #67AAB2;
+    color:              white;
+    border-radius:      16px}
+
+#ControlPanelFrame {
+    position:           absolute;
+    top:                24px;
+    height:             410px;
+    width:              600px;
+    left:               50%;
+    transform:          translate(-50%, 0);
+    border-radius:      16px;
+    box-shadow:         8px 8px 8px #666;
+    background-color:   #3B413D}
+
+#ControlPanel {
+    position:           absolute;
+    top:                24px;
+    left:               24px;
+    right:              24px;
+    height:             296px;
+    border-radius:      8px;
+    box-shadow:         inset 4px 4px 4px #666;
+    background-color:   #67AAB2}
+
+#CharacteristicReg {
+    position:           absolute;
+    top:                26px;
+    left:               50%;
+    transform:          translate(-238px, 0);
+    width:              108px}
+#SourceReg {
+    position:           absolute;
+    top:                24px;
+    left:               50%;
+    transform:          translate(-50%, 0);
+    width:              208px}
+
+#CmdLineReg {
+    position:           absolute;
+    top:                94px;
+    left:               50%;
+    transform:          translate(-248px, 0);
+    width:              128px}
+#DestReg {
+    position:           absolute;
+    top:                92px;
+    left:               50%;
+    transform:          translate(-50%, 0);
+    width:              208px}
+
+#IOReg {
+    position:           absolute;
+    top:                160px;
+    left:               50%;
+    transform:          translate(-50%, 0);
+    width:              208px}
+
+#ASLampDiv {
+    position:           absolute;
+    top:                228px;
+    left:               50%;
+    transform:          translate(-50%, 0);
+    width:              28px;
+    height:             28px;
+    border:             2px solid white;
+    border-radius:      50%}
+
+#G15Logo {
+    position:           absolute;
+    right:              24px;
+    bottom:             16px;
+    width:              112px}
+
+.registerRoundedBorder {
+    border-top:         2px solid white;
+    border-left:        2px solid white;
+    border-right:       2px solid white;
+    border-bottom:      none;
+    height:             48px;
+    border-radius:      24px}

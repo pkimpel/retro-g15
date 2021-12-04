@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>retro-g15 Emulator</title>
+<!--
+/***********************************************************************
+* retro-g15/webUI G15.html
+************************************************************************
+* Copyright (c) 2021, Paul Kimpel.
+* Licensed under the MIT License, see
+*       http://www.opensource.org/licenses/mit-license.php
+************************************************************************
+* Bendix G-15 emulator home page.
+************************************************************************
+* 2021-111-30  P.Kimpel
+*   Original version, from ElectroData-205 D205.html.
+***********************************************************************/
+-->
+<meta name="Author" content="Paul Kimpel">
+<meta http-equiv="Content-Script-Type" content="text/javascript">
+<meta http-equiv="Content-Style-Type" content="text/css">
+<link id=defaultStyleSheet rel=stylesheet type="text/css" href="Common.css">
+<link id=homeStyleSheet rel=stylesheet type="text/css" href="G15.css">
+
+<script type=module src="./G15.js"></script>
+
+<!--
+<script src="./G15PanelUtil.js"></script>      must be first
+<script src="./G15Util.js"></script>
+<script src="./G15SetCallback.js"></script>
+<script src="./G15SystemConfig.js"></script>
+
+<script src="../emulator/G15Processor.js"></script>
+
+<script src="./G15SupervisoryPanel.js"></script>
+<script src="./G15ControlConsole.js"></script>
+
+<script src="./G15ConsoleOutput.js"></script>
+<script src="./G15ConsoleInput.js"></script>
+
+<script src="./G15CardatronInput.js"></script>
+<script src="./G15CardatronOutput.js"></script>
+<script src="./G15CardatronControl.js"></script>
+
+<script src="./G15DataFile.js"></script>
+<script src="./G15MagTapeDrive.js"></script>
+<script src="./G15MagTapeControl.js"></script>
+-->
+</head>
+
+<body>
+<div id=VersionDiv>
+    <img id=RetroG15Logo src="./resources/retro-g15-Logo.png" alt="retro-G15 Logo">
+    <div id=EmulatorVersion>0.00</div>
+</div>
+<h1>Bendix G-15 Emulator</h1>
+<hr>
+<table id=InfoTable>
+<tr>
+    <td><a href="https://github.com/pkimpel/retro-g15/" target="_blank">
+        Open-Source Project</a>
+    <td id=StatusMsg>
+    <td class=rj><a href="http://datatron.blogspot.com/" target="_blank">
+        &nbsp; <!-- Blog --></a>
+<tr>
+    <td><a href="https://github.com/pkimpel/retro-g15/wiki/" target="_blank">
+        Project Wiki</a>
+    <td>&nbsp;
+    <td>&nbsp;
+</table>
+
+<div id=CenteredBody>
+    <img id=G15Image src="./resources/huskey-g15-350.jpg"
+         title="Harry Huskey and his personal Bendix G-15"
+         alt="Harry Huskey and his personal Bendix G-15">
+    <br>
+    <button id=StartUpBtn>
+        Start the Emulator
+    </button>
+    <!--
+    &nbsp;&nbsp;&nbsp;
+    <button id=ConfigureBtn>
+        Configure System
+    -->
+    </button>
+
+    <div id=PageFooter>
+        <i>(Caution: Closing this window, minimizing it, or placing the page on a non-active tab may cause the emulator to run very slowly)</i>
+    </div>
+</div>
+
+<!-- Control panel overlay -->
+
+<div id=FrontPanel>
+
+    <div id=ControlPanelFrame>
+
+        <div id=ControlPanel>
+            <div id=CharacteristicReg></div>
+            <div id=SourceReg class=registerRoundedBorder></div>
+
+            <div id=CmdLineReg></div>
+            <div id=DestReg class=registerRoundedBorder></div>
+
+            <div id=IOReg class=registerRoundedBorder></div>
+
+            <div id=ASLampDiv></div>
+        </div>
+
+        <img id=G15Logo src="./resources/G-15-logo-3B413D.jpg" alt="Bendix G-15 logo">
+
+    </div>
+
+</div>
+
+</body>
+</html>

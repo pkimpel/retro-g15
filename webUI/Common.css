@@ -1,0 +1,425 @@
+/***********************************************************************
+* G15/webUI Common.css
+************************************************************************
+* Copyright (c) 2021, Paul Kimpel.
+* Licensed under the MIT License, see
+*       http://www.opensource.org/licenses/mit-license.php
+************************************************************************
+* Bendix G-15 emulator common style sheet.
+************************************************************************
+* 2021-11-30  P.Kimpel
+*   Original version, from retro-205 D205Common.css
+***********************************************************************/
+
+@font-face {
+    font-family: "DejaVuSansMonoBookWeb";
+    src: url("./resources/DejaVuSansMono-webfont.woff") format("woff"),
+         url("./resources/DejaVuSansMono-webfont.ttf") format("truetype");
+    font-weight: normal;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: "DejaVuSansWeb";
+    src: url("./resources/DejaVuSans-webfont.woff") format("woff"),
+         url("./resources/DejaVuSans-webfont.ttf") format("truetype");
+    font-weight: normal;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: "DejaVuSansWeb";
+    src: url("./resources/DejaVuSans-Bold-webfont.woff") format("woff"),
+         url("./resources/DejaVuSans-Bold-webfont.ttf") format("truetype");
+    font-weight: bold;
+    font-style: normal;
+}
+
+HTML {
+    height:             100%}
+
+BODY {
+    font-family:        DejaVuSansWeb, sans-serif;
+    font-size:          10pt;
+    background-color:   white;
+    color:              black;
+    height:             calc(100% - 16px);
+    margin:             4px;
+    padding:            4px}
+
+BODY.panelBody {
+    position:           relative;
+    font-size:          8pt;
+    margin:             0;
+    padding:            0}
+
+BODY.deviceBody {
+    font-size:          7pt;
+    overflow:           hidden;
+    margin:             0;
+    padding:            0;
+    background-color:   #246;
+    color:              white}
+
+H1 {
+    margin-top:         2em;
+    margin-bottom:      1em;
+    font-size:          14pt;
+    font-weight:        bold}
+
+IFRAME.paper {
+    font-family:        DejaVuSansMonoBookWeb, monospace;
+    font-size:          8pt;
+    line-height:        120%;
+    color:              black;
+    background-color:   white}
+
+PRE {
+    font-family:        DejaVuSansMonoBookWeb, monospace}
+PRE.paper {
+    margin-top:         0;
+    margin-bottom:      0;
+    font-size:          8pt;
+    line-height:        120%}
+
+INPUT[type=text] {
+    font-family:        DejaVuSansMonoBookWeb, monospace;
+    font-size:          8pt}
+
+DIV.paper {
+    font-family:        DejaVuSansMonoBookWeb, monospace;
+    white-space:        pre;
+    margin-top:         0;
+    margin-bottom:      0;
+    font-size:          8pt;
+    line-height:        120%}
+DIV.topOfForm {
+    page-break-before:  always;
+    margin-top:         1px;
+    padding-top:        1px;
+    border-top:         1px dashed black}
+
+DIV.caption {
+    position:           absolute;
+    z-index:            1;
+    font-size:          5pt;
+    font-weight:        bold;
+    line-height:        100%;
+    text-align:         center}
+
+DIV.neonLamp {
+    position:           absolute;
+    z-index:            1;
+    width:              16px;
+    height:             16px;
+    font-size:          4px;
+    border-radius:      50%;
+    border:             2px solid #999;
+    background-image:   radial-gradient(circle, #999, #333);
+    box-shadow:         4px 4px 4px #666}
+DIV.neonLit1 {
+    background-image:   radial-gradient(circle, #A85, #444)}
+DIV.neonLit2 {
+    background-image:   radial-gradient(circle, #B84, #555)}
+DIV.neonLit3 {
+    background-image:   radial-gradient(circle, #C83, #666)}
+DIV.neonLit4 {
+    background-image:   radial-gradient(circle, #D82, #777)}
+DIV.neonLit5 {
+    background-image:   radial-gradient(circle, #E91, #888)}
+DIV.neonLit {
+    background-image:   radial-gradient(circle, #F93, #F93, #999)}
+
+DIV.neonLampTopCaption {
+    position:           absolute;
+    width:              64px;
+    top:                -20px;
+    left:               -24px;
+    line-height:        100%;
+    font-size:          12px;
+    text-align:         center}
+DIV.neonLampBottomCaption {
+    position:           absolute;
+    width:              32px;
+    bottom:             -28px;
+    left:               -8px;
+    font-size:          12px;
+    text-align:         center}
+
+DIV.redLamp {
+    position:           absolute;
+    width:              24px;
+    height:             24px;
+    font-size:          4px;
+    border-radius:      50%;
+    background-image:   radial-gradient(circle, #900, #300)}
+DIV.redLit1 {
+    background-image:   radial-gradient(circle, #A00, #900, #400)}
+DIV.redLit2 {
+    background-image:   radial-gradient(circle, #B00, #A00, #500)}
+DIV.redLit3 {
+    background-image:   radial-gradient(circle, #C00, #B00, #600)}
+DIV.redLit4 {
+    background-image:   radial-gradient(circle, #D00, #C00, #700)}
+DIV.redLit5 {
+    background-image:   radial-gradient(circle, #E00, #D00, #800)}
+DIV.redLit {
+    background-image:   radial-gradient(circle, #F00, #E00, #900)}
+
+DIV.greenLamp {
+    position:           absolute;
+    width:              24px;
+    height:             24px;
+    font-size:          4px;
+    border-radius:      50%;
+    background-image:   radial-gradient(circle, #090, #030)}
+DIV.greenLit1 {
+    background-image:   radial-gradient(circle, #0A0, #090, #040)}
+DIV.greenLit2 {
+    background-image:   radial-gradient(circle, #0B0, #0A0, #050)}
+DIV.greenLit3 {
+    background-image:   radial-gradient(circle, #0C0, #0B0, #060)}
+DIV.greenLit4 {
+    background-image:   radial-gradient(circle, #0D0, #0C0, #070)}
+DIV.greenLit5 {
+    background-image:   radial-gradient(circle, #0E0, #0D0, #080)}
+DIV.greenLit {
+    background-image:   radial-gradient(circle, #0F0, #0E0, #090)}
+
+DIV.coloredLampTopCaption {
+    position:           absolute;
+    width:              80px;
+    top:                -13px;
+    left:               -28px;
+    line-height:        100%;
+    font-size:          5pt;
+    font-weight:        bold;
+    text-align:         center}
+DIV.coloredLampBottomCaption {
+    position:           absolute;
+    width:              80px;
+    bottom:             -15px;
+    left:               -28px;
+    font-size:          5pt;
+    font-weight:        bold;
+    text-align:         center}
+
+DIV.toggleSwitchTopCaption {
+    position:           absolute;
+    width:              64px;
+    top:                -13px;
+    left:               -20px;
+    line-height:        100%;
+    font-size:          5pt;
+    font-weight:        bold;
+    text-align:         center}
+DIV.toggleSwitchBottomCaption {
+    position:           absolute;
+    width:              64px;
+    bottom:             -15px;
+    left:               -20px;
+    font-size:          5pt;
+    font-weight:        bold;
+    text-align:         center}
+
+DIV.blackControlKnobTopCaption {
+    position:           absolute;
+    width:              64px;
+    top:                -13px;
+    left:               -20px;
+    line-height:        100%;
+    font-size:          5pt;
+    font-weight:        bold;
+    text-align:         center}
+DIV.blackControlKnobBottomCaption {
+    position:           absolute;
+    width:              64px;
+    bottom:             -15px;
+    left:               -20px;
+    font-size:          5pt;
+    font-weight:        bold;
+    text-align:         center}
+
+DIV.panelSurface {
+    position:           relative;
+    background-color:   #246;
+    color:              white}
+
+DIV.panelRegister {
+    position:           absolute;
+    overflow:           hidden;
+    color:              black;
+    background-color:   #CDE;
+    border-radius:      12px;
+    font-size:          6px}
+
+DIV.panelDiv {
+    position:           absolute;
+    overflow:           hidden;
+    color:              black;
+    font-size:          6px}
+
+DIV.panelCaption {
+    position:           absolute;
+    z-index:            1;
+    text-align:         center;
+    height:             5px;
+    font-size:          5pt;
+    border-left:        1px solid white;
+    border-right:       1px solid white;
+    border-top:         1px solid white}
+
+DIV.boxCaption {
+    position:           absolute;
+    z-index:            2;
+    width:              100%;
+    top:                -12px;
+    left:               -3px;
+    font-size:          8px;
+    text-align:         center}
+
+SPAN.panelSpan {
+    position:           relative;
+    top:                -1em;
+    font-size:          5pt;
+    font-weight:        bold;
+    padding-left:       2px;
+    padding-right:      2px;
+    background-color:   #246}
+
+DIV.panelRegCaption {
+    position:           absolute;
+    font-size:          12px;
+    font-weight:        normal;
+    text-align:         center;
+    top:                0;
+    left:               calc(50% - 60px);
+    height:             5px;
+    width:              120px}
+
+SPAN.panelRegSpan {
+    position:           relative;
+    top:                -1em;
+    font-size:          12px;
+    padding-left:       2px;
+    padding-right:      2px;
+    background-color:   #67AAB2}
+
+DIV.greenButton1 {
+    position:           absolute;
+    width:              14px;
+    height:             14px;
+    font-size:          4px;
+    background-image:   radial-gradient(circle, #090, #0F0);
+    border-radius:      50%;
+    border:             10px solid #CCC}
+DIV.redButton1 {
+    position:           absolute;
+    width:              14px;
+    height:             14px;
+    font-size:          4px;
+    background-image:   radial-gradient(circle, #C00, #F00);
+    border-radius:      50%;
+    border:             10px solid #CCC}
+DIV.redButton2 {
+    position:           absolute;
+    width:              8px;
+    height:             8px;
+    font-size:          4px;
+    background-image:   radial-gradient(circle, #C00, #F00);
+    border-radius:      50%;
+    border:             6px solid #CCC}
+DIV.redButton3 {
+    position:           absolute;
+    width:              20px;
+    height:             20px;
+    font-size:          4px;
+    background-image:   radial-gradient(circle, #C00, #F00);
+    border-radius:      50%;
+    border:             2px solid #CCC}
+DIV.blackButton1 {
+    position:           absolute;
+    width:              14px;
+    height:             14px;
+    font-size:          4px;
+    background-image:   radial-gradient(circle, #000, #333);
+    border-radius:      50%;
+    border:             10px solid #CCC}
+DIV.blackButton3 {
+    position:           absolute;
+    width:              20px;
+    height:             20px;
+    font-size:          4px;
+    background-image:   radial-gradient(circle, #000, #333);
+    border-radius:      50%;
+    border:             2px solid #CCC}
+
+CANVAS.blackControlKnob1 {
+    position:           absolute;
+    width:              64px;
+    height:             64px;
+    font-size:          4px}
+
+BUTTON {
+    font-family:        DejaVuSansWeb, sans-serif;
+    font-size:          8pt;
+    font-weight:        normal;
+    line-height:        120%;
+    width:              60px;
+    height:             40px;
+    padding-left:       0;
+    padding-right:      0;
+    border:             1px solid #DDD;
+    border-radius:      4px}
+
+BUTTON.large {
+    font-family:        DejaVuSansWeb, sans-serif;
+    font-size:          8pt;
+    font-weight:        normal;
+    line-height:        120%;
+    width:              60px;
+    height:             40px;
+    padding-left:       0;
+    padding-right:      0;
+    border:             1px solid #DDD;
+    border-radius:      4px}
+
+BUTTON.redButton {
+    background-image:   radial-gradient(circle, #600, #900);
+    color:              white}
+
+BUTTON.silverButton {
+    background-color:   black;
+    background-image:   radial-gradient(circle, #999, #FFF)}
+
+BUTTON.redLit {
+    color:              black;
+    background-image:   radial-gradient(circle, #F00, #F00, #C00)}
+
+BUTTON.blackBorder {
+    border:             1px solid black}
+
+BUTTON.silverBorder {
+    border:             1px solid #DDD}
+
+.annunciator {
+    visibility:         hidden;
+    white-space:        nowrap;
+    font-family:        DejaVuSansWeb, sans-serif;
+    font-size:          7pt;
+    line-height:        100%}
+.annunciatorLit {
+    visibility:         visible}
+
+.bold {
+    font-weight:        bold}
+.center {
+    text-align:         center}
+.rj {
+    text-align:         right}
+.data {
+    font-family:        DejaVuSansMonoBookWeb, monospace;
+    text-align:         left}
+.number {
+    font-family:        DejaVuSansMonoBookWeb, monospace;
+    text-align:         right}
