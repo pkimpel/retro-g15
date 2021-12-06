@@ -11,9 +11,9 @@
 *   Original version, from retro-205 D205PanelUtil.js.
 ***********************************************************************/
 
-import {NeonLamp} from "./NeonLamp.js";
-
 export {PanelRegister};
+
+import {NeonLamp} from "./NeonLamp.js";
 
 class PanelRegister {
 

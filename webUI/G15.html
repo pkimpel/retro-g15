@@ -26,8 +26,6 @@
 <script type=module src="./G15.js"></script>
 
 <!--
-<script src="./G15PanelUtil.js"></script>      must be first
-<script src="./G15Util.js"></script>
 <script src="./G15SetCallback.js"></script>
 <script src="./G15SystemConfig.js"></script>
 
@@ -90,11 +88,27 @@
     </div>
 </div>
 
-<!-- Control panel overlay -->
+<!-- Front panel overlay -->
 
 <div id=FrontPanel>
-
     <div id=ControlPanelFrame>
+
+        <div id=PaperTapePanel>
+            <div id=PaperTapePunch>
+                <div id=PunchTapeCaption class=caption>PUNCH</div>
+                <pre id=PunchTape class=paper title="Double-click to unload text"></pre>
+                <div id=PunchTapeUnloadBtn class=blackButton3></div>
+                <div id=PunchTapeUnloadCaption class=caption>UNLOAD</div>
+            </div>
+
+            <div id=PaperTapeReader>
+                <div id=PaperTapeReaderCaption class=caption>READER</div>
+                <input id=PRFileSelector type=file size=60 multiple>
+                <div id=PaperTapeReaderUnloadBtn class=blackButton3></div>
+                <div id=PaperTapeReaderUnloadCaption class=caption>UNLOAD</div>
+                <meter id=PRTapeSupplyBar min=0 max=100 value=0 title="Click to clear input tape"></meter>
+            </div>
+        </div>
 
         <div id=ControlPanel>
             <div id=CharacteristicReg></div>
@@ -104,14 +118,60 @@
             <div id=DestReg class=registerRoundedBorder></div>
 
             <div id=IOReg class=registerRoundedBorder></div>
-
-            <div id=ASLampDiv></div>
         </div>
 
-        <img id=G15Logo src="./resources/G-15-logo-3B413D.jpg" alt="Bendix G-15 logo">
+        <div id=TypewriterSwitchPanel>
+            <label id=EnableSwitchCaption for=EnableSwitchOff>ENABLE</label>
+            <div id=EnableSwitchSet>
+                <label for=EnableSwitchOn>ON</label>
+                <input id=EnableSwitchOn name=EnableSwitch type=radio value=1>
+                <input id=EnableSwitchOff name=EnableSwitch type=radio value=0 checked>
+            </div>
+
+            <label id=PunchSwitchCaption for=PunchSwitchOff>PAPER TAPE</label>
+            <div id=PunchSwitchSet>
+                <label for=PunchSwitchOn>PUNCH</label>
+                <input id=PunchSwitchOn name=PunchSwitch type=radio value=1>
+                <input id=PunchSwitchOff name=PunchSwitch type=radio value=0 checked>
+                <input id=PunchSwitchRewind name=PunchSwitch type=radio value=2>
+                <label for=PunchSwitchRewind>REWIND</label>
+            </div>
+
+            <label id=ComputeSwitchCaption for=ComputeSwitchOff>COMPUTE</label>
+            <div id=ComputeSwitchSet>
+                <label for=ComputeSwitchBP>BP</label>
+                <input id=ComputeSwitchBP name=ComputeSwitch type=radio value=2>
+                <input id=ComputeSwitchOff name=ComputeSwitch type=radio value=0 checked>
+                <input id=ComputeSwitchGo name=ComputeSwitch type=radio value=1>
+                <label for=ComputeSwitchGo>GO</label>
+            </div>
+        </div>
+
+        <div id=PowerPanel>
+            <div id=PowerOffBtn class=redButton1 title="Double-click to shut down the emulator">&nbsp;</div>
+            <div id=PowerOffBtnCaption class=caption>OFF</div>
+
+            <div id=DCPowerLampCaption class=caption>DC</div>
+
+            <div id=ReadyLampCaption class=caption>READY</div>
+
+            <div id=ResetBtn class=greenButton1 title="Click to start the emulator">&nbsp;</div>
+            <div id=ResetBtnCaption class=caption>RESET</div>
+
+            <div id=ViolationResetBtn class=redButton3>&nbsp;</div>
+            <div id=ViolationResetBtnCaption class=caption>RESET</div>
+            <div id=ViolationLampCaption class=caption>CODE VIOLATION</div>
+            <div id=ViolationSwitchCaption class=caption>HALT</div>
+
+
+            <img id=G15Logo src="./resources/G-15-logo-3B413D.jpg" alt="Bendix G-15 logo">
+        </div>
 
     </div>
 
+    <div id=TypewriterOutput>
+        <iframe id=TypewriterPaper class=paper></iframe>
+    </div>
 </div>
 
 </body>
