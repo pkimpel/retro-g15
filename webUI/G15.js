@@ -17,7 +17,7 @@ window.addEventListener("load", function() {
     //let config = new G15SystemConfig(); // system configuration object
     let controlPanel = null;            // controlPanel object
     let devices = {};                   // hash of I/O devices for the Processor
-    //var diagWindow = null;              // handle for the diagnostic monitor panel
+    //let diagWindow = null;              // handle for the diagnostic monitor panel
     let processor = null;               // the Processor object
     let statusMsgTimer = 0;             // status message timer control cookie
 
@@ -71,8 +71,8 @@ window.addEventListener("load", function() {
     /**************************************/
     function systemStartup(ev) {
         /* Establishes the system components */
-        var u;
-        var x;
+        let u;
+        let x;
 
         ev.target.disabled = true;
         $$("StartUpBtn").disabled = true;
@@ -110,7 +110,7 @@ window.addEventListener("load", function() {
     /**************************************/
     function openDiagPanel(ev) {
         /* Opens the emulator's diagnostic monitor panel in a new sub-window */
-        var global = window;
+        let global = window;
 
         G15Util.openPopup(window, "G15DiagMonitor.html", "DiagPanel",
                 "resizable,width=300,height=500,left=0,top=" + screen.availHeight-500,
@@ -124,7 +124,7 @@ window.addEventListener("load", function() {
     /**************************************/
     function checkBrowser() {
         /* Checks whether this browser can support the necessary stuff */
-        var missing = "";
+        let missing = "";
 
         if (!window.ArrayBuffer) {missing += ", ArrayBuffer"}
         if (!window.DataView) {missing += ", DataView"}
