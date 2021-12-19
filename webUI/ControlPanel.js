@@ -125,6 +125,7 @@ class ControlPanel {
 
         $$("PowerOffBtn").addEventListener("click", context.systemShutDown, false);
         //$$("ResetBtn").addEventListener("click", context.XXX, false);
+        this.warmUp();
     }
 
     /**************************************/
@@ -150,6 +151,25 @@ class ControlPanel {
 
         this.$$("PowerOffBtn").removeEventListener("click", this.context.systemShutDown, false);
         //this.$$("ResetBtn").removeEventListener("click", this.context.XXX, false);
+    }
+
+    /**************************************/
+    warmUp() {
+        /* Simulates power warm-up by gradually increasing the brightness of
+        the DC Power lamp */
+        let level = 0;                  // lamp intensity level
+
+        let brighten = () => {
+            if (level < 5) {
+                ++level;
+                this.dcPowerLamp.element.className = this.dcPowerLamp.levelClass[level];
+                setTimeout(brighten, 150);
+            } else {
+                this.dcPowerLamp.element.className = this.dcPowerLamp.litClass;
+            }
+        };
+
+        setTimeout(brighten, 2000);
     }
 
 } // class ControlPanel

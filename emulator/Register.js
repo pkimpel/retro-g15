@@ -49,7 +49,7 @@ class Register {
         return this.intVal;
     }
 
-    set value() {
+    set value(value) {
         return this.set(value);
     }
 

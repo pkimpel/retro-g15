@@ -13,6 +13,9 @@
 
 export {Drum}
 
+import {Register} from "./Register.js";
+
+
 class Drum {
 
     constructor() {
@@ -21,17 +24,27 @@ class Drum {
         let drumOffset = 0;
         let size = 0;
 
+        let buildRegisterArray = (length, bits, invisible) => {
+            let a = [];                 // the register array
+
+            for (let x=0; x<length; ++x) {
+                a.push(new Register(bits, this, invisible);
+            }
+
+            return a;
+        };
+
         this.eTime = 0;                 // current emulation time, ms
         this.eTimeSliceEnd = 0;         // current timeslice end emulation time, ms
         this.L = 0;                     // current drum rotational position: word-time
 
         // Drum storage and line layout
         this.drum = new ArrayBuffer(2296*Drum.wordBytes); // Drum: 32-bit Uint words
-        this.line = new Array(28);
+        this.line = new Array(29);
 
         // Build the long lines, 108 words each
+        size = Drum.longLineSize*Drum.wordBytes;
         for (let x=0; x<20; ++x) {
-            size = Drum.longLineSize*Drum.wordBytes;
             this.line[x] = new Uint32Array(this.drum, drumOffset, Drum.longLineSize);
             drumOffset += size;
         }
@@ -43,17 +56,6 @@ class Drum {
             drumOffset += size;
         }
 
-        // Build the double-precision registers
-        size = 2*Drum.wordBytes;
-        this.MQ = this.line[24] = new Uint32Array(this.drum, drumOffset, 2);
-        drumOffset += size;
-        this.ID = this.line[25] = new Uint32Array(this.drum, drumOffset, 2);
-        drumOffset += size;
-        this.PN = this.line[26] = new Uint32Array(this.drum, drumOffset, 2);
-        drumOffset += size;
-        this.line[27] = null;           // TEST register, not actually on the drum
-        drunOffset += size;
-
         // Build the four-word MZ I/O buffer line
         size = 4*Drum.wordBytes;
         this.MZ = new Uint32Array(this.drum, drumOffset, 4);
@@ -62,10 +64,22 @@ class Drum {
         // Build the 108-word Number Track
         size = Drum.longLineSize*Drum.wordBytes;
         this.CN = new Uint32Array(this.drum, drumOffset, Drum.longLineSize);
+        drumOffset += size;
+
+        // Build the double-precision registers (not implemented here as part of the drum array
+        size = 2*Drum.wordBytes;
+        this.MQ = this.line[24] = buildRegisterArray(2, Drum.wordBits, true);   // was: new Uint32Array(this.drum, drumOffset, 2);
+        drumOffset += size;
+        this.ID = this.line[25] = buildRegisterArray(2, Drum.wordBits, true);   // was: new Uint32Array(this.drum, drumOffset, 2);
+        drumOffset += size;
+        this.PN = this.line[26] = buildRegisterArray(2, Drum.wordBits, true);   // was: new Uint32Array(this.drum, drumOffset, 2);
+        drumOffset += size;
+        this.line[27] = null;           // TEST register, not actually on the drum
+        drumOffset += size;
 
         // Build the one-word registers (not implemented here as part of the drum array)
-        this.AR = 0;                    // single-precision accumulator
-        this.CM = 0;                    // command register
+        this.AR = this.line[28] = new Register(Drum.wordBits, this. true);
+        this.CM = new Register(Drum.wordBits, this, true);
     }
 
     /**************************************/
@@ -143,12 +157,24 @@ class Drum {
             return this.line[line][this.L];
         } else if (line < 24) {
             return this.line[line][this.L4];
-        } else if (line < 27) {
-            return this.line[line][this.L2];
-        } else if (line == 28) {
-            return this.AR;
         } else {
-            return null;                // not a storage line on the drum
+            switch (line) {
+            case 24:
+                return this.MQ[this.L2].value;
+                break;
+            case 25:
+                return this.ID[this.L2].value;
+                break;
+            case 26:
+                return this.PN[this.L2].value;
+                break;
+            case 28:
+                return this.AR.value;
+                break;
+            default:
+                return null;            // special registers not on the drum
+                break;
+            }
         }
     }
 
@@ -161,11 +187,36 @@ class Drum {
             this.line[line][this.L] = word;
         } else if (line < 24) {
             this.line[line][this.L % Drum.fastLineSize] = word;
-        } else if (line < 27) {
-            this.line[line][this.L % 2] = word;
-        } else if (line == 28) {
-            this.AR = word;
+        } else {
+            switch (line) {
+            case 24:
+                this.MQ[this.L2].value = word;
+                break;
+            case 25:
+                this.ID[this.L2].value = word;
+                break;
+            case 26:
+                this.PN[this.L2].value = word;
+                break;
+            case 28:
+                this.AR.value = word;
+                break;
+            default:
+                return null;            // special registers not on the drum
+                break;
+            }
         }
+    }
+
+    /**************************************/
+    setPNSign(sign) {
+        /* Sets the sign bit in the even word of PN. This is used after an
+        addition or subtraction to PN to set the final sign of the operation.
+        It's a bit of a kludge, but the way PN works is a bit of a kludge,
+        anyway. Unlike the other drum read/write routines, it ignores L and
+        operates on this.PN[0] unconditionally */
+
+        this.PN[0].setBit(0, sign);
     }
 
 } // class Drum

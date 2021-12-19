@@ -12,6 +12,7 @@
 ***********************************************************************/
 
 import {ControlPanel} from "./ControlPanel.js";
+import {Processor} from "../emulator/Processor.js";
 
 window.addEventListener("load", function() {
     //let config = new G15SystemConfig(); // system configuration object
@@ -79,7 +80,7 @@ window.addEventListener("load", function() {
 
         //$$("ConfigureBtn").disabled = true;
 
-        //processor = new G15Processor(config, devices);
+        processor = new Processor();
         //devices.ControlConsole = new G15ControlConsole(processor);
 
         $$("FrontPanel").style.display = "block";       // must be done before panel is built
