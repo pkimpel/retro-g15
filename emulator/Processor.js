@@ -550,7 +550,7 @@ class Processor {
                             word = (word & Processor.absWordMask) | this.IP.value;
                             this.drum.write(dest, this.complementSingle(word));
                         } else {
-                            this.drum.write(dest, this.complementDoubleOdd(word);
+                            this.drum.write(dest, this.complementDoubleOdd(word));
                         }
                     } else {                    // PN -> MQ works like ID/MQ -> MQ
                         if (!this.C1.value || this.drum.L2 == 0) {

@@ -28,7 +28,7 @@ class Drum {
             let a = [];                 // the register array
 
             for (let x=0; x<length; ++x) {
-                a.push(new Register(bits, this, invisible);
+                a.push(new Register(bits, this, invisible));
             }
 
             return a;
