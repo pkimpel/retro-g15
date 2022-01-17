@@ -38,7 +38,7 @@ class FlipFlop {
         this.visible = (invisible ? false : true);
         this.lastETime = 0;             // time flip-flop was last set
         this.clock = clock;             // processor instance
-        this.intVal = 0;                 // binary value of flip-flop: read-only externally
+        this.intVal = 0;                // binary value of flip-flop: read-only externally
         this.glow = 0;                  // average lamp glow value
     }
 

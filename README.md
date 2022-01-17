@@ -1,4 +1,4 @@
-_UNDER CONSTRUCTION_
+# UNDER CONSTRUCTION
 
 The Bendix G-15 was a mid-1950s, binary, vacuum-tube, drum-memory computer system. The system was designed by Harry Huskey during his tenure at Wayne State University in Detroit, Michigan.
 

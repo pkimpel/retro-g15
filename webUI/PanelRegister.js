@@ -129,7 +129,7 @@ class PanelRegister {
         compares the value of the register that was previously updated against the new
         one in an attempt to minimize the number of lamp flips that need to be done */
         let lastValue = this.lastValue;
-        let thisValue = Math.floor(Math.abs(value)) % 0x100000000000;
+        let thisValue = Math.floor(Math.abs(value)) % 0x40000000;
 
         if (thisValue != lastValue) {
             let bitBase = 0;

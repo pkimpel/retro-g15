@@ -12,20 +12,17 @@
 ***********************************************************************/
 
 import {ControlPanel} from "./ControlPanel.js";
+import {DiagPanel} from "./DiagPanel.js";
 import {Processor} from "../emulator/Processor.js";
 
-window.addEventListener("load", function() {
+let globalLoad = (ev) => {
     //let config = new G15SystemConfig(); // system configuration object
     let controlPanel = null;            // controlPanel object
     let devices = {};                   // hash of I/O devices for the Processor
-    //let diagWindow = null;              // handle for the diagnostic monitor panel
+    let diagPanel = null;               // handle for the diagnostic panel
     let processor = null;               // the Processor object
     let statusMsgTimer = 0;             // status message timer control cookie
 
-    const context = {                   // passed to ControlPanel constructor
-        $$,
-        systemShutDown
-    };
 
     /**************************************/
     function $$(id) {
@@ -40,32 +37,40 @@ window.addEventListener("load", function() {
     }
 
     /**************************************/
+    function beforeUnload(ev) {
+        var msg = "Closing this window will terminate the emulator";
+
+        ev.preventDefault();
+        ev.returnValue = msg;
+        return msg;
+    }
+
+    /**************************************/
     function systemShutDown() {
         /* Powers down the Processor and shuts down all of the panels and I/O devices */
 
+        processor.stop();
         /**************************************
-        processor.powerDown();
         for (const e in devices) {
             if (devices[e]) {
                 devices[e].shutDown();
                 devices[e] = null;
             }
         }
-
-        if (diagWindow && !diagWindow.closed) {
-            diagWindow.close();
-        }
-
-        processor = null;
         ************************************/
 
-        controlPanel.close();
+        closeDiagPanel();
+        controlPanel.shutDown();
         controlPanel = null;
+
+        processor.powerDown();
+        processor = null;
+
         $$("FrontPanel").style.display = "none";
         $$("StartUpBtn").disabled = false;
         $$("StartUpBtn").focus();
+        window.removeEventListener("beforeunload", beforeUnload);
         //$$("ConfigureBtn").disabled = false;
-
         //config.flush();
     }
 
@@ -77,13 +82,19 @@ window.addEventListener("load", function() {
 
         ev.target.disabled = true;
         $$("StartUpBtn").disabled = true;
-
         //$$("ConfigureBtn").disabled = true;
 
         processor = new Processor();
-        //devices.ControlConsole = new G15ControlConsole(processor);
+        const context = {               // passed to ControlPanel constructor
+            $$,
+            closeDiagPanel,
+            processor,
+            systemShutDown
+        };
 
+        window.addEventListener("beforeunload", beforeUnload);
         $$("FrontPanel").style.display = "block";       // must be done before panel is built
+        processor.powerUp();
         controlPanel = new ControlPanel(context);
     }
 
@@ -110,16 +121,25 @@ window.addEventListener("load", function() {
 
     /**************************************/
     function openDiagPanel(ev) {
-        /* Opens the emulator's diagnostic monitor panel in a new sub-window */
-        let global = window;
+        /* Opens the emulator's diagnostic panel in a new sub-window */
+        const context = {processor, closeDiagPanel};
 
-        G15Util.openPopup(window, "G15DiagMonitor.html", "DiagPanel",
-                "resizable,width=300,height=500,left=0,top=" + screen.availHeight-500,
-                this, function(ev) {
-            diagWindow = ev.target.defaultView;
-            diagWindow.global = global; // give it access to our globals.
-            diagWindow.focus();
-        });
+        if (!diagPanel) {
+            diagPanel = new DiagPanel(context);
+        }
+    }
+
+    /**************************************/
+    function closeDiagPanel() {
+        /* Closes the emulator's diagnostic panel */
+
+        if (diagPanel) {
+            if (!diagPanel.closed) {
+                diagPanel.shutDown();
+            }
+
+            diagPanel = null;
+        }
     }
 
     /**************************************/
@@ -152,11 +172,13 @@ window.addEventListener("load", function() {
 
     /***** window.onload() outer block *****/
 
+    window.removeEventListener("load", globalLoad, false);
     $$("StartUpBtn").disabled = true;
     //$$("EmulatorVersion").textContent = G15Processor.version;
     if (checkBrowser()) {
         //showConfigName();
-        //$$("RetroG15Logo").addEventListener("dblclick", openDiagPanel, false);
+
+        $$("G15Logo").addEventListener("dblclick", openDiagPanel, false);
         $$("StartUpBtn").disabled = false;
         $$("StartUpBtn").addEventListener("click", systemStartup, false);
         $$("StartUpBtn").focus();
@@ -166,4 +188,6 @@ window.addEventListener("load", function() {
         //$$("StatusMsg").textContent = "??";
         //clearStatusMsg(30);
     }
-});
+} // globalLoad
+
+window.addEventListener("load", globalLoad, false);

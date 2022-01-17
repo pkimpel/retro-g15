@@ -1,0 +1,198 @@
+/***********************************************************************
+* G15/webUI DiagPanel.css
+************************************************************************
+* Copyright (c) 2021, Paul Kimpel.
+* Licensed under the MIT License, see
+*       http://www.opensource.org/licenses/mit-license.php
+************************************************************************
+* Bendix G-15 emulator diagnostic control panel style sheet.
+************************************************************************
+* 2021-12-28  P.Kimpel
+*   Original version.
+***********************************************************************/
+
+BODY {
+    background-color:   #FFC}
+
+DIV.diagCaption {
+    position:           absolute;
+    height:             1em;
+    font-size:          12px;
+    font-weight:        bold}
+
+DIV.diagRegister {
+    position:           absolute;
+    height:             14px;
+    border:             1px solid #333}
+
+DIV.diagLampBox {
+    position:           absolute;
+    height:             14px;
+    width:              14px;
+    border:             1px solid #333}
+
+DIV.diagLamp {
+    position:           absolute;
+    z-index:            1;
+    width:              4px;
+    height:             8px;
+    border:             1px solid #666;
+    background-color:   #999}
+DIV.diagLit1 {
+    background-color:   #7A7}
+DIV.diagLit2 {
+    background-color:   #5B5}
+DIV.diagLit3 {
+    background-color:   #3C3}
+DIV.diagLit4 {
+    background-color:   #2D2}
+DIV.diagLit5 {
+    background-color:   #1E1}
+DIV.diagLit {
+    background-color:   #0F0}
+
+DIV.diagLampTopCaption {
+    position:           absolute;
+    top:                calc(-1.5em - 3px);
+    font-size:          10px;
+    font-weight:        bold;
+    text-align:         center;
+    left:               calc(50% - 32px);
+    width:              64px}
+DIV.diagLampBottomCaption {
+    position:           absolute;
+    bottom:             calc(-1.5em - 3px);
+    font-size:          10px;
+    font-weight:        bold;
+    text-align:         center;
+    left:               calc(50% - 16px);
+    width:              32px}
+
+DIV.diagRegCaption {
+    position:           absolute;
+    top:                -1.5em;
+    font-size:          10px;
+    font-weight:        bold;
+    text-align:         center;
+    left:               calc(50% - 60px);
+    width:              120px}
+
+#DiagPanel {
+    position:           relative}
+
+#ControlDiv {
+    position:           absolute;
+    top:                0;
+    right:              0;
+    width:              100%;
+    height:             30px}
+#DrumLocBox {
+    top:                14px;
+    right:              616px}
+#CDBox {
+    top:                14px;
+    right:              566px}
+#CmdLocBox {
+    top:                14px;
+    right:              476px}
+#RCBox {
+    top:                14px;
+    right:              446px}
+#TRBox {
+    top:                14px;
+    right:              416px}
+#CHBox {
+    top:                14px;
+    right:              98px}
+#CGBox {
+    top:                14px;
+    right:              68px}
+#CSBox {
+    top:                14px;
+    right:              38px}
+#FOBox {
+    top:                14px;
+    right:              8px}
+
+#CmdDiv {
+    position:           absolute;
+    top:                40px;
+    right:              0;
+    width:              100%;
+    height:             30px}
+#DIBox {
+    top:                14px;
+    right:              428px}
+#TBox {
+    top:                14px;
+    right:              338px}
+#BPBox {
+    top:                14px;
+    right:              308px}
+#NBox {
+    top:                14px;
+    right:              218px}
+#CABox {
+    top:                14px;
+    right:              178px}
+#SBox {
+    top:                14px;
+    right:              108px}
+#DBox {
+    top:                14px;
+    right:              38px}
+#C1Box {
+    top:                14px;
+    right:              8px}
+
+#ARDiv {
+    position:           absolute;
+    top:                80px;
+    right:              0;
+    width:              100%;
+    height:             30px}
+#ARBox {
+    top:                14px;
+    right:              8px}
+#IPBox {
+    top:                14px;
+    right:              676px}
+
+#IDDiv {
+    position:           absolute;
+    top:                120px;
+    right:              0;
+    width:              100%;
+    height:             30px}
+#ID1Box {
+    top:                14px;
+    right:              354px}
+#ID0Box {
+    top:                14px;
+    right:              8px}
+
+#MQDiv {
+    position:           absolute;
+    top:                160px;
+    right:              0;
+    width:              100%;
+    height:             30px}
+#MQ1Box {
+    top:                14px;
+    right:              354px}
+#MQ0Box {
+    top:                14px;
+    right:              8px}
+
+#PNDiv {
+    position:           absolute;
+    top:                200px;
+    right:              0;
+    width:              100%;
+    height:             30px}
+#PN1Box {
+    top:                14px;
+    right:              354px}
+#PN0Box {
+    top:                14px;
+    right:              8px}

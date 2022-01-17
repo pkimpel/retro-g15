@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>retro-g15 Diagnostic Panel</title>
+<!--
+/***********************************************************************
+* retro-g15/webUI DiagPanel.html
+************************************************************************
+* Copyright (c) 2021, Paul Kimpel.
+* Licensed under the MIT License, see
+*       http://www.opensource.org/licenses/mit-license.php
+************************************************************************
+* Bendix G-15 emulator diagnostic panel page.
+************************************************************************
+* 2021-12-31  P.Kimpel
+*   Original version, from G15.html.
+***********************************************************************/
+-->
+<meta name="Author" content="Paul Kimpel">
+<meta http-equiv="Content-Script-Type" content="text/javascript">
+<meta http-equiv="Content-Style-Type" content="text/css">
+<link id=defaultStyleSheet rel=stylesheet type="text/css" href="Common.css">
+<link id=homeStyleSheet rel=stylesheet type="text/css" href="DiagPanel.css">
+</head>
+
+<body>
+<p class=bold>Bendix G-15 Diagnostic Panel</p>
+
+<div id=DiagPanel>
+    <div id=ControlDiv>
+        <div id=DrumLocBox class=diagRegister></div>
+        <div id=CmdLocBox class=diagRegister></div>
+        <div id=CDBox class=diagRegister></div>
+        <div id=RCBox class=diagLampBox></div>
+        <div id=TRBox class=diagLampBox></div>
+        <div id=CHBox class=diagLampBox></div>
+        <div id=CGBox class=diagLampBox></div>
+        <div id=CSBox class=diagLampBox></div>
+        <div id=FOBox class=diagLampBox></div>
+    </div>
+
+    <div id=CmdDiv>
+        <div id=DIBox class=diagLampBox></div>
+        <div id=TBox  class=diagRegister></div>
+        <div id=BPBox class=diagLampBox></div>
+        <div id=NBox  class=diagRegister></div>
+        <div id=CABox class=diagRegister></div>
+        <div id=SBox  class=diagRegister></div>
+        <div id=DBox  class=diagRegister></div>
+        <div id=C1Box class=diagLampBox></div>
+    </div>
+
+    <div id=ARDiv>
+        <div id=ARBox class=diagRegister></div>
+        <div id=IPBox class=diagLampBox></div>
+    </div>
+
+    <div id=IDDiv>
+        <div id=ID1Box class=diagRegister></div>
+        <div id=ID0Box class=diagRegister></div>
+    </div>
+
+    <div id=MQDiv>
+        <div id=MQ1Box class=diagRegister></div>
+        <div id=MQ0Box class=diagRegister></div>
+    </div>
+
+    <div id=PNDiv>
+        <div id=PN1Box class=diagRegister></div>
+        <div id=PN0Box class=diagRegister></div>
+    </div>
+
+</div>
+
+</body>
+</html>

@@ -125,11 +125,12 @@ class ControlPanel {
 
         $$("PowerOffBtn").addEventListener("click", context.systemShutDown, false);
         //$$("ResetBtn").addEventListener("click", context.XXX, false);
+
         this.warmUp();
     }
 
     /**************************************/
-    close() {
+    shutDown() {
         /* Closes the panel, unwires its events, and deallocates its resources */
 
         this.regCharacteristic = null;
@@ -162,14 +163,13 @@ class ControlPanel {
         let brighten = () => {
             if (level < 5) {
                 ++level;
-                this.dcPowerLamp.element.className = this.dcPowerLamp.levelClass[level];
-                setTimeout(brighten, 150);
-            } else {
-                this.dcPowerLamp.element.className = this.dcPowerLamp.litClass;
+                setTimeout(brighten, 100);
             }
+
+            this.dcPowerLamp.set(level);
         };
 
-        setTimeout(brighten, 2000);
+        setTimeout(brighten, 3000);
     }
 
 } // class ControlPanel

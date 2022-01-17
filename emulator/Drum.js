@@ -19,8 +19,7 @@ import {Register} from "./Register.js";
 class Drum {
 
     constructor() {
-        /* Constructor for the G-15 drum object, including the drum-based
-        registers */
+        /* Constructor for the G-15 drum object, including the drum-based registers */
         let drumOffset = 0;
         let size = 0;
 
@@ -28,7 +27,7 @@ class Drum {
             let a = [];                 // the register array
 
             for (let x=0; x<length; ++x) {
-                a.push(new Register(bits, this, invisible);
+                a.push(new Register(bits, this, invisible));
             }
 
             return a;
@@ -36,10 +35,12 @@ class Drum {
 
         this.eTime = 0;                 // current emulation time, ms
         this.eTimeSliceEnd = 0;         // current timeslice end emulation time, ms
-        this.L = 0;                     // current drum rotational position: word-time
+
+        // Current drum rotational position: word-time
+        this.L = new Register(7, this, false);
 
         // Drum storage and line layout
-        this.drum = new ArrayBuffer(2296*Drum.wordBytes); // Drum: 32-bit Uint words
+        this.drum = new ArrayBuffer(2288*Drum.wordBytes); // Drum: 32-bit Uint words
         this.line = new Array(29);
 
         // Build the long lines, 108 words each
@@ -50,8 +51,8 @@ class Drum {
         }
 
         // Build the fast lines, 4 words each
+        size = Drum.fastLineSize*Drum.wordBytes;
         for (let x=20; x<24; ++x) {
-            size = Drum.fastLineSize*Drum.wordBytes;
             this.line[x] = new Uint32Array(this.drum, drumOffset, Drum.fastLineSize);
             drumOffset += size;
         }
@@ -66,16 +67,11 @@ class Drum {
         this.CN = new Uint32Array(this.drum, drumOffset, Drum.longLineSize);
         drumOffset += size;
 
-        // Build the double-precision registers (not implemented here as part of the drum array
-        size = 2*Drum.wordBytes;
+        // Build the double-precision registers (not implemented as part of the drum array
         this.MQ = this.line[24] = buildRegisterArray(2, Drum.wordBits, true);   // was: new Uint32Array(this.drum, drumOffset, 2);
-        drumOffset += size;
         this.ID = this.line[25] = buildRegisterArray(2, Drum.wordBits, true);   // was: new Uint32Array(this.drum, drumOffset, 2);
-        drumOffset += size;
         this.PN = this.line[26] = buildRegisterArray(2, Drum.wordBits, true);   // was: new Uint32Array(this.drum, drumOffset, 2);
-        drumOffset += size;
         this.line[27] = null;           // TEST register, not actually on the drum
-        drumOffset += size;
 
         // Build the one-word registers (not implemented here as part of the drum array)
         this.AR = this.line[28] = new Register(Drum.wordBits, this. true);
@@ -86,14 +82,14 @@ class Drum {
     get L2() {
         /* Returns the current word-time for two-word registers */
 
-        return this.L % 2;
+        return this.L.value % 2;
     }
 
     /**************************************/
     get L4() {
         /* Returns the current word-time for four-word lines */
 
-        return this.L % Drum.fastLineSize;
+        return this.L.value % Drum.fastLineSize;
     }
 
     /**************************************/
@@ -102,7 +98,7 @@ class Drum {
 
         this.eTime = performance.now();
         this.eTimeSliceEnd = this.eTime + Drum.eSliceTime;
-        this.L = Math.round(performance.now/Drum.wordTime) % Drum.longLineSize;
+        this.L.value = Math.round(performance.now/Drum.wordTime) % Drum.longLineSize;
     }
 
     /**************************************/
@@ -129,7 +125,7 @@ class Drum {
         of word-times, which must be non-negative. Increments the current drum
         location by that amount and advances the emulation clock accordingly */
 
-        this.L = (this.L + wordTimes) % Drum.longLineSize;
+        this.L.value = (this.L.value + wordTimes) % Drum.longLineSize;
         this.eTime += Drum.wordTime*wordTimes;
     }
 
@@ -138,7 +134,7 @@ class Drum {
         /* Simulates waiting for the drum to rotate to the specified word
         location. Locations must be non-negative. Updates the drum location
         and the emulation clock via waitFor() */
-        let delay = loc - this.L;
+        let delay = loc - this.L.value;
 
         if (delay < 0) {                // wrap-around
             delay += Drum.longLineSize;
@@ -148,17 +144,17 @@ class Drum {
     }
 
     /**************************************/
-    read(line) {
-        /* Reads a word transparently from drum line "line" at the current
+    read(lineNr) {
+        /* Reads a word transparently from drum line "lineNr" at the current
         location, this.L. Reads from lines 27, 29, 30, 31 return null since those
         are not storage lines but special functions */
 
-        if (line < 20) {
-            return this.line[line][this.L];
-        } else if (line < 24) {
-            return this.line[line][this.L4];
+        if (lineNr < 20) {
+            return this.line[lineNr][this.L.value];
+        } else if (lineNr < 24) {
+            return this.line[lineNr][this.L4];
         } else {
-            switch (line) {
+            switch (lineNr) {
             case 24:
                 return this.MQ[this.L2].value;
                 break;
@@ -179,16 +175,16 @@ class Drum {
     }
 
     /**************************************/
-    write(line, word) {
-        /* Writes a word transparently to drum line "line" at the current
+    write(lineNr, word) {
+        /* Writes a word transparently to drum line "lineNr" at the current
         location, this.L. Writes to lines 27, 29, 30, 31 are ignored */
 
-        if (line < 20) {
-            this.line[line][this.L] = word;
-        } else if (line < 24) {
-            this.line[line][this.L % Drum.fastLineSize] = word;
+        if (lineNr < 20) {
+            this.line[lineNr][this.L.value] = word;
+        } else if (lineNr < 24) {
+            this.line[lineNr][this.L4] = word;
         } else {
-            switch (line) {
+            switch (lineNr) {
             case 24:
                 this.MQ[this.L2].value = word;
                 break;
@@ -202,7 +198,6 @@ class Drum {
                 this.AR.value = word;
                 break;
             default:
-                return null;            // special registers not on the drum
                 break;
             }
         }
@@ -230,5 +225,5 @@ Drum.longLineSize = 108;                // words per long drum line
 Drum.fastLineSize = 4;                  // words per fast drum line
 
 Drum.wordTime = 60000/1800/124;         // one word time on the drum, ms
-Drum.bitTime = Drum.bitTime/29;         // one bit time on the drum, ms
-Drum.eSliceTime = 6;               // minimum time to accumulate throttling delay, > 4ms
+Drum.bitTime = Drum.wordTime/29;        // one bit time on the drum, ms
+Drum.eSliceTime = 6;                    // minimum time to accumulate throttling delay, > 4ms
