@@ -14,7 +14,7 @@
 
 export {Register}
 
-import {Drum} from "./Drum.js";
+import * as Util from "./Util.js";
 import {BitField} from "./BitField.js";
 import {FlipFlop} from "./FlipFlop.js";
 
@@ -61,7 +61,7 @@ class Register {
         let eTime = this.clock.eTime;
 
         if (this.visible) {
-            let alpha = Math.min(Math.max(eTime-this.lastETime, Drum.bitTime)/
+            let alpha = Math.min(Math.max(eTime-this.lastETime, Util.bitTime)/
                                  FlipFlop.neonPersistence + beta, 1.0);
             let alpha1 = 1.0-alpha;
             let b = 0;
@@ -116,7 +116,7 @@ class Register {
 
             // Update the lamp glow for the former state.
             if (this.visible) {
-                let alpha = Math.min(Math.max(eTime-this.lastETime, Drum.bitTime)/
+                let alpha = Math.min(Math.max(eTime-this.lastETime, Util.bitTime)/
                                      FlipFlop.neonPersistence + beta, 1.0);
                 this.glow[bitNr] = this.glow[bitNr]*(1.0-alpha) + bit*alpha;
             }
@@ -139,7 +139,7 @@ class Register {
 
             // Update the lamp glow for the former state.
             if (this.visible) {
-                let alpha = Math.min(Math.max(eTime-this.lastETime, Drum.bitTime)/
+                let alpha = Math.min(Math.max(eTime-this.lastETime, Util.bitTime)/
                                      FlipFlop.neonPersistence + beta, 1.0);
                 this.glow[bitNr] = this.glow[bitNr]*(1.0-alpha) + bit*alpha;
             }

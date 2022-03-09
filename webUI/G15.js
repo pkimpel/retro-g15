@@ -60,6 +60,7 @@ let globalLoad = (ev) => {
         ************************************/
 
         closeDiagPanel();
+        processor.controlPanel = null;
         controlPanel.shutDown();
         controlPanel = null;
 
@@ -77,8 +78,6 @@ let globalLoad = (ev) => {
     /**************************************/
     function systemStartup(ev) {
         /* Establishes the system components */
-        let u;
-        let x;
 
         ev.target.disabled = true;
         $$("StartUpBtn").disabled = true;
@@ -96,6 +95,7 @@ let globalLoad = (ev) => {
         $$("FrontPanel").style.display = "block";       // must be done before panel is built
         processor.powerUp();
         controlPanel = new ControlPanel(context);
+        processor.controlPanel = controlPanel;
     }
 
     /**************************************/

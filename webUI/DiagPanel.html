@@ -36,6 +36,7 @@
         <div id=TRBox class=diagLampBox></div>
         <div id=CHBox class=diagLampBox></div>
         <div id=CGBox class=diagLampBox></div>
+        <div id=CQBox class=diagLampBox></div>
         <div id=CSBox class=diagLampBox></div>
         <div id=FOBox class=diagLampBox></div>
     </div>
@@ -70,7 +71,16 @@
         <div id=PN1Box class=diagRegister></div>
         <div id=PN0Box class=diagRegister></div>
     </div>
+</div>
 
+<div id=LineDumpDiv>
+    <p><strong>Line #</strong>
+       <input id=LineNr class="data rj" type=number size=8 maxLength=3 value=-1></p>
+    <pre id=LineDump class=data></pre>
+</div>
+
+<div id=ButtonDiv>
+    <button id=StepBtn type=button>Step</button>
 </div>
 
 </body>

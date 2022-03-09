@@ -14,7 +14,7 @@
 
 export {FlipFlop}
 
-import {Drum} from "./Drum.js";
+import * as Util from "./Util.js";
 import {BitField} from "./BitField.js";
 
 class FlipFlop {
@@ -55,11 +55,11 @@ class FlipFlop {
         /* Updates the average glow for the flip flop. Note that the glow is
         always aged by at least one clock tick. Beta is a bias in the
         range (0,1). For normal update, use 0; to freeze the current state, use 1 */
-        let eTime = this.eTime;
+        let eTime = this.clock.eTime;
 
         if (this.visible) {
-            let alpha = Math.min(Math.max(eTime-this.lastETime, Drum.bitTime)/
-                                 Register.neonPersistence + beta, 1.0);
+            let alpha = Math.min(Math.max(eTime-this.lastETime, Util.bitTime)/
+                                 FlipFlop.neonPersistence + beta, 1.0);
             this.glow = this.glow*(1.0-alpha) + this.intVal*alpha;
         }
 
@@ -76,7 +76,7 @@ class FlipFlop {
             this.updateLampGlow(0);
         }
 
-        return this.intVAl;
+        return this.intVal;
     }
 
     /**************************************/

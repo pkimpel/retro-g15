@@ -14,6 +14,7 @@
 
 export {ControlPanel};
 
+import * as Util from "../emulator/Util.js";
 import {PanelRegister} from "./PanelRegister.js";
 import {NeonLamp} from "./NeonLamp.js";
 import {ColoredLamp} from "./ColoredLamp.js";
@@ -27,6 +28,7 @@ class ControlPanel {
         "context" is an object passing other objects and callback functions from
         the global script:
             $$() returns an object reference from its id value
+            processor is the Processor object
             systemShutDown() shuts down the emulator
         */
         let $$ = context.$$;
@@ -36,6 +38,12 @@ class ControlPanel {
         this.$$ = $$;
         this.context = context;
         this.panel = panel;
+        this.intervalToken = 0;         // interval timer cancel token
+        this.boundControlSwitchChange = this.controlSwitchChange.bind(this);
+        this.boundUpdatePanel = this.updatePanel.bind(this);
+
+        this.systemBell = $$("SystemBell");
+        this.lastBellTime = 0;
 
         // Paper tape panel
         $$("PunchTape").textContent = "";
@@ -123,10 +131,95 @@ class ControlPanel {
         this.violationLamp = new ColoredLamp(powerPanel, null, null, "ViolationLamp", "orangeLamp", "orangeLit");
         this.violationSwitch = new ToggleSwitch(powerPanel, null, null, "ViolationSwitch", "./resources/ToggleDown.png", "./resources/ToggleUp.png");
 
+        // Events
+
+        $$("EnableSwitchSet").addEventListener("click", this.boundControlSwitchChange, false);
+        $$("PunchSwitchSet").addEventListener("click", this.boundControlSwitchChange, false);
+        $$("ComputeSwitchSet").addEventListener("click", this.boundControlSwitchChange, false);
         $$("PowerOffBtn").addEventListener("click", context.systemShutDown, false);
-        //$$("ResetBtn").addEventListener("click", context.XXX, false);
+
+        if (!this.intervalToken) {
+            this.intervalToken = setInterval(this.boundUpdatePanel, ControlPanel.displayRefreshPeriod);
+        }
 
         this.warmUp();
+    }
+
+    /**************************************/
+    updatePanel() {
+        /* Updates the panel registers and flip-flops from processor state */
+        let p = this.context.processor; // local copy of Processor reference
+
+        p.updateLampGlow(0);
+        this.regCmdLine.updateLampGlow(p.CD.glow);
+        this.regCharacteristic.updateLampGlow(p.CA.glow);
+        this.regDest.updateLampGlow(p.D.glow);
+        this.regSource.updateLampGlow(p.S.glow);
+        this.regIO.updateLampGlow(p.OC.glow);
+
+        this.lampOverflow.set(p.FO.glow);
+        //this.lampGODA.set(??.glow);   // GO-DA lamp not currently implemented
+        this.lampHalt.set(p.CH.glow);
+        this.lampDBPR.set(p.C1.glow);
+        this.lampPSign.set(p.IP.glow);
+        this.lampNCAR.set(p.CG.glow);
+        this.lampTest.set(p.CQ.glow);
+        this.lampAS.set(p.AS.glow);
+        this.violationLamp.set(p.VV.glow);
+    }
+
+    /**************************************/
+    controlSwitchChange(ev) {
+        /* Event handler for the ENABLE switch controls */
+        let p = this.context.processor; // local copy of Processor reference
+
+        switch (ev.target.id) {
+        case "EnableSwitchOff":
+            p.enableSwitchChange(0);
+            break;
+        case "EnableSwitchOn":
+            p.enableSwitchChange(1);
+            break;
+        case "PunchSwitchOff":
+            p.punchSwitchChange(0);
+            break;
+        case "PunchSwitchOn":
+            p.punchSwitchChange(1);
+            break;
+        case "PunchSwitchRewind":
+            p.punchSwitchChange(2);
+            break;
+        case "ComputeSwitchOff":
+            p.computeSwitchChange(0);
+            break;
+        case "ComputeSwitchGo":
+            p.computeSwitchChange(1);
+            break;
+        case "ComputeSwitchBP":
+            p.computeSwitchChange(2);
+            break;
+        }
+    }
+
+    /**************************************/
+    ringBell(wordTimes) {
+        /* Rings the system's bell with a volume determined by the number of
+        word times specified by the parameter. Due to the reaction time of the
+        bell solenoid, it requires three drum cycles (about 87ms) before the
+        bell can be activated again */
+        let now = performance.now();
+
+        if (this.lastBellTime + ControlPanel.bellRecycleTime < now) {
+            let volume = 0.25;              // default maximum volume
+            if (wordTimes < Util.longLineSize) {
+                volume *= wordTimes/Util.longLineSize;
+            }
+
+            this.systemBell.volume = volume;
+            this.systemBell.currentTime = 0;
+            this.systemBell.play();
+            this.lastBellTime = now;
+        }
     }
 
     /**************************************/
@@ -150,8 +243,15 @@ class ControlPanel {
         this.dcPowerLamp = null;
         this.readyLamp = null;
 
+        this.$$("EnableSwitchSet").removeEventListener("click", this.boundControlSwitchChange, false);
+        this.$$("PunchSwitchSet").removeEventListener("click", this.boundControlSwitchChange, false);
+        this.$$("ComputeSwitchSet").removeEventListener("click", this.boundControlSwitchChange, false);
         this.$$("PowerOffBtn").removeEventListener("click", this.context.systemShutDown, false);
         //this.$$("ResetBtn").removeEventListener("click", this.context.XXX, false);
+
+        if (this.intervalToken) {
+            clearInterval(this.intervalToken);
+        }
     }
 
     /**************************************/
@@ -159,9 +259,13 @@ class ControlPanel {
         /* Simulates power warm-up by gradually increasing the brightness of
         the DC Power lamp */
         let level = 0;                  // lamp intensity level
+        const maxLevel = 5;
 
         let brighten = () => {
-            if (level < 5) {
+            if (level > maxLevel) {
+                // ?? Eventually this will need to trigger memory initialization and loading the number track
+                //$$("ResetBtn").addEventListener("click", this.context.processor.powerUp, false);
+            } else {
                 ++level;
                 setTimeout(brighten, 100);
             }
@@ -173,3 +277,9 @@ class ControlPanel {
     }
 
 } // class ControlPanel
+
+
+// Static class properties
+
+ControlPanel.displayRefreshPeriod = 50; // ms
+ControlPanel.bellRecycleTime = Util.drumCycleTime*3;

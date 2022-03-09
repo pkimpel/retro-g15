@@ -13,6 +13,7 @@
 
 export {Drum}
 
+import * as Util from "./Util.js";
 import {Register} from "./Register.js";
 
 
@@ -22,6 +23,10 @@ class Drum {
         /* Constructor for the G-15 drum object, including the drum-based registers */
         let drumOffset = 0;
         let size = 0;
+        const drumWords = 20*Util.longLineSize +        // 20x108 word long lines
+                          4*Util.fastLineSize +         // 4x4 word fast lines
+                          4                             // 1x4 word MZ I/O buffer line
+                          Util.longLineSize;            // 1x108 word CN number track
 
         let buildRegisterArray = (length, bits, invisible) => {
             let a = [];                 // the register array
@@ -40,42 +45,42 @@ class Drum {
         this.L = new Register(7, this, false);
 
         // Drum storage and line layout
-        this.drum = new ArrayBuffer(2288*Drum.wordBytes); // Drum: 32-bit Uint words
+        this.drum = new ArrayBuffer(drumWords*Util.wordBytes);  // Drum: 32-bit Uint words
         this.line = new Array(29);
 
         // Build the long lines, 108 words each
-        size = Drum.longLineSize*Drum.wordBytes;
+        size = Util.longLineSize*Util.wordBytes;
         for (let x=0; x<20; ++x) {
-            this.line[x] = new Uint32Array(this.drum, drumOffset, Drum.longLineSize);
+            this.line[x] = new Uint32Array(this.drum, drumOffset, Util.longLineSize);
             drumOffset += size;
         }
 
         // Build the fast lines, 4 words each
-        size = Drum.fastLineSize*Drum.wordBytes;
+        size = Util.fastLineSize*Util.wordBytes;
         for (let x=20; x<24; ++x) {
-            this.line[x] = new Uint32Array(this.drum, drumOffset, Drum.fastLineSize);
+            this.line[x] = new Uint32Array(this.drum, drumOffset, Util.fastLineSize);
             drumOffset += size;
         }
 
         // Build the four-word MZ I/O buffer line
-        size = 4*Drum.wordBytes;
+        size = 4*Util.wordBytes;
         this.MZ = new Uint32Array(this.drum, drumOffset, 4);
         drumOffset += size;
 
         // Build the 108-word Number Track
-        size = Drum.longLineSize*Drum.wordBytes;
-        this.CN = new Uint32Array(this.drum, drumOffset, Drum.longLineSize);
+        size = Util.longLineSize*Util.wordBytes;
+        this.CN = new Uint32Array(this.drum, drumOffset, Util.longLineSize);
         drumOffset += size;
 
-        // Build the double-precision registers (not implemented as part of the drum array
-        this.MQ = this.line[24] = buildRegisterArray(2, Drum.wordBits, true);   // was: new Uint32Array(this.drum, drumOffset, 2);
-        this.ID = this.line[25] = buildRegisterArray(2, Drum.wordBits, true);   // was: new Uint32Array(this.drum, drumOffset, 2);
-        this.PN = this.line[26] = buildRegisterArray(2, Drum.wordBits, true);   // was: new Uint32Array(this.drum, drumOffset, 2);
+        // Build the double-precision registers (not implemented as part of the drum array)
+        this.MQ = this.line[24] = buildRegisterArray(2, Util.wordBits, false);   // was: new Uint32Array(this.drum, drumOffset, 2);
+        this.ID = this.line[25] = buildRegisterArray(2, Util.wordBits, false);   // was: new Uint32Array(this.drum, drumOffset, 2);
+        this.PN = this.line[26] = buildRegisterArray(2, Util.wordBits, false);   // was: new Uint32Array(this.drum, drumOffset, 2);
         this.line[27] = null;           // TEST register, not actually on the drum
 
         // Build the one-word registers (not implemented here as part of the drum array)
-        this.AR = this.line[28] = new Register(Drum.wordBits, this. true);
-        this.CM = new Register(Drum.wordBits, this, true);
+        this.AR = this.line[28] = new Register(Util.wordBits, this, false);
+        this.CM = new Register(Util.wordBits, this, false);
     }
 
     /**************************************/
@@ -89,7 +94,7 @@ class Drum {
     get L4() {
         /* Returns the current word-time for four-word lines */
 
-        return this.L.value % Drum.fastLineSize;
+        return this.L.value % Util.fastLineSize;
     }
 
     /**************************************/
@@ -98,7 +103,7 @@ class Drum {
 
         this.eTime = performance.now();
         this.eTimeSliceEnd = this.eTime + Drum.eSliceTime;
-        this.L.value = Math.round(performance.now/Drum.wordTime) % Drum.longLineSize;
+        this.L.value = Math.round(this.eTime/Util.wordTime) % Util.longLineSize;
     }
 
     /**************************************/
@@ -125,8 +130,8 @@ class Drum {
         of word-times, which must be non-negative. Increments the current drum
         location by that amount and advances the emulation clock accordingly */
 
-        this.L.value = (this.L.value + wordTimes) % Drum.longLineSize;
-        this.eTime += Drum.wordTime*wordTimes;
+        this.L.value = (this.L.value + wordTimes) % Util.longLineSize;
+        this.eTime += Util.wordTime*wordTimes;
     }
 
     /**************************************/
@@ -134,13 +139,15 @@ class Drum {
         /* Simulates waiting for the drum to rotate to the specified word
         location. Locations must be non-negative. Updates the drum location
         and the emulation clock via waitFor() */
-        let delay = loc - this.L.value;
+        let words = loc - this.L.value;
 
-        if (delay < 0) {                // wrap-around
-            delay += Drum.longLineSize;
+        if (words < 0) {                // wrap-around
+            words += Util.longLineSize;
         }
 
-        waitFor(delay);
+        if (words > 0) {
+            this.waitFor(words);
+        }
     }
 
     /**************************************/
@@ -204,6 +211,22 @@ class Drum {
     }
 
     /**************************************/
+    readCN() {
+        /* Reads a word transparently from the number track (CN) at the current
+        location, this.L */
+
+        return this.CN[this.L.value];
+    }
+
+    /**************************************/
+    writeCN(word) {
+        /* Writes a word transparently to the number track (CN) at the current
+        location, this.L */
+
+        this.CN[this.L.value] = word;
+    }
+
+    /**************************************/
     setPNSign(sign) {
         /* Sets the sign bit in the even word of PN. This is used after an
         addition or subtraction to PN to set the final sign of the operation.
@@ -219,11 +242,4 @@ class Drum {
 
 // Static class properties
 
-Drum.wordBits = 29;                     // bits per G-15 word
-Drum.wordBytes = 4;                     // bytes per G-15 word (32 bits holding 29 bits)
-Drum.longLineSize = 108;                // words per long drum line
-Drum.fastLineSize = 4;                  // words per fast drum line
-
-Drum.wordTime = 60000/1800/124;         // one word time on the drum, ms
-Drum.bitTime = Drum.wordTime/29;        // one bit time on the drum, ms
 Drum.eSliceTime = 6;                    // minimum time to accumulate throttling delay, > 4ms

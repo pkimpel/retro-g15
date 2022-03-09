@@ -37,19 +37,19 @@ DIV.diagLamp {
     width:              4px;
     height:             8px;
     border:             1px solid #666;
-    background-color:   #999}
+    background-color:   #EEE}
 DIV.diagLit1 {
-    background-color:   #7A7}
+    background-color:   #A77}
 DIV.diagLit2 {
-    background-color:   #5B5}
+    background-color:   #B55}
 DIV.diagLit3 {
-    background-color:   #3C3}
+    background-color:   #C33}
 DIV.diagLit4 {
-    background-color:   #2D2}
+    background-color:   #D22}
 DIV.diagLit5 {
-    background-color:   #1E1}
+    background-color:   #E11}
 DIV.diagLit {
-    background-color:   #0F0}
+    background-color:   #F00}
 
 DIV.diagLampTopCaption {
     position:           absolute;
@@ -102,6 +102,9 @@ DIV.diagRegCaption {
     top:                14px;
     right:              416px}
 #CHBox {
+    top:                14px;
+    right:             128px}
+#CQBox {
     top:                14px;
     right:              98px}
 #CGBox {
@@ -196,3 +199,21 @@ DIV.diagRegCaption {
 #PN0Box {
     top:                14px;
     right:              8px}
+
+#LineDumpDiv {
+    position:           absolute;
+    top:                340px;
+    left:               8px;
+    right:              16px}
+#LineNr {
+    font-size:          8pt;
+    text-align:         right}
+#LineDump {
+    font-size:          8pt}
+
+#ButtonDiv {
+    position:           absolute;
+    bottom:             8px;
+    left:               8px;
+    right:              16px}
+

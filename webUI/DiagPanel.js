@@ -13,6 +13,7 @@
 
 export {DiagPanel};
 
+import * as Util from "../emulator/Util.js";
 import {DiagRegister} from "./DiagRegister.js";
 import {DiagLamp} from "./DiagLamp.js";
 import {openPopup} from "./PopupUtil.js";
@@ -24,16 +25,18 @@ class DiagPanel {
         /* Constructs the G15 diagnostic panel controls and wires up their events.
         "context" is an object passing other objects and callback functions from
         the global script:
-            $$() returns an object reference from its id value
-            systemShutDown() shuts down the emulator
+            closeDiagPanel() shuts down this panel
+            processor is the Processor object
         */
         const w = 740;
-        const h = 400;
+        const h = 600;
 
         this.context = context;
-        this.intervalToken = 0;
+        this.intervalToken = 0;         // interval timer cancel token
         this.boundUpdatePanel = this.updatePanel.bind(this);
         this.boundShutDown = this.shutDown.bind(this);
+        this.boundDumpLine = this.dumpLine.bind(this);
+        this.boundProcStep = context.processor.step.bind(context.processor);
 
         // Create the panel window
         this.doc = null;
@@ -56,10 +59,36 @@ class DiagPanel {
     }
 
     /**************************************/
+    dumpLine() {
+        /* Dumps the currently-specified line to the LineDump <pre> in signed hex */
+        let lineNr = parseInt(this.$$("LineNr").value) || 0;
+
+        if (lineNr >= 0 && lineNr < 24) {
+            let drum = this.context.processor.drum;
+            let top = (lineNr < 20 ? Util.longLineSize : Util.fastLineSize);
+            let text = "";
+
+            for (let x=0; x<top; x+=12) {
+                text += x.toString().padStart(3, " ");
+                for (let y=0; y<12; ++y) {
+                    let word = drum.line[lineNr][x+y];
+                    text += " " + (word >> 1).toString(16).padStart(7, "0") +
+                                  ((word & 1) ? "-" : " ");
+                }
+
+                text += "\n";
+            }
+
+            this.$$("LineDump").textContent = text;
+        }
+    }
+
+    /**************************************/
     updatePanel() {
         /* Updates the panel registers and flip-flops from processor state */
         let p = this.context.processor; // local copy of Processor reference
         let drum = p.drum;              // local copy of Drum reference
+        let now = performance.now();
 
         this.drumLoc.updateLampGlow(drum.L.glow);
         this.cmdLoc.updateLampGlow(p.cmdLoc.glow);
@@ -68,6 +97,7 @@ class DiagPanel {
         this.TRLamp.set(p.TR.glow);
         this.CHLamp.set(p.CH.glow);
         this.CGLamp.set(p.CG.glow);
+        this.CQLamp.set(p.CQ.glow);
         this.CSLamp.set(p.CS.glow);
         this.FOLamp.set(p.FO.glow);
 
@@ -91,13 +121,16 @@ class DiagPanel {
 
         this.PN1Reg.updateLampGlow(drum.PN[1].glow);
         this.PN0Reg.updateLampGlow(drum.PN[0].glow);
+
+        if (Math.trunc(now/1000) % 2) {
+            this.dumpLine();
+        }
     }
 
     /**************************************/
     diagPanelOnLoad(ev) {
         /* Event handler for the window's onload event */
         let e = null;                   // temp element reference
-        let p = this.p;                 // local copy of processor object
 
         this.doc = ev.target;
         this.window = this.doc.defaultView;
@@ -114,6 +147,8 @@ class DiagPanel {
         this.CHLamp.setCaption("CH");
         this.CGLamp = new DiagLamp(this.$$("CGBox"), 4, 2, "CGLamp");
         this.CGLamp.setCaption("CG");
+        this.CQLamp = new DiagLamp(this.$$("CQBox"), 4, 2, "CQLamp");
+        this.CQLamp.setCaption("CQ");
         this.CSLamp = new DiagLamp(this.$$("CSBox"), 4, 2, "CSLamp");
         this.CSLamp.setCaption("CS");
         this.FOLamp = new DiagLamp(this.$$("FOBox"), 4, 2, "FOLamp");
@@ -144,7 +179,10 @@ class DiagPanel {
         this.PN1Reg = new DiagRegister(this.$$("PN1Box"), 29, true, false, "PN1Reg_", "PN odd");
         this.PN0Reg = new DiagRegister(this.$$("PN0Box"), 29, true, true, "PN0Reg_", "PN even");
 
+        this.$$("LineNr").addEventListener("change", this.boundDumpLine);
+        this.$$("StepBtn").addEventListener("click", this.boundProcStep);
         this.window.addEventListener("unload", this.boundShutDown);
+
         if (!this.intervalToken) {
             this.intervalToken = this.window.setInterval(this.boundUpdatePanel, DiagPanel.displayRefreshPeriod);
         }
@@ -159,6 +197,8 @@ class DiagPanel {
             this.intervalToken = 0;
         }
 
+        this.$$("LineNr").removeEventListener("change", this.boundDumpLine);
+        this.$$("StepBtn").removeEventListener("click", this.boundProcStep);
         if (this.window) {
             this.window.removeEventListener("unload", this.boundShutDown);
             if (!this.window.closed) {
