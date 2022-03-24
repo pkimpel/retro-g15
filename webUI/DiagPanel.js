@@ -37,11 +37,13 @@ class DiagPanel {
         this.boundShutDown = this.shutDown.bind(this);
         this.boundDumpLine = this.dumpLine.bind(this);
         this.boundProcStep = context.processor.step.bind(context.processor);
+        this.boundProcGo = context.processor.start.bind(context.processor);
+        this.boundProcStop = context.processor.stop.bind(context.processor);
 
         // Create the panel window
         this.doc = null;
         this.window = null;
-        openPopup(window, "./DiagPanel.html", "DiagPanel",
+        openPopup(context.window, "./DiagPanel.html", "DiagPanel",
                 "location=no,scrollbars=no,resizable,width=" + w + ",height=" + h +
                     ",top=16,left=16",
                 this, this.diagPanelOnLoad);
@@ -66,11 +68,12 @@ class DiagPanel {
         if (lineNr >= 0 && lineNr < 24) {
             let drum = this.context.processor.drum;
             let top = (lineNr < 20 ? Util.longLineSize : Util.fastLineSize);
+            let inc = (lineNr < 20 ? 12 : Util.fastLineSize);
             let text = "";
 
-            for (let x=0; x<top; x+=12) {
+            for (let x=0; x<top; x+=inc) {
                 text += x.toString().padStart(3, " ");
-                for (let y=0; y<12; ++y) {
+                for (let y=0; y<inc; ++y) {
                     let word = drum.line[lineNr][x+y];
                     text += " " + (word >> 1).toString(16).padStart(7, "0") +
                                   ((word & 1) ? "-" : " ");
@@ -181,6 +184,8 @@ class DiagPanel {
 
         this.$$("LineNr").addEventListener("change", this.boundDumpLine);
         this.$$("StepBtn").addEventListener("click", this.boundProcStep);
+        this.$$("GoBtn").addEventListener("click", this.boundProcGo);
+        this.$$("StopBtn").addEventListener("click", this.boundProcStop);
         this.window.addEventListener("unload", this.boundShutDown);
 
         if (!this.intervalToken) {
@@ -192,13 +197,15 @@ class DiagPanel {
     shutDown() {
         /* Closes the panel, unwires its events, and deallocates its resources */
 
+        this.$$("LineNr").removeEventListener("change", this.boundDumpLine);
+        this.$$("StepBtn").removeEventListener("click", this.boundProcStep);
+        this.$$("GoBtn").removeEventListener("click", this.boundProcGo);
+        this.$$("StopBtn").removeEventListener("click", this.boundProcStop);
         if (this.intervalToken) {       // if the display auto-update is running
             this.window.clearInterval(this.intervalToken);  // kill it
             this.intervalToken = 0;
         }
 
-        this.$$("LineNr").removeEventListener("change", this.boundDumpLine);
-        this.$$("StepBtn").removeEventListener("click", this.boundProcStep);
         if (this.window) {
             this.window.removeEventListener("unload", this.boundShutDown);
             if (!this.window.closed) {

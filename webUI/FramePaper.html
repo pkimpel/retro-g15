@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>Bendix G-15 Device Frame Paper Page</title>
+<!--
+/***********************************************************************
+* retro-g15/webUI FramePaper.html
+************************************************************************
+* Copyright (c) 2022, Paul Kimpel.
+* Licensed under the MIT License, see
+*       http://www.opensource.org/licenses/mit-license.php
+************************************************************************
+* Bendix G-15 user interface blank page for use with Typewriter, Punch, etc.
+************************************************************************
+* 2022-03-24  P.Kimpel
+*   Original version, from retro-220 B220FramePaper.html
+***********************************************************************/
+-->
+<meta name="Author" content="Paul Kimpel">
+<meta http-equiv="Content-Script-Type" content="text/javascript">
+<meta http-equiv="Content-Style-Type" content="text/css">
+<link id=defaultStyleSheet rel=stylesheet type="text/css" href="Common.css">
+<style id=PaperFrameStyles>
+BODY {
+    padding:            2px;
+    background-color:   white}
+#Paper {
+    margin:             0;
+    font-size:          8pt}
+#EndOfPaper {
+    height:             1px;
+    border:             0;
+    opacity:            0}
+</style>
+</head>
+
+<!-- Don't add any additional whitespace to the BODY! -->
+<body><div id=Paper class=paper></div><div id=EndOfPaper></div></body>
+</html>

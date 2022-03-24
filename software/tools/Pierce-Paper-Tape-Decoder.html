@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<head>
+<title>Pierce G-15 Paper Tape Decoder</title>
+<meta name="Author" content="Paul Kimpel">
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta http-equiv="Content-Script-Type" content="text/javascript">
+<meta http-equiv="Content-Style-Type" content="text/css">
+
+<script>
+/***********************************************************************
+* retro-g15/software/tools Pierce-Paper-Tape-Decoder.html
+************************************************************************
+* Copyright (c) 2021, Paul Kimpel.
+* Licensed under the MIT License,
+*       see http://www.opensource.org/licenses/mit-license.php
+************************************************************************
+* Script to convert Paul Pierce's Bendix G-15 binary paper tape images
+* to the ASCII format used by David Green in his collection of G-15
+* software. See:
+*
+*   http://www.piercefuller.com/collect/bendix/
+*   http://members.iinet.net.au/~dgreen/Bendix/docs.html
+*
+* The Pierce format has one 8-bit byte per tape frame with the following
+* format:
+*
+*       _ _ _ 1 2 3.4 5
+*
+* where "_" are unused bits and will be zero, "." represents the location
+* of the sprocket hole in the tape, and 1-5 are the tape channel numbers
+* as used in the Bendix documentation. These channels are in reverse
+* order compared to normal usage (i.e., the high-order 5-channel is in
+* the low-order bit of the byte).
+*
+* This script reverses the order of the bits in each byte and then
+* translates them to Green's convention:
+*
+*     hex  graphic  description
+*      00           (blank tape, ignored)
+*      01     -     minus sign
+*      02     C     carriage return
+*      03     T     tabulate
+*      04     S     stop
+*      05     /     reload (precess line 23 to line 19 and read next block)
+*      06     .     period (ignored on input)
+*      07     W     wait
+*   08-0F     #     invalid codes
+*   10-19   0-9     decimal digits
+*   1A-1F   u-z     hexadecimal digits (A-F, respectively)
+*
+* A "^" in the output indicates that an incoming frame had a value greater
+* than 31, i.e., the high-order three bits in the byte were not zero.
+*
+* To use, select the .pt file using the file selection control on the
+* page. Selecting a file automatically starts the conversion.
+*
+* This version outputs the converted data by opening a browser window for
+* each file and inserting the converted text into a <pre> element in
+* that window. From there you can copy the text and paste into another
+* program that can save the data to a local filesystem.
+************************************************************************
+* 2020-11-21  P.Kimpel
+*   Original version, from retro-220 software/tools/220-Paper-Tape-Decoder.html.
+***********************************************************************/
+"use strict";
+
+window.onload = function() {
+    let panel = document.getElementById("TextPanel");
+    let tapeBlob = null;                // blob read from .ptp file
+    let tapeData = null;                // tape blob as a DataView
+
+    const rev5Bits = [  // reverse the low-order five bits in a byte
+        0x00, 0x10, 0x08, 0x18, 0x04, 0x14, 0x0C, 0x1C,
+        0x02, 0x12, 0x0A, 0x1A, 0x06, 0x16, 0x0E, 0x1E,
+        0x01, 0x11, 0x09, 0x19, 0x05, 0x15, 0x0D, 0x1D,
+        0x03, 0x13, 0x0B, 0x1B, 0x07, 0x17, 0x0F, 0x1F];
+
+    const g15Hex = [    // translate binary to G-15 hexadecimal convention
+        "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "u", "v", "w", "x", "y", "z"];
+
+
+    function spout(text) {
+        /* Appends "text"+NL as a new text node to the panel DOM element */
+        let e = document.createTextNode(text + "\n");
+
+        panel.appendChild(e);
+    }
+
+    function clearPanel() {
+        /* Clears the text panel */
+        let kid;
+
+        while (kid = panel.firstChild) {
+            panel.removeChild(kid);
+        }
+    }
+
+    function extractFile(data, fileNr, fileName) {
+        /* Extracts the 220 digits from the tape blob, converts the data
+           to ASCII, and writes it to a new window object within the browser.
+           Returns true if no more files should be converted */
+        let box = null;
+        let frame = 0;
+        let hex = "";
+        let len = data.byteLength;
+        let line = "";
+        let result = false;
+        let text = "";
+        let win = null;
+        let x = 0;
+
+        spout(" ");
+        spout("Extracting #" + fileNr + ": " + fileName);
+
+        win = window.open("", fileName, "width=800,height=600,status,scrollbars");
+        win.moveTo((screen.availWidth - 800)/2, (screen.availHeight - 600)/2);
+        win.focus();
+
+        box = win.document.createElement("code");
+        box.appendChild(win.document.createTextNode(fileName));
+        win.document.body.appendChild(box);
+        win.document.body.appendChild(win.document.createElement("br"));
+
+        box = win.document.createElement("textarea");
+        box.cols = 40;
+        box.rows = 30;
+        win.document.body.appendChild(box);
+
+        for (x=0; x<len; ++x) {
+            frame = data.getUint8(x);
+            if (frame > 31) {
+                line += "^";
+            } else {
+                frame = rev5Bits[frame];
+                if (frame > 15) {
+                    line += g15Hex[frame-16];
+                } else {
+                    switch (frame) {
+                    case 0:     // blank tape, ignore
+                        break;
+                    case 1:     // minus sign
+                        line += "-";
+                        break;
+                    case 2:     // carriage return
+                        line += "C";
+                        break;
+                    case 3:     // tabulate
+                        line += "T";
+                        break;
+                    case 4:     // stop
+                        text += line + "S\n\n";
+                        line = "";
+                        break;
+                    case 5:     // reload
+                        text += line + "/\n";
+                        line = "";
+                        break;
+                    case 6:     // period
+                        line += ".";
+                        break;
+                    case 7:     // wait
+                        line += "W";
+                        break;
+                    default:
+                        line +="#";
+                        break;
+                    }
+                }
+            }
+        }
+
+        box.value = text;
+        box.focus();
+        box.select();
+        //result = !confirm("Copy and save " + fileName + " from the sub-window.\n" +
+        //                  "Then click OK to continue or Cancel to quit.");
+        //win.close();
+        return result;
+    }
+
+    function fileLoader_onLoad(ev) {
+        /* Handle the onload event for an ArrayBuffer FileReader */
+        let tapeBlob = ev.target.result;
+        let tapeData = new DataView(tapeBlob);  // use DataView() to avoid problems with little-endians.
+
+        extractFile(tapeData, ev.target._fileNr, ev.target._fileName);
+    }
+
+    function fileSelector_onChange(ev) {
+        /* Handle the <input type=file> onchange event when afiles are selected */
+        let f = null;
+        let reader = null;
+        let x = 0; // for now...
+
+        clearPanel();
+        f = ev.target.files[x];
+        //alert("File selected: " + f.name +
+        //        "\nModified " + f.lastModifiedDate +
+        //        "\nType=" + f.type + ", Size=" + f.size + " octets");
+
+        reader = new FileReader();
+        reader.onload = fileLoader_onLoad;
+        reader._fileNr = x;
+        reader._fileName = f.name;
+        reader.readAsArrayBuffer(f);
+    }
+
+    function checkBrowser() {
+        /* Checks whether this browser can support the necessary stuff */
+        let missing = "";
+
+        if (!window.File) {missing += ", File"}
+        if (!window.FileReader) {missing += ", FileReader"}
+        if (!window.FileList) {missing += ", FileList"}
+        if (!window.Blob) {missing += ", Blob"}
+        if (!window.ArrayBuffer) {missing += ", ArrayBuffer"}
+        if (!window.DataView) {missing += ", DataView"}
+
+        if (missing.length == 0) {
+            return false;
+        } else {
+            alert("No can do... your browser does not support the following features:\n" +
+                    missing.substring(2));
+            return true;
+        }
+    }
+
+    /* Start of window.onload() */
+    if (checkBrowser()) {
+        return;
+    }
+    document.getElementById("FileSelector").addEventListener("change", fileSelector_onChange, false);
+}
+</script>
+</head>
+
+<body>
+
+<div style="position:relative; width:100%; height:3em">
+    <div style="position:absolute; left:0; top:0; width:auto">
+        Pierce G-15 Paper Tape Tape Decoder Utility
+    </div>
+    <div style="position:absolute; top:0; right:0; width:auto">
+        <input id=FileSelector type=file size=60>
+    </div>
+
+</div>
+
+<pre id=TextPanel>
+</pre>
+
+</body>
+</html>

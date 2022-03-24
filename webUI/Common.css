@@ -294,14 +294,14 @@ DIV.blackButton3 {
 
 BUTTON {
     font-family:        DejaVuSansWeb, sans-serif;
-    font-size:          8pt;
-    font-weight:        normal;
+    font-size:          10pt;
+    font-weight:        bold;
     line-height:        120%;
     width:              60px;
-    height:             40px;
+    height:             32px;
     padding-left:       0;
     padding-right:      0;
-    border:             1px solid #DDD;
+    border:             2px solid #DDD;
     border-radius:      4px}
 
 BUTTON.large {
@@ -339,6 +339,8 @@ BUTTON.silverBorder {
 .annunciatorLit {
     visibility:         visible}
 
+.active {
+    color:              #F93}           /* neon orange */
 .bold {
     font-weight:        bold}
 .center {

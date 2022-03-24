@@ -6,6 +6,12 @@
 *       http://www.opensource.org/licenses/mit-license.php
 ************************************************************************
 * JavaScript class module for the G-15 drum and system timing.
+*
+* Drum supports two timing mechanisms, the main one for the Processor,
+* and an auxilliary one for the I/O subsystem. I/O timing is initialized
+* to the main timing at the start of an I/O, but operates asynchronously
+* during the I/O. This allows the emulator to sumulate, to a degree, the
+* asynchronous nature of G-15 I/O.
 ************************************************************************
 * 2021-12-08  P.Kimpel
 *   Original version.
@@ -25,7 +31,7 @@ class Drum {
         let size = 0;
         const drumWords = 20*Util.longLineSize +        // 20x108 word long lines
                           4*Util.fastLineSize +         // 4x4 word fast lines
-                          4                             // 1x4 word MZ I/O buffer line
+                          4 +                           // 1x4 word MZ I/O buffer line
                           Util.longLineSize;            // 1x108 word CN number track
 
         let buildRegisterArray = (length, bits, invisible) => {
@@ -38,11 +44,17 @@ class Drum {
             return a;
         };
 
+        // Main system timing variables
         this.eTime = 0;                 // current emulation time, ms
         this.eTimeSliceEnd = 0;         // current timeslice end emulation time, ms
+        this.L = new Register(7, this, false);  // current drum rotational position: word-time 0-107
+        this.drumTimer = new Util.Timer();
 
-        // Current drum rotational position: word-time
-        this.L = new Register(7, this, false);
+        // I/O subsystem timing variables
+        this.ioTime = 0;                // current I/O emulation time, ms
+        this.ioL = new Register(7, this, false);// current I/O drum rotational position
+        this.ioTimer = new Util.Timer();
+        this.line19Timer = new Util.Timer();
 
         // Drum storage and line layout
         this.drum = new ArrayBuffer(drumWords*Util.wordBytes);  // Drum: 32-bit Uint words
@@ -102,7 +114,7 @@ class Drum {
         /* Initializes the drum and emulation timing */
 
         this.eTime = performance.now();
-        this.eTimeSliceEnd = this.eTime + Drum.eSliceTime;
+        this.eTimeSliceEnd = this.eTime + Drum.minDelayTime;
         this.L.value = Math.round(this.eTime/Util.wordTime) % Util.longLineSize;
     }
 
@@ -113,14 +125,13 @@ class Drum {
         Since most browsers will force a setTimeout() to wait for a minimum of
         4ms, this routine will not delay if the difference between real time
         (as reported by performance.now()) and emulation time is less than
-        Drum.eSliceTime */
-        let delay = this.eTime - performance.now();
+        Drum.minDelayTime */
 
-        if (delay < Drum.eSliceTime) {
+        if (this.eTime < this.eTimeSliceEnd) {
             return Promise.resolve(null);       // i.e., don't wait at all
         } else {
-            this.eTimeSliceEnd = this.eTime + Drum.eSliceTime;
-            return new Promise(resolve => setTimeout(resolve, delay));
+            this.eTimeSliceEnd = this.eTime + Drum.minDelayTime;
+            return this.drumTimer.delayUntil(this.eTime);
         }
     }
 
@@ -139,11 +150,7 @@ class Drum {
         /* Simulates waiting for the drum to rotate to the specified word
         location. Locations must be non-negative. Updates the drum location
         and the emulation clock via waitFor() */
-        let words = loc - this.L.value;
-
-        if (words < 0) {                // wrap-around
-            words += Util.longLineSize;
-        }
+        let words = (loc - this.L.value + Util.longLineSize) % Util.longLineSize;
 
         if (words > 0) {
             this.waitFor(words);
@@ -237,9 +244,276 @@ class Drum {
         this.PN[0].setBit(0, sign);
     }
 
+
+    /*******************************************************************
+    *  I/O Subsystem Drum Methods                                      *
+    *******************************************************************/
+
+    /**************************************/
+    get ioL4() {
+        /* Returns the current word-time for four-word lines */
+
+        return this.ioL.value % Util.fastLineSize;
+    }
+
+    /**************************************/
+    ioStartTiming() {
+        /* Initializes the drum and emulation timing for I/O */
+
+        this.ioTime = this.eTime;
+        this.ioL.value = this.L.value;
+    }
+
+    /**************************************/
+    ioThrottle() {
+        /* Returns a promise that unconditionally resolves after a delay to
+        allow browser real time to catch up with the I/O subsystem clock, this.ioTime.
+        Since most browsers will force a setTimeout() to wait for a minimum of
+        4ms, this routine will not delay if the difference between real time
+        (as reported by performance.now()) and emulation time is less than
+        Drum.minDelayTime */
+
+        return this.ioTimer.delayUntil(this.ioTime);
+    }
+
+    /**************************************/
+    ioWaitFor(wordTimes) {
+        /* Simulates waiting for the drum to rotate through the specified number
+        of word-times, which must be non-negative. Increments the current drum
+        location by that amount and advances the emulation clock accordingly */
+
+        this.ioL.value = (this.ioL.value + wordTimes) % Util.longLineSize;
+        this.ioTime += Util.wordTime*wordTimes;
+    }
+
+    /**************************************/
+    ioWaitUntil(loc) {
+        /* Simulates waiting for the drum to rotate to the specified word
+        location. Locations must be non-negative. Updates the drum location
+        and the emulation clock via waitFor() */
+        let words = (loc - this.ioL.value + Util.longLineSize) % Util.longLineSize;
+
+        if (words > 0) {
+            this.ioWaitFor(words);
+        }
+    }
+
+    /**************************************/
+    ioWaitUntil4(loc) {
+        /* Simulates waiting for the drum to rotate to the specified word
+        location on a 4-word line. Locations must be non-negative. Updates
+        the drum location and the emulation clock via waitFor() */
+        let words = (loc - this.ioL.value + Util.longLineSize) % Util.fastLineSize;
+
+        if (words > 0) {
+            this.ioWaitFor(words);
+        }
+    }
+
+    /**************************************/
+    ioRead19() {
+        /* Reads a word transparently from drum line 19 at the current
+        location, this.ioL */
+
+        return this.line[19][this.ioL.value];
+    }
+
+    /**************************************/
+    ioWrite19(word) {
+        /* Writes a word transparently to drum line 19 at the current
+        location */
+
+        this.line[19][this.ioL.value] = word;
+    }
+
+    /**************************************/
+    ioRead23() {
+        /* Reads a word transparently from drum line 23 at the current
+        location, this.ioL */
+
+        return this.line[23][this.ioL4];
+    }
+
+    /**************************************/
+    ioWrite23(word) {
+        /* Writes a word transparently to drum line 23 at the current
+        location */
+
+        this.line[23][this.ioL4] = word;
+    }
+
+    /**************************************/
+    ioReadMZ() {
+        /* Reads a word transparently from the I/O buffer MZ at the current
+        location, this.ioL */
+
+        return this.MZ[this.ioL4];
+    }
+
+    /**************************************/
+    ioWriteMZ(word) {
+        /* Writes a word transparently to the I/O buffer MZ at the current
+        location, this.ioL */
+
+        this.MZ[this.ioL4] = word;
+    }
+
+    /**************************************/
+    async ioPrecessMZTo19() {
+        /* Precesses all of line MZ to line 19, leaving the original contents
+        of MZ in words 0-3 of 19, precessing the original contents of line 19
+        by four words to higher addresses in the line, and leaving the original
+        contents of words 104-107 of line 19 in line MZ. Since this operation
+        can run concurrently with other I/O-based drum operations, it doesn't
+        use the regular ioReadX or ioWriteX routines nor update this.ioL */
+        let delay = (Util.longLineSize - this.ioL) % Util.longLineSize;
+
+        for (let x=0; x<Util.longLineSize; ++x) {
+            // Synchronize drum timing
+            if (delay > Util.minTimeout) {
+                await this.line19Timer.set(delay);
+                delay = 0;
+            }
+
+            let mx = x % Util.fastLineSize;
+            let wMZ = this.MZ[mx];
+            //console.log("PrecessMZTo19: %3d %s %s", x,
+            //    wMZ.toString(16).padStart(8, "0"),
+            //    this.line[19][x].toString(16).padStart(8, "0"));
+
+            this.MZ[mx] = this.line[19][x];
+            this.line[19][x] = wMZ;
+            delay += Util.wordTime;
+        }
+
+        await this.line19Timer.set(delay);
+    }
+
+    /**************************************/
+    async ioPrecessLongLineToMZ(line) {
+        /* Precesses the original contents of words 0-3 of the specified long
+        line to MZ by three bits, inserting zero in the three low-order bits of
+        MZ word 0, and returning the original three high order bits of word 3
+        from the long line. This is normally used to load MZ from the long line
+        and return the first format code get the next data code for output */
+        const bits = 3;
+        let keepBits = Util.wordBits - bits;
+        let keepMask = Util.wordMask >> bits;
+        let codeMask = Util.wordMask >> keepBits;
+        let carry = 0;
+
+        this.ioWaitUntil(0);
+        for (let x=0; x<Util.fastLineSize; ++x) {
+            let word = this.line[line][x] & Util.wordMask;
+            this.ioWriteMZ(((word & keepMask) << bits) | carry);
+            carry = word >> keepBits;
+            this.ioWaitFor(1);
+        }
+
+        await this.ioThrottle();
+        return carry;
+    }
+
+    /**************************************/
+    async ioCopy23ToMZ() {
+        /* Copies the four words of line 23 to MZ, freeing 23 for more input */
+
+        this.ioWaitUntil4(0);
+        for (let x=0; x<Util.fastLineSize; ++x) {
+            this.ioWriteMZ(this.ioRead23());
+            this.ioWaitFor(1);
+        }
+
+        await this.ioThrottle();
+    }
+
+    /**************************************/
+    async ioPrecess19ToCode(bits) {
+        /* Precesses the original contents of line 19 by four bits to higher
+        word numbers, inserting zero in the four low-order bits of word 0, and
+        returning the original four high order bits of word 107. This is
+        normally used to get the next data code for output. The sign bit in word
+        107 is sampled before precession of that word takes place, and the state
+        of that bit is also returned */
+        let keepBits = Util.wordBits - bits;
+        let keepMask = Util.wordMask >> bits;
+        let codeMask = Util.wordMask >> keepBits;
+        let carry = 0;
+        let sign = 0;
+
+        this.ioWaitUntil(0);
+        for (let x=0; x<Util.longLineSize; ++x) {
+            let word = this.ioRead19() & Util.wordMask;
+            if (x == Util.longLineSize-1) {
+                sign = word & 1;
+            }
+
+            this.ioWrite19((word & keepMask) << bits);
+            carry = word >> keepBits;
+            this.ioWaitFor(1);
+            if (x % 15 == 0) {
+                await this.ioThrottle();
+            }
+        }
+
+        await this.ioThrottle();
+        return [carry, sign];
+    }
+
+    /**************************************/
+    async ioTest19Zero() {
+        /* Tests the contents of line 19 over one full drum cycle for zero.
+        If no non-zero words are found, returns true, otherwise false */
+        let zeroed = true;
+
+        this.ioWaitUntil(0);
+        for (let x=0; x<Util.longLineSize; ++x) {
+            if (this.ioRead19()) {
+                zeroed = false;
+            }
+
+            this.ioWaitFor(1);
+            if (x % 15 == 0) {
+                await this.ioThrottle();
+            }
+        }
+
+        await this.ioThrottle();
+        return zeroed;
+    }
+
+    /**************************************/
+    async ioPrecessCodeTo23(code, bits) {
+        /* Stores the value of "code" into the low-order "bits" of line 23
+        word 0, precessing the original contents of line 23 to higher word
+        numbers and returning the high-order "bits" number of bits from line
+        23 word 3. This will normally be called 29 times to fully populate
+        line 23 before doing a Reload operation */
+        let keepBits = Util.wordBits - bits;
+        let keepMask = Util.wordMask >> bits;
+        let codeMask = Util.wordMask >> keepBits;
+        let carry = code & codeMask;
+
+        this.ioWaitUntil4(0);
+        for (let x=0; x<Util.fastLineSize; ++x) {
+            let word = this.ioRead23() & Util.wordMask;
+            this.ioWrite23(((word & keepMask) << bits) | carry);
+            carry = word >> keepBits;
+            this.ioWaitFor(1);
+        }
+
+        //console.log("PrecessCodeTo23: %s  %s %s %s %s", (code & codeMask).toString(16),
+        //    this.line[23][0].toString(16).padStart(8, "0"),
+        //    this.line[23][1].toString(16).padStart(8, "0"),
+        //    this.line[23][2].toString(16).padStart(8, "0"),
+        //    this.line[23][3].toString(16).padStart(8, "0"));
+        await this.ioThrottle();
+        return carry;
+    }
+
 } // class Drum
 
 
 // Static class properties
 
-Drum.eSliceTime = 6;                    // minimum time to accumulate throttling delay, > 4ms
+Drum.minDelayTime = 4;                  // minimum time to accumulate throttling delay, >= 4ms

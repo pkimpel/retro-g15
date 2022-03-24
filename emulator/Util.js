@@ -24,3 +24,65 @@ export const wordTime = 60000/1800/124;         // one word time on the drum [18
 export const bitTime = wordTime/wordBits;       // one bit time on the drum, ms
 export const drumCycleTime = wordTime*longLineSize;
                                                 // one drum cycle (108 words), ms
+export const minTimeout = 4;                    // browsers will do setTimeout for at least 4ms
+
+
+export class Timer {
+
+    constructor() {
+        /* Constructor for a Timer object that wraps setTimeout() */
+
+        this.rejector = null;
+        this.timerHandle = 0;
+        this.value = null;
+    }
+
+    set(delay, value) {
+        /* Initiates the timer for "delay" milliseconds and returns a Promise that
+        will resolve when the timer expires. The "value" parameter is optional and
+        will become the value returned by the Promise */
+
+        if (delay <= minTimeout) {
+            return Promise.resolve(value);
+        } else {
+            return new Promise((resolve, reject) => {
+                this.value = value;
+                this.rejector = reject;
+                this.timerHandle = setTimeout(() => {
+                    resolve(this.value);
+                    this.rejector = null;
+                    this.value = null;
+                    this.timerHandle = 0;
+                }, delay);
+            });
+        }
+    }
+
+    delayUntil(then, value) {
+        /* Initiates the timer for a delay until performance.now() reaches "then".
+        "value" is the same as for set(). Returns a Promise that resolves when
+        the time is reached */
+
+        return this.set(then - performance.now(), value);
+    }
+
+    clear() {
+        /* Clears the timer if it is set */
+
+        if (this.timerHandle !== 0) {
+            clearTimeout(this.timerHandle);
+            this.rejector = null;
+            this.value = null;
+            this.timerHandle = 0;
+        }
+    }
+
+    reject() {
+        /* Clears the timer if it is set and rejects the Promise */
+
+        if (this.timerHandle !== 0) {
+            this.rejector();
+            this.clear();
+        }
+    }
+}

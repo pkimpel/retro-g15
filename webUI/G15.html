@@ -68,28 +68,30 @@
     </div>
 </div>
 
-<audio id=SystemBell preload=none
+<audio id=SystemBell preload=auto
        src="resources/ding.wav" type="audio/wav"></audio>
 
 <!-- Front panel overlay -->
 
-<div id=FrontPanel>
+<div id=FrontPanel tabindex=-1>         <!-- tabindex allows the div to receive focus -->
     <div id=ControlPanelFrame>
 
         <div id=PaperTapePanel>
             <div id=PaperTapePunch>
                 <div id=PunchTapeCaption class=caption>PUNCH</div>
-                <pre id=PunchTape class=paper title="Double-click to unload text"></pre>
-                <div id=PunchTapeUnloadBtn class=blackButton3></div>
+                <input id=PunchTapeView type=text READONLY>
                 <div id=PunchTapeUnloadCaption class=caption>UNLOAD</div>
+                <div id=PunchTapeUnloadBtn class=blackButton3></div>
             </div>
 
             <div id=PaperTapeReader>
                 <div id=PaperTapeReaderCaption class=caption>READER</div>
                 <input id=PRFileSelector type=file size=60 multiple>
-                <div id=PaperTapeReaderUnloadBtn class=blackButton3></div>
+                <div id=PaperTapeRewindCaption class=caption>REWIND</div>
+                <div id=PRRewindBtn class=blackButton3></div>
                 <div id=PaperTapeReaderUnloadCaption class=caption>UNLOAD</div>
-                <meter id=PRTapeSupplyBar min=0 max=100 value=0 title="Click to clear input tape"></meter>
+                <div id=PRUnloadBtn class=blackButton3></div>
+                <progress id=PRTapeSupplyBar 0 max=100 value=0 title="Tape Buffer Remaining"></progress>
             </div>
         </div>
 

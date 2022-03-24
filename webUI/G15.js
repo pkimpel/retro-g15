@@ -15,13 +15,20 @@ import {ControlPanel} from "./ControlPanel.js";
 import {DiagPanel} from "./DiagPanel.js";
 import {Processor} from "../emulator/Processor.js";
 
+import {PhotoTapeReader} from "./PhotoTapeReader.js";
+import {PhotoTapePunch} from "./PhotoTapePunch.js";
+
 let globalLoad = (ev) => {
     //let config = new G15SystemConfig(); // system configuration object
-    let controlPanel = null;            // controlPanel object
-    let devices = {};                   // hash of I/O devices for the Processor
     let diagPanel = null;               // handle for the diagnostic panel
-    let processor = null;               // the Processor object
     let statusMsgTimer = 0;             // status message timer control cookie
+
+    const context = {
+        $$,
+        closeDiagPanel,
+        systemShutDown,
+        window
+    };
 
 
     /**************************************/
@@ -48,25 +55,26 @@ let globalLoad = (ev) => {
     /**************************************/
     function systemShutDown() {
         /* Powers down the Processor and shuts down all of the panels and I/O devices */
+        let devices = context.devices;
+        let processor = context.processor;
 
         processor.stop();
-        /**************************************
         for (const e in devices) {
             if (devices[e]) {
                 devices[e].shutDown();
                 devices[e] = null;
             }
         }
-        ************************************/
 
         closeDiagPanel();
-        processor.controlPanel = null;
-        controlPanel.shutDown();
-        controlPanel = null;
+        context.controlPanel.shutDown();
+        context.controlPanel = null;
 
         processor.powerDown();
-        processor = null;
+        context.devices = null;
+        context.processor = null;
 
+        $$("G15Logo").removeEventListener("dblclick", openDiagPanel, false);
         $$("FrontPanel").style.display = "none";
         $$("StartUpBtn").disabled = false;
         $$("StartUpBtn").focus();
@@ -83,19 +91,19 @@ let globalLoad = (ev) => {
         $$("StartUpBtn").disabled = true;
         //$$("ConfigureBtn").disabled = true;
 
-        processor = new Processor();
-        const context = {               // passed to ControlPanel constructor
-            $$,
-            closeDiagPanel,
-            processor,
-            systemShutDown
-        };
-
         window.addEventListener("beforeunload", beforeUnload);
         $$("FrontPanel").style.display = "block";       // must be done before panel is built
-        processor.powerUp();
-        controlPanel = new ControlPanel(context);
-        processor.controlPanel = controlPanel;
+        $$("G15Logo").addEventListener("dblclick", openDiagPanel, false);
+
+        context.processor = new Processor(context);
+        context.controlPanel = new ControlPanel(context);
+        context.devices = {
+            "photoTapeReader":          new PhotoTapeReader(context),
+            "photoTapePunch":           new PhotoTapePunch(context)
+        }
+
+        context.devices.photoTapeReader.preload();      // preload the PPR image
+        context.processor.powerUp();
     }
 
     /**************************************/
@@ -122,7 +130,6 @@ let globalLoad = (ev) => {
     /**************************************/
     function openDiagPanel(ev) {
         /* Opens the emulator's diagnostic panel in a new sub-window */
-        const context = {processor, closeDiagPanel};
 
         if (!diagPanel) {
             diagPanel = new DiagPanel(context);
@@ -174,11 +181,8 @@ let globalLoad = (ev) => {
 
     window.removeEventListener("load", globalLoad, false);
     $$("StartUpBtn").disabled = true;
-    //$$("EmulatorVersion").textContent = G15Processor.version;
+    //$$("EmulatorVersion").textContent = Processor.version;
     if (checkBrowser()) {
-        //showConfigName();
-
-        $$("G15Logo").addEventListener("dblclick", openDiagPanel, false);
         $$("StartUpBtn").disabled = false;
         $$("StartUpBtn").addEventListener("click", systemStartup, false);
         $$("StartUpBtn").focus();

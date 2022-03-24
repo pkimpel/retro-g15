@@ -120,34 +120,32 @@ H1 {
 
 #PunchTapeCaption {
     position:           absolute;
+    top:                4px;
     left:               0;
-    top:                0;
     width:              60px;
     text-align:         left}
-#PunchTape {
+#PunchTapeView {
     position:           absolute;
-    left:               60px;
-    right:              84px;
     top:                0px;
+    left:               60px;
+    width:              calc(100% - 148px);
     min-height:         16px;
-    overflow-x:         hidden;
-    overflow-y:         hidden;
     color:              black;
     background-color:   white;
     text-align:         right;
     border:             1px solid gray}
-#PunchTape .red {
+#PunchTapeView .red {
     color:              #F00}
 
-#PunchTapeUnloadBtn {
-    position:           absolute;
-    top:                -2px;
-    right:              0}
 #PunchTapeUnloadCaption {
     position:           absolute;
     top:                4px;
     right:              28px;
     text-align:         right}
+#PunchTapeUnloadBtn {
+    position:           absolute;
+    top:                -2px;
+    right:              0}
 
 #PaperTapeReader {
     position:           absolute;
@@ -155,7 +153,7 @@ H1 {
     left:               8px;
     right:              8px}
 #PaperTapeReaderCaption {
-    top:                0;
+    top:                16px;
     left:               0;
     width:              60px;
     text-align:         left}
@@ -164,18 +162,28 @@ H1 {
     position:           absolute;
     top:                0;
     left:               60px;
-    width:              calc(100% - 100px);
+    width:              calc(100% - 170px);
     color:              white}
 
-#PaperTapeReaderUnloadBtn {
+#PaperTapeRewindCaption {
     position:           absolute;
-    top:                20px;
-    right:              0}
+    top:                4px;
+    right:              52px;
+    text-align:         right}
+#PRRewindBtn {
+    position:           absolute;
+    top:                -2px;
+    right:              24px}
+
 #PaperTapeReaderUnloadCaption {
     position:           absolute;
     top:                26px;
     right:              28px;
     text-align:         right}
+#PRUnloadBtn {
+    position:           absolute;
+    top:                20px;
+    right:              0}
 
 #PRTapeSupplyBar {
     position:           absolute;

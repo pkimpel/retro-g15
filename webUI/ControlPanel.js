@@ -14,10 +14,11 @@
 
 export {ControlPanel};
 
+import * as IOCodes from "../emulator/IOCodes.js";
 import * as Util from "../emulator/Util.js";
-import {PanelRegister} from "./PanelRegister.js";
-import {NeonLamp} from "./NeonLamp.js";
 import {ColoredLamp} from "./ColoredLamp.js";
+import {NeonLamp} from "./NeonLamp.js";
+import {PanelRegister} from "./PanelRegister.js";
 import {ToggleSwitch} from "./ToggleSwitch.js";
 
 class ControlPanel {
@@ -31,22 +32,23 @@ class ControlPanel {
             processor is the Processor object
             systemShutDown() shuts down the emulator
         */
-        let $$ = context.$$;
-        let panel = $$("ControlPanel");
+        let $$ = this.$$ = context.$$;
+        let panel = this.panel = $$("ControlPanel");
         const panelCenter = panel.clientWidth / 2;
 
-        this.$$ = $$;
         this.context = context;
-        this.panel = panel;
         this.intervalToken = 0;         // interval timer cancel token
         this.boundControlSwitchChange = this.controlSwitchChange.bind(this);
+        this.boundPanelKeydown = this.panelKeydown.bind(this);
+        this.boundPanelKeyup = this.panelKeyup.bind(this);
         this.boundUpdatePanel = this.updatePanel.bind(this);
+        this.boundSystemReset = this.systemReset.bind(this);
 
         this.systemBell = $$("SystemBell");
         this.lastBellTime = 0;
 
         // Paper tape panel
-        $$("PunchTape").textContent = "";
+        $$("PunchTapeView").textContent = "";
         $$("PRFileSelector").value = null;
         $$("PRTapeSupplyBar").value = 0;
 
@@ -133,16 +135,24 @@ class ControlPanel {
 
         // Events
 
-        $$("EnableSwitchSet").addEventListener("click", this.boundControlSwitchChange, false);
-        $$("PunchSwitchSet").addEventListener("click", this.boundControlSwitchChange, false);
-        $$("ComputeSwitchSet").addEventListener("click", this.boundControlSwitchChange, false);
         $$("PowerOffBtn").addEventListener("click", context.systemShutDown, false);
+        $$("ResetBtn").addEventListener("click", this.boundSystemReset, false);
 
         if (!this.intervalToken) {
             this.intervalToken = setInterval(this.boundUpdatePanel, ControlPanel.displayRefreshPeriod);
         }
+    }
 
-        this.warmUp();
+    /**************************************/
+    enablePanel() {
+        /* Enables events for the Control Panel controls that should not be
+        until the system has been reset and initialized */
+
+        this.$$("FrontPanel").addEventListener("keydown", this.boundPanelKeydown, false);
+        this.$$("FrontPanel").addEventListener("keyup", this.boundPanelKeyup, false);
+        this.$$("EnableSwitchSet").addEventListener("click", this.boundControlSwitchChange, false);
+        this.$$("PunchSwitchSet").addEventListener("click", this.boundControlSwitchChange, false);
+        this.$$("ComputeSwitchSet").addEventListener("click", this.boundControlSwitchChange, false);
     }
 
     /**************************************/
@@ -202,6 +212,65 @@ class ControlPanel {
     }
 
     /**************************************/
+    panelKeydown(ev) {
+        /* Handles the keydown event from FrontPanel. Processes data input from
+        the keyboard, Enable switch command codes, and Escape (for toggling the
+        Enable switch) */
+        let code = ev.key.charCodeAt(0) & 0x7F;
+        let p = this.context.processor; // local copy of Processor reference
+
+        switch (ev.key) {
+        case "-": case "/":
+        case "0": case "1": case "2": case "3": case "4":
+        case "5": case "6": case "7": case "8": case "9":
+        case "S": case "s":
+        case "U": case "V": case "W": case "X": case "Y": case "Z":
+        case "u": case "v": case "w": case "x": case "y": case "z":
+            p.receiveKeyboardCode(IOCodes.ioCodeFilter[code]);
+            break;
+        case "Q": case "q":
+        case "P": case "p":
+        case "B": case "b":
+        case "F": case "f":
+        case "T": case "t":
+        case "A": case "a":
+        case "C": case "c":
+        case "I": case "i":
+        case "M": case "m":
+        case "R": case "r":
+            p.receiveKeyboardCode(-code);
+            break;
+        case "Enter":
+            p.receiveKeyboardCode(IOCodes.ioCodeCR);
+            break;
+        case "Tab":
+            p.receiveKeyboardCode(IOCodes.ioCodeTab);
+            break;
+        case "Escape":
+            if (!ev.repeating) {
+                p.enableSwitchChange(1);
+                this.$$("EnableSwitchOff").checked = false;
+                this.$$("EnableSwitchOn").checked = true;
+            }
+            break;
+        }
+    }
+
+    /**************************************/
+    panelKeyup(ev) {
+        /* Handles the keyup event from FrontPanel */
+        let p = this.context.processor; // local copy of Processor reference
+
+        switch (ev.key) {
+        case "Escape":
+            p.enableSwitchChange(0);
+            this.$$("EnableSwitchOff").checked = true;
+            this.$$("EnableSwitchOn").checked = false;
+            break;
+        }
+    }
+
+    /**************************************/
     ringBell(wordTimes) {
         /* Rings the system's bell with a volume determined by the number of
         word times specified by the parameter. Due to the reaction time of the
@@ -223,57 +292,31 @@ class ControlPanel {
     }
 
     /**************************************/
+    async systemReset(ev) {
+        /* Event handler for the RESET button */
+
+        this.dcPowerLamp.set(1);
+        await this.context.processor.systemReset();
+        this.readyLamp.set(1);
+        this.enablePanel();
+        this.$$("ResetBtn").disabled = true;
+    }
+
+    /**************************************/
     shutDown() {
         /* Closes the panel, unwires its events, and deallocates its resources */
 
-        this.regCharacteristic = null;
-        this.regSource = null;
-        this.regDest = null;
-        this.regIO = null;
-        this.regCmdLine = null;
-        this.lampOverflow = null;
-        this.lampGODA = null;
-        this.lampHalt = null;
-        this.lampDBPR = null;
-        this.lampPSign = null;
-        this.lampNCAR = null;
-        this.lampTest = null;
-        this.lampAS = null;
-
-        this.dcPowerLamp = null;
-        this.readyLamp = null;
-
+        document.removeEventListener("keydown", this.boundPanelKeydown, false);
+        document.removeEventListener("keyup", this.boundKeyup, false);
         this.$$("EnableSwitchSet").removeEventListener("click", this.boundControlSwitchChange, false);
         this.$$("PunchSwitchSet").removeEventListener("click", this.boundControlSwitchChange, false);
         this.$$("ComputeSwitchSet").removeEventListener("click", this.boundControlSwitchChange, false);
         this.$$("PowerOffBtn").removeEventListener("click", this.context.systemShutDown, false);
-        //this.$$("ResetBtn").removeEventListener("click", this.context.XXX, false);
+        this.$$("ResetBtn").removeEventListener("click", this.context.boundSystemReset, false);
 
         if (this.intervalToken) {
             clearInterval(this.intervalToken);
         }
-    }
-
-    /**************************************/
-    warmUp() {
-        /* Simulates power warm-up by gradually increasing the brightness of
-        the DC Power lamp */
-        let level = 0;                  // lamp intensity level
-        const maxLevel = 5;
-
-        let brighten = () => {
-            if (level > maxLevel) {
-                // ?? Eventually this will need to trigger memory initialization and loading the number track
-                //$$("ResetBtn").addEventListener("click", this.context.processor.powerUp, false);
-            } else {
-                ++level;
-                setTimeout(brighten, 100);
-            }
-
-            this.dcPowerLamp.set(level);
-        };
-
-        setTimeout(brighten, 3000);
     }
 
 } // class ControlPanel

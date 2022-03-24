@@ -18,6 +18,8 @@ import {Drum} from "./Drum.js";
 import {FlipFlop} from "./FlipFlop.js";
 import {Register} from "./Register.js";
 
+import * as IOCodes from "./IOCodes.js";
+
 const regMQ = 24;                          // MQ register drum line
 const regID = 25;                          // ID register drum line
 const regPN = 26;                          // PN register drum line
@@ -26,11 +28,12 @@ const regAR = 28;                          // AR register drum line
 
 class Processor {
 
-    constructor() {
-        /* Constructor for the G-15 processor object */
+    constructor(context) {
+        /* Constructor for the G-15 processor object. The "context" object
+        supplies UI and I/O objects from the G-15 emulator global environment */
 
         this.drum = new Drum();                         // the drum memory
-        this.panel = null;                              // set from G15.js after initialization
+        this.context = context;
 
         // Flip-flops
         this.AS = new FlipFlop(this.drum, false);       // Automatic/Standard PPT reload FF (AN models only)
@@ -38,13 +41,14 @@ class Processor {
         this.C1 = new FlipFlop(this.drum, false);       // single/double bit in command
         this.CG = new FlipFlop(this.drum, false);       // next command from AR FF
         this.CH = new FlipFlop(this.drum, false);       // HALT FF
-        this.CJ = new FlipFlop(this.drum, false);       // initiate read command-state (CH/ . CZ)
+        this.CJ = new FlipFlop(this.drum, true);        // initiate read command-state (CH/ . CZ)
         this.CQ = new FlipFlop(this.drum, false);       // TEST false FF (=> N = N+1)
         this.CS = new FlipFlop(this.drum, false);       // "via AR" characteristic FF
-        this.CZ = new FlipFlop(this.drum, false);       // read-command-state enabled
+        this.CZ = new FlipFlop(this.drum, true);        // read-command-state enabled (used here to control stepping)
         this.DI = new FlipFlop(this.drum, false);       // immediate/deferred execution bit in command
         this.FO = new FlipFlop(this.drum, false);       // overflow FF
         this.IP = new FlipFlop(this.drum, false);       // sign FF for 2-word registers
+        this.OS = new FlipFlop(this.drum, true);        // I/O sign bit buffer
         this.RC = new FlipFlop(this.drum, false);       // read-command state FF
         this.SA = new FlipFlop(this.drum, false);       // typewriter enable (safety) switch FF
         this.TR = new FlipFlop(this.drum, false);       // transfer-state FF
@@ -66,24 +70,29 @@ class Processor {
         this.cmdLine = 0;                               // current actual command line (see CDXlate)
         this.dpCarry = 0;                               // inter-word carry bit for double-precision
         this.evenSign = 0;                              // sign of the even word of a double-precision pair
+        this.deferredBP = false;                        // breakpoint deferred due to return exit cmd
         this.poweredOn = false;                         // powered up and ready to run
-        this.tracing = false;                           // trace command debugging
+        this.tracing = true;                            // trace command debugging
 
         // UI switch state
         this.computeSwitch = 0;                         // 0=OFF, 1=GO, 2=BP
         this.enableSwitch = 0;                          // 0=normal, 1=enable typewriter keyboard
         this.punchSwitch = 0;                           // 0=off, 1=copy to paper-tape punch
         this.violationHaltSwitch = 0;                   // halt on standard-command violation
-    }
 
-    /**************************************/
-    set controlPanel(panel) {
-        this.panel = panel;
+        // I/O Subsystem
+        this.activeIODevice = null;                     // current I/O device object
+        this.ioInputBitCount = 0;                       // current input bit count
+        this.ioTimer = new Util.Timer();                // general timer for I/O operations
     }
 
     /**************************************/
     traceState() {
-        // Eventually log current state to the console
+        // Log current processor state to the console
+
+        console.warn("<TRACE>     L=%2d.%3d DI=%d T=%3d BP=%d N=%3d CA=%d S=%2d D=%2d C1=%d",
+                this.cmdLine, this.cmdLoc.value, this.DI.value, this.T.value, this.BP.value,
+                this.N.value, this.CA.value, this.S.value, this.D.value, this.C1.value);
     }
 
     /**************************************/
@@ -91,9 +100,9 @@ class Processor {
         /* Posts a violation of standard-command usage */
 
         this.VV.value = 1;
-        console.warn(">VIOLATION: %s cmd@%d.%d DI=%d T=%d BP=%d N=%d CH=%d S=%d D=%d C1=%d",
-                msg, this.cmdLine, this.cmdLoc.value, this.DI.value, this.T.value, this.BP.value,
-                this.N.value, this.CA.value, this.S.value, this.D.value, this.C1.value);
+        console.warn("<VIOLATION> L=%2d.%3d DI=%d T=%3d BP=%d N=%3d CA=%d S=2%d D=2%d C1=%d : %s",
+                this.cmdLine, this.cmdLoc.value, this.DI.value, this.T.value, this.BP.value,
+                this.N.value, this.CA.value, this.S.value, this.D.value, this.C1.value, msg);
         if (this.violationHaltSwitch) {
             this.stop();
         }
@@ -148,72 +157,16 @@ class Processor {
         this.drum.PN[1].updateLampGlow(gamma);
         this.drum.AR.updateLampGlow(gamma);
         this.drum.CM.updateLampGlow(gamma);
-
     }
 
     /**************************************/
-    readCommand() {
-        /* Reads the next command into the command register (CM) and sets up the
-        processor state to execute that command */
-        let cmd = 0;                    // command word
-        let loc = this.N.value;         // word-time of next command
+    setCommandLine(cmd) {
+        /* Sets this.CD and this.cmdLine to specify the drum line for command
+        execution */
 
-        if (this.CQ.value) {            // check the result of a prior TEST
-            loc = (loc+1) % Util.longLineSize;
-            this.CQ.value = 0;
-        }
-
-        this.drum.waitUntil(loc);
-        if (this.CG.value) {            // next command from AR
-            this.cmdLoc.value = 127;
-            cmd = this.drum.read(regAR);
-            this.CG.value = 0;
-        } else {                        // next command from one of the CD lines
-            this.cmdLoc.value = loc;
-            cmd = this.drum.read(this.cmdLine);
-        }
-
-        this.C1.value = cmd & 0x01;             // single/double mode
-        this.D.value =  (cmd >> 1) & 0x1F;      // destination line
-        this.S.value =  (cmd >> 6) & 0x1F;      // source line
-        this.CA.value = (cmd >> 11) & 0x1F;     // characteristic code
-        this.N.value =  (cmd >> 13) & 0x7F;     // next command location
-        this.BP.value = (cmd >> 20) & 0x01;     // breakpoint flag
-        this.T.value =  (cmd >> 21) & 0x7F;     // operand timing number
-        this.DI.value = (cmd >> 28) & 0x01;     // immediate/deferred execution bit
-
-        // Set "via AR" flip-flop (CX . S7/ . D7/) - for display only
-        this.CS.value = (((cmd >> 12) & 1) && (~(cmd >> 8) & 7) && (~(cmd >> 3) & 7) ? 1 : 0);
-
-        // Officially, L=107 is disqualified as a location for a command. The
-        // reason is that location arithmetic is done using a 7-bit number (with
-        // values 0-127) but the location following 107 is 0, not 108. The number
-        // track (CN) normally handles this by increasing the N and (usually) T
-        // numbers by 20 when passing location 107 to turn location 108 into
-        // location 128, which in a 7-bit register is the same as zero. Alas,
-        // this adjustment does not occur when a command is executed from
-        // location 107, so N and (usually) T in the command will behave as if
-        // they are 20 word-times too low. The following code adjusts T and N
-        // so that they will behave as the hardware would have.
-
-        if (loc == 127) {
-            this.violation("Execute command from L=107");
-            this.N.value = (this.N.value - 20 + Util.longLineSize) % Util.longLineSize;
-            if (this.D.value == 31 && (this.S.value & 0b11100) != 0b11000) {    // not 24-27: MUL, DIV, SHIFT, NORM
-                this.T.value = (this.N.value - 20 + Util.longLineSize) % Util.longLineSize;
-            }
-        }
-
-        // Complement T and N in CM (for display purposes only)
-        this.drum.CM.value = cmd ^ 0b0_1111111_0_1111111_00_00000_00000_0;
-
-        // Transition from read-command to transfer state
-        this.RC.value = 0;                      // end of read-command state
-        this.TR.value = 1;                      // start of transfer state
-        this.drum.waitFor(1);                   // advance past command word
-        if (this.DI.value) {                    // deferred commands delay at least one word before transfer
-            this.drum.waitFor(1);
-        }
+        cmd &= 0x07;                    // only the low-order three bits
+        this.CD.value = cmd;
+        this.cmdLine = Processor.CDXlate[cmd];
     }
 
     /**************************************/
@@ -350,6 +303,12 @@ class Processor {
             transform();
             this.drum.waitFor(1);
         } while (--count > 0);
+    }
+
+    /**************************************/
+    transferNothing() {
+        /* A dummy transfer method that does nothing, used to satisfy transfer
+        timing when nothing else needs to be done */
     }
 
     /**************************************/
@@ -871,6 +830,461 @@ class Processor {
         this.drum.setPNSign(pnSign);
     }
 
+
+    /*******************************************************************
+    *  Input/Output Subsystem                                          *
+    *******************************************************************/
+
+    /**************************************/
+    async receiveInputCode(code) {
+        /* Receives the next I/O code from an input device and either stores
+        it onto the drum or acts on its control function */
+        let eob = false;                // end-of-block flag
+
+        this.drum.ioStartTiming();
+
+        if ((this.OC.value & 0b01111) == 0) {
+            eob = true;                         // canceled or invalid call
+        } else {
+            if (code & IOCodes.ioDataMask) {    // it's a data frame
+                await this.drum.ioPrecessCodeTo23(code, 4);
+                this.ioInputBitCount += 4;
+            } else {
+                switch(code & 0b00111) {
+                case IOCodes.ioCodeMinus:       // minus: set sign FF
+                    this.OS.value = 1;
+                    break;
+                case IOCodes.ioCodeCR:          // carriage return: shift sign into word
+                case IOCodes.ioCodeTab:         // tab: shift sign into word
+                    await this.drum.ioPrecessCodeTo23(this.OS.value, 1);
+                    this.OS.value = 0;
+                    ++this.ioInputBitCount;
+                    break;
+                case IOCodes.ioCodeStop:        // end/stop
+                    eob = true;
+                    // no break: Stop implies Reload
+                case IOCodes.ioCodeReload:      // reload
+                    await this.drum.ioCopy23ToMZ();
+                    await this.drum.ioPrecessMZTo19();
+                    this.ioInputBitCount = 0;
+                    break;
+                case IOCodes.ioCodePeriod:      // period: ignored
+                    break;
+                case IOCodes.ioCodeWait:        // wait: insert a 0 digit on input
+                    await this.drum.ioPrecessCodeTo23(0, 4);
+                    this.ioInputBitCount += 4;
+                    break;
+                default:                        // treat everything else as space & ignore
+                    break;
+                }
+            }
+
+            // Check if automatic reload is enabled
+            if (this.AS.value && this.ioInputBitCount >= Util.fastLineSize*Util.wordBits) {
+                await this.drum.ioCopy23ToMZ();
+                await this.drum.ioPrecessMZTo19();
+                this.ioInputBitCount = 0;
+            }
+        }
+
+        return eob;
+    }
+
+    /**************************************/
+    async executeKeyboardCommand(code) {
+        /* Executes the typewriter keyboard command specified by:
+            * If the code is negative, then the ASCII value of "code"
+            * If the code is 0b10000-0b10111 (keyboard 1-7), then sets
+                the command line to the value of that code */
+
+        switch (-code) {
+        case 0x41: case 0x61:           // A - Type out AR
+            this.violation("Enable-A type out AR not implemented");
+            break;
+        case 0x42: case 0x62:           // B - Back up photo tape one block
+            await this.reversePhotoTapePhase1();
+            break;
+        case 0x43: case 0x63:           // C - Select command line
+            this.setCommandLine(0);
+            break;
+        case 0x46: case 0x66:           // F - Set first word of command line
+            this.stop();
+            this.drum.waitUntil(0);
+            this.drum.throttle();
+            this.N.value = 0;
+            this.drum.CM.value &= Util.wordMask & ~0b11111_11111_0;     // clear any mark
+            break;
+        case 0x49: case 0x69:           // I - Initiate single cycle
+            this.step();
+            break;
+        case 0x4D: case 0x6D:           // M - Mark place
+            this.drum.waitUntil(107);
+            this.drum.throttle();
+            this.drum.write(0, this.drum.CM.value ^ Util.wordMask);
+            this.drum.write(1, this.drum.read(regAR));
+            break;
+        case 0x50: case 0x70:           // P - Start photo reader
+            this.stop();
+            this.drum.waitUntil(0);
+            this.drum.throttle();
+            this.N.value = 0;
+            this.setCommandLine(7);
+            await this.readPhotoTape();
+            break;
+        case 0x51: case 0x71:           // Q - Permit type in
+            if (this.OC.value == IOCodes.ioCmdReady) {
+                this.OC.value = IOCodes.ioCmdTypeIn;
+            }
+            break;
+        case 0x52: case 0x72:           // R - Return to marked place
+            this.drum.waitUntil(107);
+            this.drum.throttle();
+            this.drum.CM.value = this.drum.read(0) ^ Util.wordMask;
+            this.drum.write(regAR, this.drum.read(1));
+            break;
+        case 0x54: case 0x74:           // T - Copy command location to AR high-order bits
+            this.drum.write(regAR, (this.N.value << 21) | ((this.N.value ? 0 : 1) << 28) |
+                (this.drum.read(regAR) & 0b0_0000000_1_1111111_11_11111_11111_1));
+            break;
+        }
+    }
+
+    /**************************************/
+    async receiveKeyboardCode(code) {
+        /* Processes a keyboard code sent from ControlPanel. If the code is
+        negative, it is the ASCII code for a control command used with the Enable
+        switch. Otherwise it is an I/O data/control code to be processed as
+        TYPE IN (D=31, S=12) input . Note that an "S" key can be used for
+        both purposes depending on the state of this.enableSwitch */
+
+        if (code < 0) {
+            // Control command.
+            if (this.enableSwitch) {
+                await this.executeKeyboardCommand(code);
+            }
+        } else if (this.OC.value == IOCodes.ioCmdTypeIn) {
+            // Input during TYPE IN.
+            await this.receiveInputCode(code);
+            if (code == IOCodes.ioCodeStop) {
+                this.finishIO();
+            }
+        } else if (this.enableSwitch) {
+            // A data key with Enable but not during TYPE IN.
+            switch (code) {
+            case 0b10000:               // 0
+            case 0b10001:               // 1
+            case 0b10010:               // 2
+            case 0b10011:               // 3
+            case 0b10100:               // 4
+            case 0b10101:               // 5
+            case 0b10110:               // 6
+            case 0b10111:               // 7
+                this.setCommandLine(this.CD.value | (code & 0b00111));
+                break;
+            case IOCodes.ioCodeStop:    // S
+                this.cancelIO();
+                break;
+            }
+        }
+    }
+
+    /**************************************/
+    async formatOutputCharacter(fmt) {
+        /* Generates the necessary output for one format code, fmt, returning
+        the code to be output to the device */
+        let code = 0;
+
+        switch (fmt) {
+        case 0b000:     // digit
+            {
+            let pair = await this.drum.ioPrecess19ToCode(4);
+            code = pair[0] | 0b10000;
+            this.OS.value = pair[1];
+            }
+            break;
+        case 0b001:     // end/stop
+            if (await this.drum.ioTest19Zero()) {
+                code = IOCodes.ioCodeStop;
+            } else {
+                code = IOCodes.ioCodeReload;
+            }
+            break;
+        case 0b010:     // carriage return - precess and discard the sign bit
+            await this.drum.ioPrecess19ToCode(1);
+            code = IOCodes.ioCodeCR;
+            break;
+        case 0b011:     // period
+            code = IOCodes.ioCodePeriod;
+            break;
+        case 0b100:     // sign - generates either a SPACE (00000) or MINUS (00001) code
+            code = this.OS.value;
+            break;
+        case 0b101:     // reload
+            code = IOCodes.ioCodeReload;
+            break;
+        case 0b110:     // tab - precess and discard the sign bit
+            await this.drum.ioPrecess19ToCode(1);
+            code = IOCodes.ioCodeTab;
+            break;
+        case 0b111:     // wait - precess and discard the digit
+            this.OS.value = (await this.drum.ioPrecess19ToCode(4))[1];
+            code = IOCodes.ioCodeWait;
+            break;
+        }
+
+        return code;
+    }
+
+    /**************************************/
+    async punchLine19() {
+        /* Punches the contents of line 19, starting with the four high-order
+        bits of of word 107, and precessing the line with each character until
+        the line is all zeroes */
+        const punchPeriod = Util.drumCycleTime*2;
+        let code = 0;                   // output character code
+        let punching = true;            // true until STOP or I/O cancel
+        let fmt = 0;                    // format code
+
+        this.OC.value = IOCodes.ioCmdPunch19;
+        this.activeIODevice = this.devices.photoTapeReader;
+        this.drum.ioStartTiming();
+        let outTime = this.drum.ioTime + punchPeriod;
+
+        // Output an initial SPACE code (a quirk of the Slow-Out logic)
+        await this.devices.photoTapePunch.write(IOCodes.ioCodeSpace);
+        await this.ioTimer.delayUntil(outTime);
+        outTime += punchPeriod;
+
+        // Start a MZ reload cycle.
+        do {
+            fmt = await this.drum.ioPrecessLongLineToMZ(2);
+
+            // The character cycle.
+            do {
+                if (this.OC.value != IOCodes.ioCmdPunch19) {
+                    punching = false;   // I/O canceled
+                } else {
+                    code = await this.formatOutputCharacter(fmt);
+                    if (code == IOCodes.ioCodeStop) {
+                        punching = false;
+                    }
+
+                    this.devices.photoTapePunch.write(code);    // no await
+                    await this.ioTimer.delayUntil(outTime);
+                    outTime += punchPeriod;
+                }
+            } while (code != IOCodes.ioCodeReload && punching);
+        } while (punching);
+
+        this.finishIO();
+    }
+
+    /**************************************/
+    async readPhotoTape() {
+        /* Reads one block from the Photo Tape Reader to line 19 via line 23 */
+
+        this.OC.value = IOCodes.ioCmdPhotoRead;
+        this.activeIODevice = this.devices.photoTapeReader;
+        await this.devices.photoTapeReader.read();
+        this.finishIO();
+    }
+
+    /**************************************/
+    async reversePhotoTapePhase1() {
+        /* Performs Phase 1 of photo tape search reverse, then performs Phase 2.
+        The result is to leave the tape positioned to the prior block */
+
+        this.OC.value = IOCodes.ioCmdPhotoRev1;
+        await this.devices.photoTapeReader.reverseBlock();
+        if (this.OC.value == IOCodes.ioCmdPhotoRev1) {  // check for cancel
+            await this.reversePhotoTapePhase2();
+        }
+
+        this.finishIO();
+    }
+
+    /**************************************/
+    async reversePhotoTapePhase2() {
+        /* Performs Phase 1 of photo tape search reverse, then performs Phase 2.
+        The result is to leave the tape positioned to the prior block. Note that
+        the forward read will at least partially overwrite lines 23 and 19 */
+
+        this.OC.value = IOCodes.ioCmdPhotoRev2;
+        await this.devices.photoTapeReader.reverseBlock();
+        if (this.OC.value == IOCodes.ioCmdPhotoRev2) {  // check for cancel
+            await this.devices.photoTapeReader.read();
+        }
+
+        this.finishIO();
+    }
+
+    /**************************************/
+    cancelIO() {
+        /* Cancels any in-progress I/O operation, but leaves it not Ready
+        pending a finishIO(). The individual devices will detect this and abort
+        their operations */
+
+        if (this.activeIODevice) {
+            this.activeIODevice.cancel();
+        }
+
+        if (this.OC.value < IOCodes.ioCmdReady) {
+            this.finishIO();
+        }
+    }
+
+    /**************************************/
+    finishIO() {
+        /* Terminates an I/O operation, resetting state and setting Ready */
+
+        this.OC.value = IOCodes.ioCmdReady;     // set I/O Ready state
+        this.AS.value = 0;
+        this.OS.value = 0;
+        this.ioInputBitCount = 0;
+        this.activeIODevice = null;
+    }
+
+    /**************************************/
+    initiateIO(sCode) {
+        /* Initiates the I/O operation specified by sCode */
+
+        if (this.OC.value != IOCodes.ioCmdReady) {
+            if (sCode == 0) {
+                this.cancelIO();
+            } else {
+                this.violation(`initiateIO with I/O active: D=31 S=${sCode} not implemented`);
+            }
+
+            this.drum.waitUntil(this.T.value);
+            return;                     // unless it's a cancel, ignore this request
+        }
+
+        if (this.C1.value) {
+            this.AS.value = 1;          // set automatic line 23 reload (alphanumeric systems)
+        }
+
+        switch (sCode) {
+        case IOCodes.ioCmdCancel:
+            this.cancelIO();
+            break;
+
+        case IOCodes.ioCmdMTWrite:      // magnetic tape write
+            this.violation(`D=31 S=${sCode} not implemented`);
+            this.cancelIO();
+            break;
+
+        case IOCodes.ioCmdPunchLeader:  // fast punch leader, etc.
+            this.violation(`D=31 S=${sCode} not implemented`);
+            this.cancelIO();
+            break;
+
+        case IOCodes.ioCmdFastPunch:    // fast punch line 19, etc.
+            this.violation(`D=31 S=${sCode} not implemented`);
+            this.cancelIO();
+            break;
+
+        case IOCodes.ioCmdMTSearchRev:  // magnetic tape search, reverse
+            this.violation(`D=31 S=${sCode} not implemented`);
+            this.cancelIO();
+            break;
+
+        case IOCodes.ioCmdMTSearchFwd:  // magnetic tape search, forward
+            this.violation(`D=31 S=${sCode} not implemented`);
+            this.cancelIO();
+            break;
+
+        case IOCodes.ioCmdPhotoRev1:    // photo tape reverse, phase 1
+            this.reversePhotoTapePhase1();
+            break;
+
+        case IOCodes.ioCmdPhotoRev2:    // photo tape reverse, phase 2
+            this.reversePhotoTapePhase2();
+            break;
+
+        case IOCodes.ioCmdTypeAR:       // type AR
+            this.violation(`D=31 S=${sCode} not implemented`);
+            this.cancelIO();
+            break;
+
+        case IOCodes.ioCmdType19:       // type line 19
+            this.violation(`D=31 S=${sCode} not implemented`);
+            this.cancelIO();
+            break;
+
+        case IOCodes.ioCmdPunch19:      // paper tape punch line 19
+            this.punchLine19();
+            break;
+
+        case IOCodes.ioCmdCardPunch19:  // card punch line 19
+            this.punchLine19();
+            break;
+
+        case IOCodes.ioCmdTypeIn:       // type in
+            this.violation(`D=31 S=${sCode} not implemented`);
+            this.cancelIO();
+            break;
+
+        case IOCodes.ioCmdMTRead:       // magnetic tape read
+            this.violation(`D=31 S=${sCode} not implemented`);
+            this.cancelIO();
+            break;
+
+        case IOCodes.ioCmdCardRead:     // card read, etc.
+            this.violation(`D=31 S=${sCode} not implemented`);
+            this.cancelIO();
+            break;
+
+        case IOCodes.ioCmdPhotoRead:    // photo tape read
+            this.readPhotoTape();
+            break;
+
+        default:
+            this.violation(`D=31 S=${sCode} not implemented`);
+            break;
+        }
+
+        this.transferDriver(this.transferNothing);
+
+    }
+
+
+    /*******************************************************************
+    *  Special (D=31) Commands                                         *
+    *******************************************************************/
+
+    /**************************************/
+    markReturn() {
+        /* Handles the messy details of D=31, S=20, Select Command Line and
+        Return Exit. See G-15 Technical Applications Memorandum 4 and 41 */
+        let loc = this.drum.L.value;
+        let n = this.N.value;
+        let mark = (this.drum.CM.value & 0b11_11111_11111_0) >> 1;
+        let t = this.T.value;
+
+        this.setCommandLine((this.C1.value << 2) | this.CA.value);
+
+        // Adjust the drum locations to account for wrap-around, word 107 -> 0
+        if (mark < loc) {mark += Util.longLineSize}
+        if (t < loc) {t += Util.longLineSize}
+        if (n < loc) {n += Util.longLineSize}
+
+        if ((this.computeSwitch == 2 && this.BP.value) || !this.CZ.value) {
+            // If the Compute switch is set to BP and the command is marked BP,
+            // or if single-stepping is in progress, always return to the marked
+            // location and ignore N (Tech Memo 41).
+            this.N.value = mark % Util.longLineSize;
+        } else if (t == n) {
+            // Return to the N location unconditionally (Tech Memo 4).
+        } else if (t <= n && n <= mark) {
+            // Return to the N location unconditionally (Tech Memo 4).
+        } else {
+            // Otherwise, return to the marked location
+            this.N.value = mark % Util.longLineSize;
+        }
+
+        this.transferDriver(this.transferNothing);
+    }
+
     /**************************************/
     specialCommand() {
         /* Executes a special command for D=31. The specific command is
@@ -879,16 +1293,12 @@ class Processor {
         switch(this.S.value) {
         case 16:        // halt
             this.CH.value = 1;
-            this.drum.waitUntil(this.T.value);
+            this.transferDriver(this.transferNothing);
             break;
-        case 17:        // ring bell & friends
-            let wordTimes = this.T.value - this.drum.L.value;
-            if (wordTimes <= 0) {
-                wordTimes += Util.longLineSize;
-            }
 
-            this.panel.ringBell(wordTimes);
-            switch (this.CA.value) {
+        case 17:        // ring bell & friends
+            this.panel.ringBell((this.T.value - this.drum.L.value + Util.longLineSize) % Util.longLineSize);
+            switch (this.CA.value ) {
             case 1:     // ring bell and test control panel PUNCH switch
                 if (this.punchSwitch == 1) {
                     this.CQ.value = 1;  // next command from N+1
@@ -901,26 +1311,120 @@ class Processor {
                 // INPUT REGISTER not implemented (no violation)
                 break;
             }
-            this.drum.waitUntil(this.T.value);
+            this.transferDriver(this.transferNothing);
             break;
+
+        case 18:        // transfer M20.ID to output register
+            this.transferDriver(() => {
+                this.OR.value = this.drum.read(20) & this.drum.read(regID);
+            });
+            break;
+
+        case 19:        // start/stop DA-1
+            // this.violation(`D=31 S=${this.S.value} DA-1 not implemented`);
+            this.transferDriver(this.transferNothing);
+            break;
+
+        case 20:        // select command line & return exit
+            this.markReturn();
+            break;
+
+        case 21:        // select command line & mark exit
+            this.setCommandLine((this.C1.value << 2) | this.CA.value);
+            // Set the mark in T2-T13 of CM. This command takes only one word
+            // time regardless of this.C1, so don't use this.transferDriver().
+            this.drum.CM.value = (this.drum.L.value << 1) |
+                    (this.drum.CM.value & 0b1_1111111_1_1111111_00_00000_00000_1);
+            this.drum.waitFor(1);
+            break;
+
         case 22:        // sign of AR to TEST
             if (this.drum.read(regAR) & 1) {
                 this.CQ.value = 1;
             }
-            this.drum.waitUntil(this.T.value);
+            this.transferDriver(this.transferNothing);
             break;
+
+        case 23:        // clear MQ/ID/PN/IP, etc.
+            switch (this.CA.value) {
+            case 0:                     // clear MQ/ID/PN/IP
+                this.IP.value = 0;
+                this.transferDriver(() => {
+                    this.drum.write(regMQ, 0);
+                    this.drum.write(regID, 0);
+                    this.drum.write(regPN, 0);
+                });
+                break;
+            case 3:                     // PN.M2 -> ID, PN.M2/ -> PN
+                this.transferDriver(() => {
+                    this.drum.write(regID, this.drum.read(regPN) & this.drum.read(2));
+                    this.drum.write(regPN, this.drum.read(regPN) & (~this.drum.read(2)));
+                });
+                break;
+            }
+            break;
+
+        case 24:        // multiply
+            this.violation(`D=31 S=${this.S.value} not implemented`);
+            this.transferDriver(this.transferNothing);
+            break;
+
+        case 25:        // divide
+            this.violation(`D=31 S=${this.S.value} not implemented`);
+            this.transferDriver(this.transferNothing);
+            break;
+
+        case 26:        // shift MQ left and ID right
+            this.violation(`D=31 S=${this.S.value} not implemented`);
+            this.transferDriver(this.transferNothing);
+            break;
+
+        case 27:        // normalize MQ
+            this.violation(`D=31 S=${this.S.value} not implemented`);
+            this.transferDriver(this.transferNothing);
+            break;
+
+        case 28:        // ready, etc. to TEST
+            switch (this.CA.value) {
+            case 0:                     // test I/O subsystem ready
+                this.transferDriver(() => {
+                    if (this.OC.value == IOCodes.ioCmdReady) {
+                        this.CQ.value = 1;
+                    }
+                });
+                break;
+            case 1:                     // test Input Register ready
+                this.transferDriver(this.transferNothing);      // IR not implemented
+                break;
+            case 2:                     // test Output Register ready
+                this.transferDriver(this.transferNothing);      // OR not implemented
+                break;
+            case 3:                     // test Differential Analyzer off
+                this.transferDriver(() => {
+                    this.CQ.value = 1;                          // DA not implemented, always off
+                });
+                break;
+            }
+            break;
+
         case 29:        // test for overflow
             if (this.FO.value) {
                 this.CQ.value = 1;      // next command from N+1
                 this.FO.value = 0;      // test resets overflow condition
             }
-            this.drum.waitUntil(this.T.value);
+            this.transferDriver(this.transferNothing);
             break;
+
+        case 30:        // magnetic tape write file code
+            this.violation(`D=31 S=${this.S.value} not implemented`);
+            this.transferDriver(this.transferNothing);
+            break;
+
         case 31:        // odds & sods
             switch (this.CA.value) {
             case 0:                     // next command from N+1
                 this.CG.value = 1;
-                this.drum.waitUntil(this.T.value);
+                this.transferDriver(this.transferNothing);
                 break;
             case 1:                     // copy number track, OR into line 18
                 this.transferDriver(() => {
@@ -934,10 +1438,80 @@ class Processor {
                 break;
             }
             break;
+
         default:
-            this.violation(`D=31 S={this.S.value} not implemented`);
-            this.drum.waitUntil(this.T.value);
+            this.initiateIO(this.S.value);
             break;
+        }
+    }
+
+
+    /*******************************************************************
+    *  Fetch & Execute State Control                                   *
+    *******************************************************************/
+
+    /**************************************/
+    readCommand() {
+        /* Reads the next command into the command register (CM) and sets up the
+        processor state to execute that command */
+        let cmd = 0;                    // command word
+        let loc = this.N.value;         // word-time of next command
+
+        if (this.CQ.value) {            // check the result of a prior TEST
+            loc = (loc+1) % Util.longLineSize;
+            this.CQ.value = 0;
+        }
+
+        this.drum.waitUntil(loc);
+        if (this.CG.value) {            // next command from AR
+            this.cmdLoc.value = 127;
+            cmd = this.drum.read(regAR);
+            this.CG.value = 0;
+        } else {                        // next command from one of the CD lines
+            this.cmdLoc.value = loc;
+            cmd = this.drum.read(this.cmdLine);
+        }
+
+        this.C1.value = cmd & 0x01;             // single/double mode
+        this.D.value =  (cmd >> 1) & 0x1F;      // destination line
+        this.S.value =  (cmd >> 6) & 0x1F;      // source line
+        this.CA.value = (cmd >> 11) & 0x1F;     // characteristic code
+        this.N.value =  (cmd >> 13) & 0x7F;     // next command location
+        this.BP.value = (cmd >> 20) & 0x01;     // breakpoint flag
+        this.T.value =  (cmd >> 21) & 0x7F;     // operand timing number
+        this.DI.value = (cmd >> 28) & 0x01;     // immediate/deferred execution bit
+
+        // Set "via AR" flip-flop (CX . S7/ . D7/) - for display only
+        this.CS.value = (((cmd >> 12) & 1) && (~(cmd >> 8) & 7) && (~(cmd >> 3) & 7) ? 1 : 0);
+
+        // Officially, L=107 is disqualified as a location for a command. The
+        // reason is that location arithmetic is done using a 7-bit number (with
+        // values 0-127) but the location following 107 is 0, not 108. The number
+        // track (CN) normally handles this by increasing the N and (usually) T
+        // numbers by 20 when passing location 107 to turn location 108 into
+        // location 128, which in a 7-bit register is the same as zero. Alas,
+        // this adjustment does not occur when a command is executed from
+        // location 107, so N and (usually) T in the command will behave as if
+        // they are 20 word-times too low. The following code adjusts T and N
+        // so that they will behave as the hardware would have.
+
+        if (loc == 127) {
+            this.violation("Execute command from L=107");
+            this.N.value = (this.N.value - 20 + Util.longLineSize) % Util.longLineSize;
+            if (this.D.value == 31 && (this.S.value & 0b11100) != 0b11000) {    // not 24-27: MUL, DIV, SHIFT, NORM
+                this.T.value = (this.N.value - 20 + Util.longLineSize) % Util.longLineSize;
+            }
+        }
+
+        // Complement T and N in CM (for display purposes only)
+        this.drum.CM.value = cmd ^ 0b0_1111111_0_1111111_00_00000_00000_0;
+
+        // Transition from read-command to transfer state
+        this.RC.value = 0;                      // end of read-command state
+        this.TR.value = 1;                      // start of transfer state
+        this.drum.waitFor(1);                   // advance past command word
+        if (this.DI.value) {                    // deferred commands delay at least one word before transfer
+            this.drum.waitFor(1);
         }
     }
 
@@ -1002,48 +1576,52 @@ class Processor {
         this.RC.value = 1;              // start read-command state
     }
 
+
+    /*******************************************************************
+    *  Processor Control                                               *
+    *******************************************************************/
+
     /**************************************/
     async run() {
         /* Main execution control loop for the processor. Attempts to throttle
         performance to approximate that of a real G-15. The drum manages the
         system timing, updating its L and eTime properties as calls on its
-        waitFor() and waitUntil() methods are made. Once eTime exceeds the
-        current slice time limit, we call the drum's throttle() async method
-        to delay until real time catches up to emulation time. We continue to
-        run time slices until the a halt condition is detected */
+        waitFor() and waitUntil() methods are made. We await drum.throttle()
+        after every instruction completes to determine if drum.eTime exceeds the
+        current slice time limit, in which case it delays until real time catches
+        up to emulation time. We continue to run until the a halt condition is
+        detected */
 
-        do {                                    // run until halted
-
-            do {                                // run a time slice
-                if (this.RC.value) {            // enter READ COMMAND state
-                    this.readCommand();
-                    if (this.computeSwitch == 2 && this.BP.value) {
+        do {                            // run until halted
+            if (this.RC.value) {        // enter READ COMMAND state
+                this.readCommand();
+                if (this.computeSwitch == 2) {  // Compute switch set to BP
+                    // Do not stop on a Mark Return command; stop on the next command
+                    // instead. See Tech Memo 41.
+                    if  (this.deferredBP) {     // if breakpoint has been deferred, take it now
+                        this.deferredBP = false;
                         this.stop();
-                        break;                  // exit loop due to breakpoint
+                    } else if (this.BP.value) { // if this is a Mark Return, defer the BP
+                        if (this.D.value == 31 && this.S.value == 20) {
+                            this.deferredBP = true;
+                        } else {
+                            this.stop();
+                        }
                     }
-                } else if (this.TR.value) {     // enter TRANSFER (execute) state
-                    this.transfer();
-                    if (this.tracing) {
-                        this.traceState();      // DEBUG ONLY
-                    }
-
-                    if (this.drum.eTime > this.drum.eTimeSliceEnd) {
-                        break;
-                    } else if (this.CH.value) { // we've been halted
-                        break;
-                    }
-                } else {
-                    this.violation("State neither RC nor TR");
                 }
-            } while (true);
-
-            // If we're halted, just exit; otherwise do throttling and then continue
-            if (this.CH.value) {
-                break;
-            } else {
+            } else if (this.TR.value) { // enter TRANSFER (execute) state
+                this.transfer();
                 await this.drum.throttle();
+                this.CZ.value = 1;      // disable stepping
+                if (this.tracing) {
+                    this.traceState();  // DEBUG ONLY
+                }
+            } else {
+                this.violation("State neither RC nor TR");
+                debugger;
+                this.stop();
             }
-        } while (true);
+        } while (!this.CH.value || !this.CZ.value);
 
         this.updateLampGlow(1);
     }
@@ -1053,9 +1631,8 @@ class Processor {
         /* Initiates the processor on the Javascript thread */
 
         if (this.poweredOn && this.CH.value) {
+            this.CZ.value = 1;          // disable stepping
             this.CH.value = 0;          // reset HALT FF
-            this.TR.value = 0;          // reset transfer state
-            this.RC.value = 1;          // set read-command state
             this.drum.startTiming();
             this.run();                 // async -- returns immediately
         }
@@ -1067,8 +1644,8 @@ class Processor {
 
         if (this.poweredOn && !this.CH.value) {
             this.CH.value = 1;          // set HALT FF
-            this.TR.value = 0;          // reset transfer and read-command states
-            this.RC.value = 0;
+            this.CG.value = 0;          // reset Next from AR FF
+            this.CQ.value = 0;          // reset TEST FF
         }
     }
 
@@ -1079,8 +1656,7 @@ class Processor {
         the step execution */
 
         if (this.poweredOn && this.CH.value) {
-            this.TR.value = 0;          // reset transfer state
-            this.RC.value = 1;          // set read-command state
+            this.CZ.value = 0;          // enable stepping
             this.drum.startTiming();
             this.run();                 // async -- returns immediately
         }
@@ -1096,10 +1672,10 @@ class Processor {
             case 0:     // OFF
                 this.stop();
                 break;
-            case 1:
+            case 1:     // GO
                 this.start();
                 break;
-            case 2:
+            case 2:     // BP
                 if (this.CH.value) {
                     this.start();
                 }
@@ -1109,8 +1685,8 @@ class Processor {
     }
 
     /**************************************/
-        /* Reacts to a change in state of the ControlPanel ENABLE switch */
     enableSwitchChange(state) {
+        /* Reacts to a change in state of the ControlPanel ENABLE switch */
 
         if (this.enableSwitch != state) {
             this.enableSwitch = state;
@@ -1123,6 +1699,46 @@ class Processor {
 
         if (this.punchSwitch != state) {
             this.punchSwitch = state;
+            switch (state) {
+            case 0:     // OFF
+                // ?? TBD
+                break;
+            case 1:     // PUNCH
+                // ?? TBD
+                break;
+            case 2:     // REWIND
+                this.devices.photoTapeReader.rewind();
+                break;
+            }
+        }
+    }
+
+    /**************************************/
+    async systemReset() {
+        /* Resets the system and initiates loading paper tape. Activated from
+        the ControlPanel RESET button */
+
+        if (this.poweredOn && this.CH.value) {
+            this.CZ.value = 1;          // enable read-command state (i.e., disable stepping)
+            this.RC.value = 1;          // set read-command state
+            this.TR.value = 0;          // reset transfer state
+            this.CG.value = 0;          // reset Next-From-AR FF
+            this.CQ.value = 0;          // reset TEST FF
+            this.OC.value = IOCodes.ioCmdReady;
+
+            // Load the Number Track, CN
+            this.drum.startTiming();
+            await this.readPhotoTape();         // number track data to line 19
+            this.drum.waitUntil(0);
+            for (let x=0; x<Util.longLineSize; ++x) {
+                this.drum.writeCN(this.drum.read(19));
+                this.drum.waitFor(1);
+            }
+
+            // Load the next block from paper tape
+            this.setCommandLine(7);             // execute code from line 23
+            this.N.value = 0;
+            await this.readPhotoTape();         // read a bootstrap loader
         }
     }
 
@@ -1131,9 +1747,10 @@ class Processor {
         /* Powers up and initializes the processor */
 
         if (!this.poweredOn) {
-            this.CH.value = 1;          // set HALT FF
-            this.CQ.value = 0;          // reset TEST FF
             this.poweredOn = true;
+            this.CH.value = 1;          // set HALT FF
+            this.panel = this.context.controlPanel;     // ControlPanel object
+            this.devices = this.context.devices;        // I/O device objects
             this.loadMemory();          // DEBUG ONLY
         }
     }
@@ -1202,7 +1819,11 @@ class Processor {
         asm(0,  9, 1,  92,  10, 3,  0, 29);             // subtract 2 from AR
         asm(0, 10, 1,  96,  11, 3,  0, 29);             // subtract -0xFFFFFFF from AR
         asm(0, 11, 0,  12,  12, 0, 17, 31);             // ring bell
-        asm(0, 12, 0,  14,  11, 0, 16, 31);             // halt, then go to ring bell
+        //asm(0, 12, 0,  14,  11, 0, 16, 31);             // halt, then go to ring bell
+
+        asm(0, 12, 0,  14,  13, 0, 16, 31);             // halt
+        asm(0, 13, 0,  15,  14, 0, 10, 31);             // punch line 19
+        asm(0, 14, 0,  16,  14, 0, 16, 31);             // loop on halt
     }
 
 } // class Processor
