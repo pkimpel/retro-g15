@@ -47,9 +47,16 @@ class ToggleSwitch {
 
     /**************************************/
     addEventListener(eventName, handler, useCapture) {
-        /* Sets an event handler whenever the image element is clicked */
+        /* Sets an event handler on the image element */
 
         this.element.addEventListener(eventName, handler, useCapture);
+    }
+
+    /**************************************/
+    removeEventListener(eventName, handler, useCapture) {
+        /* Removess an event handler from the image element */
+
+        this.element.removeEventListener(eventName, handler, useCapture);
     }
 
     /**************************************/

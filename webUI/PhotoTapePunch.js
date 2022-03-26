@@ -45,7 +45,7 @@ class PhotoTapePunch {
     clear() {
         /* Initializes (and if necessary, creates) the punch unit state */
 
-        this.ready = true;              // punchc is ready for output
+        this.ready = true;              // punch is ready for output
         this.busy = false;              // an I/O is in progress
         this.canceled = false;          // current I/O canceled
 
@@ -66,7 +66,7 @@ class PhotoTapePunch {
         /* Copies the text contents of the "paper" area of the device, opens a new
         temporary window, and pastes that text into the window so it can be copied
         or saved by the user */
-        var title = "G-15 Photo Tape Punch Buffer";
+        var title = "retro-g15 Photo Tape Punch Output";
 
         openPopup(this.window, "./FramePaper.html", "",
                 "scrollbars,resizable,width=500,height=500",

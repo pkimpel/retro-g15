@@ -39,8 +39,6 @@ class ControlPanel {
         this.context = context;
         this.intervalToken = 0;         // interval timer cancel token
         this.boundControlSwitchChange = this.controlSwitchChange.bind(this);
-        this.boundPanelKeydown = this.panelKeydown.bind(this);
-        this.boundPanelKeyup = this.panelKeyup.bind(this);
         this.boundUpdatePanel = this.updatePanel.bind(this);
         this.boundSystemReset = this.systemReset.bind(this);
 
@@ -137,6 +135,7 @@ class ControlPanel {
 
         $$("PowerOffBtn").addEventListener("click", context.systemShutDown, false);
         $$("ResetBtn").addEventListener("click", this.boundSystemReset, false);
+        this.violationSwitch.addEventListener("click", this.boundControlSwitchChange, false);
 
         if (!this.intervalToken) {
             this.intervalToken = setInterval(this.boundUpdatePanel, ControlPanel.displayRefreshPeriod);
@@ -148,11 +147,10 @@ class ControlPanel {
         /* Enables events for the Control Panel controls that should not be
         until the system has been reset and initialized */
 
-        this.$$("FrontPanel").addEventListener("keydown", this.boundPanelKeydown, false);
-        this.$$("FrontPanel").addEventListener("keyup", this.boundPanelKeyup, false);
         this.$$("EnableSwitchSet").addEventListener("click", this.boundControlSwitchChange, false);
         this.$$("PunchSwitchSet").addEventListener("click", this.boundControlSwitchChange, false);
         this.$$("ComputeSwitchSet").addEventListener("click", this.boundControlSwitchChange, false);
+        this.$$("ViolationResetBtn").addEventListener("click", this.boundControlSwitchChange, false);
     }
 
     /**************************************/
@@ -180,7 +178,7 @@ class ControlPanel {
 
     /**************************************/
     controlSwitchChange(ev) {
-        /* Event handler for the ENABLE switch controls */
+        /* Event handler for the pane's switch controls */
         let p = this.context.processor; // local copy of Processor reference
 
         switch (ev.target.id) {
@@ -208,64 +206,12 @@ class ControlPanel {
         case "ComputeSwitchBP":
             p.computeSwitchChange(2);
             break;
-        }
-    }
-
-    /**************************************/
-    panelKeydown(ev) {
-        /* Handles the keydown event from FrontPanel. Processes data input from
-        the keyboard, Enable switch command codes, and Escape (for toggling the
-        Enable switch) */
-        let code = ev.key.charCodeAt(0) & 0x7F;
-        let p = this.context.processor; // local copy of Processor reference
-
-        switch (ev.key) {
-        case "-": case "/":
-        case "0": case "1": case "2": case "3": case "4":
-        case "5": case "6": case "7": case "8": case "9":
-        case "S": case "s":
-        case "U": case "V": case "W": case "X": case "Y": case "Z":
-        case "u": case "v": case "w": case "x": case "y": case "z":
-            p.receiveKeyboardCode(IOCodes.ioCodeFilter[code]);
+        case "ViolationResetBtn":
+            p.violationReset();
             break;
-        case "Q": case "q":
-        case "P": case "p":
-        case "B": case "b":
-        case "F": case "f":
-        case "T": case "t":
-        case "A": case "a":
-        case "C": case "c":
-        case "I": case "i":
-        case "M": case "m":
-        case "R": case "r":
-            p.receiveKeyboardCode(-code);
-            break;
-        case "Enter":
-            p.receiveKeyboardCode(IOCodes.ioCodeCR);
-            break;
-        case "Tab":
-            p.receiveKeyboardCode(IOCodes.ioCodeTab);
-            break;
-        case "Escape":
-            if (!ev.repeating) {
-                p.enableSwitchChange(1);
-                this.$$("EnableSwitchOff").checked = false;
-                this.$$("EnableSwitchOn").checked = true;
-            }
-            break;
-        }
-    }
-
-    /**************************************/
-    panelKeyup(ev) {
-        /* Handles the keyup event from FrontPanel */
-        let p = this.context.processor; // local copy of Processor reference
-
-        switch (ev.key) {
-        case "Escape":
-            p.enableSwitchChange(0);
-            this.$$("EnableSwitchOff").checked = true;
-            this.$$("EnableSwitchOn").checked = false;
+        case "ViolationSwitch":
+            this.violationSwitch.flip()
+            p.violationSwitchChange(this.violationSwitch.state);
             break;
         }
     }
@@ -306,13 +252,13 @@ class ControlPanel {
     shutDown() {
         /* Closes the panel, unwires its events, and deallocates its resources */
 
-        document.removeEventListener("keydown", this.boundPanelKeydown, false);
-        document.removeEventListener("keyup", this.boundKeyup, false);
         this.$$("EnableSwitchSet").removeEventListener("click", this.boundControlSwitchChange, false);
         this.$$("PunchSwitchSet").removeEventListener("click", this.boundControlSwitchChange, false);
         this.$$("ComputeSwitchSet").removeEventListener("click", this.boundControlSwitchChange, false);
         this.$$("PowerOffBtn").removeEventListener("click", this.context.systemShutDown, false);
         this.$$("ResetBtn").removeEventListener("click", this.context.boundSystemReset, false);
+        this.$$("ViolationResetBtn").removeEventListener("click", this.boundControlSwitchChange, false);
+        this.violationSwitch.removeEventListener("click", this.boundControlSwitchChange, false);
 
         if (this.intervalToken) {
             clearInterval(this.intervalToken);

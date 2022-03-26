@@ -83,9 +83,9 @@ H1 {
     top:                0;
     left:               0;
     width:              100%;
-    height:             calc(100% - 8px);
+    height:             100%;
     display:            none;
-    background-color:   #67AAB2;
+    background-color:   #67AAB2;        /* sort of Teal */
     color:              white;
     border-radius:      16px}
 
@@ -372,12 +372,21 @@ H1 {
 #TypewriterOutput {
     position:           absolute;
     top:                514px;
-    bottom:             12px;
+    bottom:             16px;
     left:               50%;
     width:              min-content;
-    transform:          translate(-50%, 0)}
+    transform:          translate(-50%, 0);
+    border:             1px solid gray;
+    box-shadow:         8px 8px 8px #666}
 
 #TypewriterPaper {
     position:           relative;
     height:             100%;
-    width:              112ch}
+    width:              90ch;
+    white-space:        pre;
+    overflow:           auto;
+    padding:            4px;
+    color:              black;
+    background-color:   white;
+    font-size:          12px;
+    font-family:        Courier New, Courier, Consolas, monospace}

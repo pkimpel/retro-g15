@@ -100,7 +100,7 @@ class Processor {
         /* Posts a violation of standard-command usage */
 
         this.VV.value = 1;
-        console.warn("<VIOLATION> L=%2d.%3d DI=%d T=%3d BP=%d N=%3d CA=%d S=2%d D=2%d C1=%d : %s",
+        console.warn("<VIOLATION> L=2%d.%3d DI=%d T=%3d BP=%d N=%3d CA=%d S=%2d D=%2d C1=%d : %s",
                 this.cmdLine, this.cmdLoc.value, this.DI.value, this.T.value, this.BP.value,
                 this.N.value, this.CA.value, this.S.value, this.D.value, this.C1.value, msg);
         if (this.violationHaltSwitch) {
@@ -168,6 +168,11 @@ class Processor {
         this.CD.value = cmd;
         this.cmdLine = Processor.CDXlate[cmd];
     }
+
+
+    /*******************************************************************
+    *  Transfer State                                                  *
+    *******************************************************************/
 
     /**************************************/
     complementSingle(word) {
@@ -897,33 +902,33 @@ class Processor {
             * If the code is 0b10000-0b10111 (keyboard 1-7), then sets
                 the command line to the value of that code */
 
-        switch (-code) {
-        case 0x41: case 0x61:           // A - Type out AR
-            this.violation("Enable-A type out AR not implemented");
+        switch (code) {
+        case -0x41: case -0x61:         // A - Type out AR
+            this.typeAR();
             break;
-        case 0x42: case 0x62:           // B - Back up photo tape one block
+        case -0x42: case -0x62:         // B - Back up photo tape one block
             await this.reversePhotoTapePhase1();
             break;
-        case 0x43: case 0x63:           // C - Select command line
+        case -0x43: case -0x63:         // C - Select command line
             this.setCommandLine(0);
             break;
-        case 0x46: case 0x66:           // F - Set first word of command line
+        case -0x46: case -0x66:         // F - Set first word of command line
             this.stop();
             this.drum.waitUntil(0);
             this.drum.throttle();
             this.N.value = 0;
             this.drum.CM.value &= Util.wordMask & ~0b11111_11111_0;     // clear any mark
             break;
-        case 0x49: case 0x69:           // I - Initiate single cycle
+        case -0x49: case -0x69:         // I - Initiate single cycle
             this.step();
             break;
-        case 0x4D: case 0x6D:           // M - Mark place
+        case -0x4D: case -0x6D:         // M - Mark place
             this.drum.waitUntil(107);
             this.drum.throttle();
             this.drum.write(0, this.drum.CM.value ^ Util.wordMask);
             this.drum.write(1, this.drum.read(regAR));
             break;
-        case 0x50: case 0x70:           // P - Start photo reader
+        case -0x50: case -0x70:         // P - Start photo reader
             this.stop();
             this.drum.waitUntil(0);
             this.drum.throttle();
@@ -931,20 +936,33 @@ class Processor {
             this.setCommandLine(7);
             await this.readPhotoTape();
             break;
-        case 0x51: case 0x71:           // Q - Permit type in
+        case -0x51: case -0x71:         // Q - Permit type in
             if (this.OC.value == IOCodes.ioCmdReady) {
                 this.OC.value = IOCodes.ioCmdTypeIn;
             }
             break;
-        case 0x52: case 0x72:           // R - Return to marked place
+        case -0x52: case -0x72:         // R - Return to marked place
             this.drum.waitUntil(107);
             this.drum.throttle();
             this.drum.CM.value = this.drum.read(0) ^ Util.wordMask;
             this.drum.write(regAR, this.drum.read(1));
             break;
-        case 0x54: case 0x74:           // T - Copy command location to AR high-order bits
+        case -0x54: case -0x74:         // T - Copy command location to AR high-order bits
             this.drum.write(regAR, (this.N.value << 21) | ((this.N.value ? 0 : 1) << 28) |
                 (this.drum.read(regAR) & 0b0_0000000_1_1111111_11_11111_11111_1));
+            break;
+        case 0b10000:                   // 0 - Set command line
+        case 0b10001:                   // 1
+        case 0b10010:                   // 2
+        case 0b10011:                   // 3
+        case 0b10100:                   // 4
+        case 0b10101:                   // 5
+        case 0b10110:                   // 6
+        case 0b10111:                   // 7
+            this.setCommandLine(this.CD.value | (code & 0b00111));
+            break;
+        case IOCodes.ioCodeStop:        // S - Cancel I/O
+            this.cancelIO();
             break;
         }
     }
@@ -952,65 +970,36 @@ class Processor {
     /**************************************/
     async receiveKeyboardCode(code) {
         /* Processes a keyboard code sent from ControlPanel. If the code is
-        negative, it is the ASCII code for a control command used with the Enable
+        negative, it is the ASCII code for a control command used with the ENABLE
         switch. Otherwise it is an I/O data/control code to be processed as
         TYPE IN (D=31, S=12) input . Note that an "S" key can be used for
         both purposes depending on the state of this.enableSwitch */
 
-        if (code < 0) {
-            // Control command.
-            if (this.enableSwitch) {
-                await this.executeKeyboardCommand(code);
-            }
-        } else if (this.OC.value == IOCodes.ioCmdTypeIn) {
-            // Input during TYPE IN.
+        if (this.enableSwitch) {                                // Control command
+            await this.executeKeyboardCommand(code);
+        } else if (this.OC.value == IOCodes.ioCmdTypeIn) {      // Input during TYPE IN
             await this.receiveInputCode(code);
             if (code == IOCodes.ioCodeStop) {
                 this.finishIO();
-            }
-        } else if (this.enableSwitch) {
-            // A data key with Enable but not during TYPE IN.
-            switch (code) {
-            case 0b10000:               // 0
-            case 0b10001:               // 1
-            case 0b10010:               // 2
-            case 0b10011:               // 3
-            case 0b10100:               // 4
-            case 0b10101:               // 5
-            case 0b10110:               // 6
-            case 0b10111:               // 7
-                this.setCommandLine(this.CD.value | (code & 0b00111));
-                break;
-            case IOCodes.ioCodeStop:    // S
-                this.cancelIO();
-                break;
             }
         }
     }
 
     /**************************************/
-    async formatOutputCharacter(fmt) {
+    async formatOutputCharacter(fmt, precessor) {
         /* Generates the necessary output for one format code, fmt, returning
         the code to be output to the device */
         let code = 0;
 
         switch (fmt) {
         case 0b000:     // digit
-            {
-            let pair = await this.drum.ioPrecess19ToCode(4);
-            code = pair[0] | 0b10000;
-            this.OS.value = pair[1];
-            }
+            code = (await this.drum[precessor](4)) | 0b10000;
             break;
         case 0b001:     // end/stop
-            if (await this.drum.ioTest19Zero()) {
-                code = IOCodes.ioCodeStop;
-            } else {
-                code = IOCodes.ioCodeReload;
-            }
+            code = IOCodes.ioCodeStop;
             break;
         case 0b010:     // carriage return - precess and discard the sign bit
-            await this.drum.ioPrecess19ToCode(1);
+            await this.drum[precessor](1);
             code = IOCodes.ioCodeCR;
             break;
         case 0b011:     // period
@@ -1023,11 +1012,11 @@ class Processor {
             code = IOCodes.ioCodeReload;
             break;
         case 0b110:     // tab - precess and discard the sign bit
-            await this.drum.ioPrecess19ToCode(1);
+            await this.drum[precessor](1);
             code = IOCodes.ioCodeTab;
             break;
         case 0b111:     // wait - precess and discard the digit
-            this.OS.value = (await this.drum.ioPrecess19ToCode(4))[1];
+            await this.drum[precessor](4);
             code = IOCodes.ioCodeWait;
             break;
         }
@@ -1042,11 +1031,11 @@ class Processor {
         the line is all zeroes */
         const punchPeriod = Util.drumCycleTime*2;
         let code = 0;                   // output character code
-        let punching = true;            // true until STOP or I/O cancel
         let fmt = 0;                    // format code
+        let punching = true;            // true until STOP or I/O cancel
 
         this.OC.value = IOCodes.ioCmdPunch19;
-        this.activeIODevice = this.devices.photoTapeReader;
+        this.activeIODevice = this.devices.photoTapePunch;
         this.drum.ioStartTiming();
         let outTime = this.drum.ioTime + punchPeriod;
 
@@ -1057,24 +1046,179 @@ class Processor {
 
         // Start a MZ reload cycle.
         do {
-            fmt = await this.drum.ioPrecessLongLineToMZ(2);
+            fmt = await this.drum.ioPrecessLongLineToMZ(2);     // get initial format code
 
             // The character cycle.
             do {
+                this.OS.value = this.drum.ioDetect19Sign107();
+                code = await this.formatOutputCharacter(fmt, "ioPrecess19ToCode");
+                if (code == IOCodes.ioCodeStop) {
+                    if (await this.drum.ioTest19Zero()) {
+                        punching = false;
+                    } else {
+                        code = IOCodes.ioCodeReload;
+                    }
+                }
+
                 if (this.OC.value != IOCodes.ioCmdPunch19) {
                     punching = false;   // I/O canceled
                 } else {
-                    code = await this.formatOutputCharacter(fmt);
-                    if (code == IOCodes.ioCodeStop) {
-                        punching = false;
-                    }
-
                     this.devices.photoTapePunch.write(code);    // no await
                     await this.ioTimer.delayUntil(outTime);
                     outTime += punchPeriod;
+                    fmt = await this.drum.ioPrecessMZToCode(3); // get next format code
                 }
             } while (code != IOCodes.ioCodeReload && punching);
         } while (punching);
+
+        this.finishIO();
+    }
+
+    /**************************************/
+    async typeAR() {
+        /* Types the contents of AR, starting with the four high-order
+        bits of the word, and precessing the word with each character */
+        const printPeriod = Util.drumCycleTime*4;
+        let code = 0;                   // output character code
+        let fmt = 0;                    // format code
+        let printing = true;            // true until STOP or I/O cancel
+        let suppressing = false;        // zero suppression in force
+
+        this.OC.value = IOCodes.ioCmdTypeAR;
+        this.activeIODevice = this.devices.typewriter;
+        this.drum.ioStartTiming();
+        let outTime = this.drum.ioTime + printPeriod;
+
+        // Start a MZ reload cycle.
+        do {
+            fmt = await this.drum.ioPrecessLongLineToMZ(2);     // get initial format code
+            suppressing = (this.punchSwitch != 1);
+
+            // The character cycle.
+            do {
+                this.OS.value = this.drum.AR.value & 1;         // detect AR sign before precession
+                code = await this.formatOutputCharacter(fmt, "ioPrecessARToCode");
+                switch (code) {
+                case IOCodes.ioDataMask:        // digit zero
+                    if (suppressing) {
+                        code = IOCodes.ioCodeSpace;
+                    }
+                    break;
+                case IOCodes.ioCodeCR:
+                case IOCodes.ioCodeTab:
+                    suppressing = (this.punchSwitch != 1);      // establish suppression for next word
+                    break;
+                case IOCodes.ioCodeSpace:
+                case IOCodes.ioCodeMinus:
+                case IOCodes.ioCodeReload:
+                case IOCodes.ioCodeWait:
+                    // does not affect suppression
+                    break;
+                case IOCodes.ioCodeStop:
+                    printing = false;
+                    break;
+                default:                        // all non-zero digit codes and
+                    suppressing = false;        // Period turn off suppression
+                    break;
+                }
+
+                // Pause printing while the ENABLE switch is on
+                while (this.enableSwitch && this.OC.value == IOCodes.ioCmdTypeAR) {
+                    await this.ioTimer.delayUntil(outTime);
+                    outTime += printPeriod;
+                }
+
+                if (this.OC.value != IOCodes.ioCmdTypeAR) {
+                    printing = false;   // I/O canceled
+                } else {
+                    this.devices.typewriter.write(code);        // no await
+                    if (this.punchSwitch == 1) {
+                        this.devices.photoTapePunch.write(code);
+                    }
+
+                    await this.ioTimer.delayUntil(outTime);
+                    outTime += printPeriod;
+                    fmt = await this.drum.ioPrecessMZToCode(3); // get next format code
+                }
+            } while (code != IOCodes.ioCodeReload && printing);
+        } while (printing);
+
+        this.finishIO();
+    }
+
+    /**************************************/
+    async typeLine19() {
+        /* Types the contents of line 19, starting with the four high-order
+        bits of word 107, and precessing the line with each character until
+        the line is all zeroes */
+        const printPeriod = Util.drumCycleTime*4;
+        let code = 0;                   // output character code
+        let fmt = 0;                    // format code
+        let printing = true;            // true until STOP or I/O cancel
+        let suppressing = false;        // zero suppression in force
+
+        this.OC.value = IOCodes.ioCmdType19;
+        this.activeIODevice = this.devices.typewriter;
+        this.drum.ioStartTiming();
+        let outTime = this.drum.ioTime + printPeriod;
+
+        // Start a MZ reload cycle.
+        do {
+            fmt = await this.drum.ioPrecessLongLineToMZ(2);     // get initial format code
+            suppressing = (this.punchSwitch != 1);
+
+            // The character cycle.
+            do {
+                this.OS.value = this.drum.ioDetect19Sign107();
+                code = await this.formatOutputCharacter(fmt, "ioPrecess19ToCode");
+                switch (code) {
+                case IOCodes.ioDataMask:        // digit zero
+                    if (suppressing) {
+                        code = IOCodes.ioCodeSpace;
+                    }
+                    break;
+                case IOCodes.ioCodeCR:
+                case IOCodes.ioCodeTab:
+                    suppressing = (this.punchSwitch != 1);      // establish suppression for next word
+                    break;
+                case IOCodes.ioCodeSpace:
+                case IOCodes.ioCodeMinus:
+                case IOCodes.ioCodeReload:
+                case IOCodes.ioCodeWait:
+                    // does not affect suppression
+                    break;
+                case IOCodes.ioCodeStop:
+                    if (await this.drum.ioTest19Zero()) {
+                        printing = false;
+                    } else {
+                        code = IOCodes.ioCodeReload;
+                    }
+                    break;
+                default:                        // all non-zero digit codes and
+                    suppressing = false;        // Period turn off suppression
+                    break;
+                }
+
+                // Pause printing while the ENABLE switch is on
+                while (this.enableSwitch && this.OC.value == IOCodes.ioCmdType19) {
+                    await this.ioTimer.delayUntil(outTime);
+                    outTime += printPeriod;
+                }
+
+                if (this.OC.value != IOCodes.ioCmdType19) {
+                    printing = false;   // I/O canceled
+                } else {
+                    this.devices.typewriter.write(code);        // no await
+                    if (this.punchSwitch == 1) {
+                        this.devices.photoTapePunch.write(code);
+                    }
+
+                    await this.ioTimer.delayUntil(outTime);
+                    outTime += printPeriod;
+                    fmt = await this.drum.ioPrecessMZToCode(3); // get next format code
+                }
+            } while (code != IOCodes.ioCodeReload && printing);
+        } while (printing);
 
         this.finishIO();
     }
@@ -1152,7 +1296,7 @@ class Processor {
             if (sCode == 0) {
                 this.cancelIO();
             } else {
-                this.violation(`initiateIO with I/O active: D=31 S=${sCode} not implemented`);
+                this.violation(`D=31 S=${sCode}: initiateIO with I/O active`);
             }
 
             this.drum.waitUntil(this.T.value);
@@ -1164,82 +1308,80 @@ class Processor {
         }
 
         switch (sCode) {
-        case IOCodes.ioCmdCancel:
+        case IOCodes.ioCmdCancel:       // 0000 cancel current I/O
             this.cancelIO();
             break;
 
-        case IOCodes.ioCmdMTWrite:      // magnetic tape write
-            this.violation(`D=31 S=${sCode} not implemented`);
+        case IOCodes.ioCmdMTWrite:      // 0001 magnetic tape write
+            this.violation(`D=31 S=${sCode} Mag Tape Write not implemented`);
             this.cancelIO();
             break;
 
-        case IOCodes.ioCmdPunchLeader:  // fast punch leader, etc.
-            this.violation(`D=31 S=${sCode} not implemented`);
+        case IOCodes.ioCmdPunchLeader:  // 0010 fast punch leader, etc.
+            this.violation(`D=31 S=${sCode} Fast Punch Leader not implemented`);
             this.cancelIO();
             break;
 
-        case IOCodes.ioCmdFastPunch:    // fast punch line 19, etc.
-            this.violation(`D=31 S=${sCode} not implemented`);
+        case IOCodes.ioCmdFastPunch:    // 0011 fast punch line 19, etc.
+            this.violation(`D=31 S=${sCode} Fast Punch Line 19 not implemented`);
             this.cancelIO();
             break;
 
-        case IOCodes.ioCmdMTSearchRev:  // magnetic tape search, reverse
-            this.violation(`D=31 S=${sCode} not implemented`);
+        case IOCodes.ioCmdMTSearchRev:  // 0100 magnetic tape search, reverse
+            this.violation(`D=31 S=${sCode} Mag Tape Search Reverse not implemented`);
             this.cancelIO();
             break;
 
-        case IOCodes.ioCmdMTSearchFwd:  // magnetic tape search, forward
-            this.violation(`D=31 S=${sCode} not implemented`);
+        case IOCodes.ioCmdMTSearchFwd:  // 0101 magnetic tape search, forward
+            this.violation(`D=31 S=${sCode} Mag Tape Search Forward not implemented`);
             this.cancelIO();
             break;
 
-        case IOCodes.ioCmdPhotoRev1:    // photo tape reverse, phase 1
+        case IOCodes.ioCmdPhotoRev1:    // 0110 photo tape reverse, phase 1
             this.reversePhotoTapePhase1();
             break;
 
-        case IOCodes.ioCmdPhotoRev2:    // photo tape reverse, phase 2
+        case IOCodes.ioCmdPhotoRev2:    // 0111 photo tape reverse, phase 2
             this.reversePhotoTapePhase2();
             break;
 
-        case IOCodes.ioCmdTypeAR:       // type AR
-            this.violation(`D=31 S=${sCode} not implemented`);
-            this.cancelIO();
+        case IOCodes.ioCmdTypeAR:       // 1000 type AR
+            this.typeAR();
             break;
 
-        case IOCodes.ioCmdType19:       // type line 19
-            this.violation(`D=31 S=${sCode} not implemented`);
-            this.cancelIO();
+        case IOCodes.ioCmdType19:       // 1001 type line 19
+            this.typeLine19();
             break;
 
-        case IOCodes.ioCmdPunch19:      // paper tape punch line 19
+        case IOCodes.ioCmdPunch19:      // 1010 paper tape punch line 19
             this.punchLine19();
             break;
 
-        case IOCodes.ioCmdCardPunch19:  // card punch line 19
+        case IOCodes.ioCmdCardPunch19:  // 1011 card punch line 19
             this.punchLine19();
             break;
 
-        case IOCodes.ioCmdTypeIn:       // type in
-            this.violation(`D=31 S=${sCode} not implemented`);
+        case IOCodes.ioCmdTypeIn:       // 1100 type in
+            this.OC.value = IOCodes.ioCmdTypeIn;
+            this.activeIODevice = this.devices.typewriter;
+            break;
+
+        case IOCodes.ioCmdMTRead:       // 1101 magnetic tape read
+            this.violation(`D=31 S=${sCode} Mag Tape Read not implemented`);
             this.cancelIO();
             break;
 
-        case IOCodes.ioCmdMTRead:       // magnetic tape read
-            this.violation(`D=31 S=${sCode} not implemented`);
+        case IOCodes.ioCmdCardRead:     // 1110 card read, etc.
+            this.violation(`D=31 S=${sCode} Card Read not implemented`);
             this.cancelIO();
             break;
 
-        case IOCodes.ioCmdCardRead:     // card read, etc.
-            this.violation(`D=31 S=${sCode} not implemented`);
-            this.cancelIO();
-            break;
-
-        case IOCodes.ioCmdPhotoRead:    // photo tape read
+        case IOCodes.ioCmdPhotoRead:    // 1111 photo tape read
             this.readPhotoTape();
             break;
 
         default:
-            this.violation(`D=31 S=${sCode} not implemented`);
+            this.violation(`D=31 S=${sCode} Instruction not implemented`);
             break;
         }
 
@@ -1321,7 +1463,7 @@ class Processor {
             break;
 
         case 19:        // start/stop DA-1
-            // this.violation(`D=31 S=${this.S.value} DA-1 not implemented`);
+            // this.violation(`D=31 S=${this.S.value} Start/Stop DA-1 not implemented`);
             this.transferDriver(this.transferNothing);
             break;
 
@@ -1365,22 +1507,22 @@ class Processor {
             break;
 
         case 24:        // multiply
-            this.violation(`D=31 S=${this.S.value} not implemented`);
+            this.violation(`D=31 S=${this.S.value} Multiply not implemented`);
             this.transferDriver(this.transferNothing);
             break;
 
         case 25:        // divide
-            this.violation(`D=31 S=${this.S.value} not implemented`);
+            this.violation(`D=31 S=${this.S.value} Divide not implemented`);
             this.transferDriver(this.transferNothing);
             break;
 
         case 26:        // shift MQ left and ID right
-            this.violation(`D=31 S=${this.S.value} not implemented`);
+            this.violation(`D=31 S=${this.S.value} Shift MQ/ID not implemented`);
             this.transferDriver(this.transferNothing);
             break;
 
         case 27:        // normalize MQ
-            this.violation(`D=31 S=${this.S.value} not implemented`);
+            this.violation(`D=31 S=${this.S.value} Normalize MQ not implemented`);
             this.transferDriver(this.transferNothing);
             break;
 
@@ -1416,7 +1558,7 @@ class Processor {
             break;
 
         case 30:        // magnetic tape write file code
-            this.violation(`D=31 S=${this.S.value} not implemented`);
+            this.violation(`D=31 S=${this.S.value} Mag Tape Write File Code not implemented`);
             this.transferDriver(this.transferNothing);
             break;
 
@@ -1595,6 +1737,10 @@ class Processor {
         do {                            // run until halted
             if (this.RC.value) {        // enter READ COMMAND state
                 this.readCommand();
+                if (this.tracing) {
+                    this.traceState();  // DEBUG ONLY
+                }
+
                 if (this.computeSwitch == 2) {  // Compute switch set to BP
                     // Do not stop on a Mark Return command; stop on the next command
                     // instead. See Tech Memo 41.
@@ -1613,9 +1759,6 @@ class Processor {
                 this.transfer();
                 await this.drum.throttle();
                 this.CZ.value = 1;      // disable stepping
-                if (this.tracing) {
-                    this.traceState();  // DEBUG ONLY
-                }
             } else {
                 this.violation("State neither RC nor TR");
                 debugger;
@@ -1711,6 +1854,20 @@ class Processor {
                 break;
             }
         }
+    }
+
+    /**************************************/
+    violationSwitchChange(state) {
+        /* Set the internal violation-halt flag based "state" */
+
+        this.violationHaltSwitch = (state ? 1 : 0);
+    }
+
+    /**************************************/
+    violationReset() {
+        /* Resets the internal VV flip flop */
+
+        this.VV.value = 0;
     }
 
     /**************************************/
@@ -1818,11 +1975,11 @@ class Processor {
         asm(0,  8, 1,  91,   9, 1,  0, 28);             // copy 1 to AR
         asm(0,  9, 1,  92,  10, 3,  0, 29);             // subtract 2 from AR
         asm(0, 10, 1,  96,  11, 3,  0, 29);             // subtract -0xFFFFFFF from AR
-        asm(0, 11, 0,  12,  12, 0, 17, 31);             // ring bell
+        asm(0, 11, 0,  11,  12, 0, 17, 31);             // ring bell
         //asm(0, 12, 0,  14,  11, 0, 16, 31);             // halt, then go to ring bell
 
         asm(0, 12, 0,  14,  13, 0, 16, 31);             // halt
-        asm(0, 13, 0,  15,  14, 0, 10, 31);             // punch line 19
+        asm(0, 13, 0,  15,  14, 0,  9, 31);             // type line 19
         asm(0, 14, 0,  16,  14, 0, 16, 31);             // loop on halt
     }
 

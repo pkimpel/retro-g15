@@ -17,6 +17,7 @@ import {Processor} from "../emulator/Processor.js";
 
 import {PhotoTapeReader} from "./PhotoTapeReader.js";
 import {PhotoTapePunch} from "./PhotoTapePunch.js";
+import {Typewriter} from "./Typewriter.js";
 
 let globalLoad = (ev) => {
     //let config = new G15SystemConfig(); // system configuration object
@@ -99,7 +100,8 @@ let globalLoad = (ev) => {
         context.controlPanel = new ControlPanel(context);
         context.devices = {
             "photoTapeReader":          new PhotoTapeReader(context),
-            "photoTapePunch":           new PhotoTapePunch(context)
+            "photoTapePunch":           new PhotoTapePunch(context),
+            "typewriter":               new Typewriter(context)
         }
 
         context.devices.photoTapeReader.preload();      // preload the PPR image

@@ -58,7 +58,7 @@ class Drum {
 
         // Drum storage and line layout
         this.drum = new ArrayBuffer(drumWords*Util.wordBytes);  // Drum: 32-bit Uint words
-        this.line = new Array(29);
+        this.line = new Array(33);
 
         // Build the long lines, 108 words each
         size = Util.longLineSize*Util.wordBytes;
@@ -74,25 +74,28 @@ class Drum {
             drumOffset += size;
         }
 
-        // Build the four-word MZ I/O buffer line
-        size = 4*Util.wordBytes;
-        this.MZ = new Uint32Array(this.drum, drumOffset, 4);
-        drumOffset += size;
-
         // Build the 108-word Number Track
         size = Util.longLineSize*Util.wordBytes;
         this.CN = new Uint32Array(this.drum, drumOffset, Util.longLineSize);
         drumOffset += size;
 
         // Build the double-precision registers (not implemented as part of the drum array)
-        this.MQ = this.line[24] = buildRegisterArray(2, Util.wordBits, false);   // was: new Uint32Array(this.drum, drumOffset, 2);
-        this.ID = this.line[25] = buildRegisterArray(2, Util.wordBits, false);   // was: new Uint32Array(this.drum, drumOffset, 2);
-        this.PN = this.line[26] = buildRegisterArray(2, Util.wordBits, false);   // was: new Uint32Array(this.drum, drumOffset, 2);
+        this.line[24] = this.MQ = buildRegisterArray(2, Util.wordBits, false);   // was: new Uint32Array(this.drum, drumOffset, 2);
+        this.line[25] = this.ID = buildRegisterArray(2, Util.wordBits, false);   // was: new Uint32Array(this.drum, drumOffset, 2);
+        this.line[26] = this.PN = buildRegisterArray(2, Util.wordBits, false);   // was: new Uint32Array(this.drum, drumOffset, 2);
         this.line[27] = null;           // TEST register, not actually on the drum
 
         // Build the one-word registers (not implemented here as part of the drum array)
-        this.AR = this.line[28] = new Register(Util.wordBits, this, false);
+        this.line[28] = this.AR = new Register(Util.wordBits, this, false);
         this.CM = new Register(Util.wordBits, this, false);
+        this.line[29] = null;
+        this.line[30] = null;
+        this.line[31] = null;
+
+        // Build the four-word MZ I/O buffer line
+        size = 4*Util.wordBytes;
+        this.line[32] = this.MZ = new Uint32Array(this.drum, drumOffset, 4);
+        drumOffset += size;
     }
 
     /**************************************/
@@ -359,6 +362,25 @@ class Drum {
     }
 
     /**************************************/
+    async ioPrecessARToCode(bits) {
+        /* Precesses the original contents of AR (line 28) by "bits" bits,
+        inserting zero in the four low-order bits of the word, and returning
+        the original "bits" high order bits of the word. This is normally used
+        to get the next data code for output */
+        let keepBits = Util.wordBits - bits;
+        let keepMask = Util.wordMask >> bits;
+        let codeMask = Util.wordMask >> keepBits;
+
+        let word = this.read(28) & Util.wordMask;
+        let carry = word >> keepBits;
+        this.write(28, (word & keepMask) << bits);
+        this.ioWaitFor(1);
+
+        await this.ioThrottle();
+        return carry;
+    }
+
+    /**************************************/
     async ioPrecessMZTo19() {
         /* Precesses all of line MZ to line 19, leaving the original contents
         of MZ in words 0-3 of 19, precessing the original contents of line 19
@@ -390,12 +412,49 @@ class Drum {
     }
 
     /**************************************/
+    ioDetect19Sign107() {
+        /* Returns the state of the sign bit in word 107 of line 19. This is
+        intended to be used to set the OS flip flop during formatted output.
+        The G-15 apparently monitored this and set the OS flip flop
+        asynchronously during SLOW-OUT operations every time word 107 (which
+        holds the word currently being precessed out of line 19) passed the
+        read heads. We can't easily do that in this emulator, so the SLOW-OUT
+        formatters need to call this routine BEFORE applying formatting to a
+        digit, because after precession the sign bit will have shifted left */
+
+        return this.line[19][Util.fastLineSize-1] & 1;
+    }
+
+    /**************************************/
+    async ioPrecessMZToCode(bits) {
+        /* Precesses the original contents of MZ by "bits" bits to higher
+        word numbers, inserting zero in the four low-order bits of word 0, and
+        returning the original "bits" high order bits of word 3. This is
+        normally used to get the next format code for output */
+        let keepBits = Util.wordBits - bits;
+        let keepMask = Util.wordMask >> bits;
+        let codeMask = Util.wordMask >> keepBits;
+        let carry = 0;
+
+        this.ioWaitUntil(0);
+        for (let x=0; x<Util.fastLineSize; ++x) {
+            let word = this.ioReadMZ() & Util.wordMask;
+            this.ioWriteMZ(((word & keepMask) << bits) | carry);
+            carry = word >> keepBits;
+            this.ioWaitFor(1);
+        }
+
+        await this.ioThrottle();
+        return carry;
+    }
+
+    /**************************************/
     async ioPrecessLongLineToMZ(line) {
         /* Precesses the original contents of words 0-3 of the specified long
         line to MZ by three bits, inserting zero in the three low-order bits of
         MZ word 0, and returning the original three high order bits of word 3
         from the long line. This is normally used to load MZ from the long line
-        and return the first format code get the next data code for output */
+        and return the first format code for output */
         const bits = 3;
         let keepBits = Util.wordBits - bits;
         let keepMask = Util.wordMask >> bits;
@@ -429,9 +488,9 @@ class Drum {
 
     /**************************************/
     async ioPrecess19ToCode(bits) {
-        /* Precesses the original contents of line 19 by four bits to higher
+        /* Precesses the original contents of line 19 by "bits" bits to higher
         word numbers, inserting zero in the four low-order bits of word 0, and
-        returning the original four high order bits of word 107. This is
+        returning the original "bits" high order bits of word 107. This is
         normally used to get the next data code for output. The sign bit in word
         107 is sampled before precession of that word takes place, and the state
         of that bit is also returned */
@@ -439,16 +498,11 @@ class Drum {
         let keepMask = Util.wordMask >> bits;
         let codeMask = Util.wordMask >> keepBits;
         let carry = 0;
-        let sign = 0;
 
         this.ioWaitUntil(0);
         for (let x=0; x<Util.longLineSize; ++x) {
             let word = this.ioRead19() & Util.wordMask;
-            if (x == Util.longLineSize-1) {
-                sign = word & 1;
-            }
-
-            this.ioWrite19((word & keepMask) << bits);
+            this.ioWrite19(((word & keepMask) << bits) | carry);
             carry = word >> keepBits;
             this.ioWaitFor(1);
             if (x % 15 == 0) {
@@ -457,7 +511,7 @@ class Drum {
         }
 
         await this.ioThrottle();
-        return [carry, sign];
+        return carry;
     }
 
     /**************************************/
@@ -468,7 +522,7 @@ class Drum {
 
         this.ioWaitUntil(0);
         for (let x=0; x<Util.longLineSize; ++x) {
-            if (this.ioRead19()) {
+            if (this.ioRead19() != 0) {
                 zeroed = false;
             }
 
