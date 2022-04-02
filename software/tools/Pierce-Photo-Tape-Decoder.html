@@ -8,7 +8,7 @@
 
 <script>
 /***********************************************************************
-* retro-g15/software/tools Pierce-Paper-Tape-Decoder.html
+* retro-g15/software/tools Pierce-Photo-Tape-Decoder.html
 ************************************************************************
 * Copyright (c) 2021, Paul Kimpel.
 * Licensed under the MIT License,
@@ -29,8 +29,8 @@
 * where "_" are unused bits and will be zero, "." represents the location
 * of the sprocket hole in the tape, and 1-5 are the tape channel numbers
 * as used in the Bendix documentation. These channels are in reverse
-* order compared to normal usage (i.e., the high-order 5-channel is in
-* the low-order bit of the byte).
+* order compared to normal G-15 usage (i.e., the high-order 5-channel is
+* in the low-order bit of the byte).
 *
 * This script reverses the order of the bits in each byte and then
 * translates them to Green's convention:
@@ -43,8 +43,8 @@
 *      04     S     stop
 *      05     /     reload (precess line 23 to line 19 and read next block)
 *      06     .     period (ignored on input)
-*      07     W     wait
-*   08-0F     #     invalid codes
+*      07     ~     wait
+*   08-0F           (same as corresponding 00-07 codes)
 *   10-19   0-9     decimal digits
 *   1A-1F   u-z     hexadecimal digits (A-F, respectively)
 *
@@ -133,9 +133,9 @@ window.onload = function() {
             } else {
                 frame = rev5Bits[frame];
                 if (frame > 15) {
-                    line += g15Hex[frame-16];
+                    line += g15Hex[frame & 0x0F];
                 } else {
-                    switch (frame) {
+                    switch (frame & 0x07) {
                     case 0:     // blank tape, ignore
                         break;
                     case 1:     // minus sign
@@ -159,10 +159,7 @@ window.onload = function() {
                         line += ".";
                         break;
                     case 7:     // wait
-                        line += "W";
-                        break;
-                    default:
-                        line +="#";
+                        line += "~";
                         break;
                     }
                 }
@@ -187,20 +184,19 @@ window.onload = function() {
     }
 
     function fileSelector_onChange(ev) {
-        /* Handle the <input type=file> onchange event when afiles are selected */
+        /* Handle the <input type=file> onchange event when a file is selected */
         let f = null;
         let reader = null;
-        let x = 0; // for now...
 
         clearPanel();
-        f = ev.target.files[x];
+        f = ev.target.files[0];
         //alert("File selected: " + f.name +
         //        "\nModified " + f.lastModifiedDate +
         //        "\nType=" + f.type + ", Size=" + f.size + " octets");
 
         reader = new FileReader();
         reader.onload = fileLoader_onLoad;
-        reader._fileNr = x;
+        reader._fileNr = 1;
         reader._fileName = f.name;
         reader.readAsArrayBuffer(f);
     }

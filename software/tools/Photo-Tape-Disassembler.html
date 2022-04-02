@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>G-15 Photo Tape Disassembler</title>
+<!--
+/***********************************************************************
+* retro-g15/software/tools Photo-Tape-Disassembler.html
+************************************************************************
+* Copyright (c) 2022, Paul Kimpel.
+* Licensed under the MIT License, see
+*       http://www.opensource.org/licenses/mit-license.php
+************************************************************************
+* Disassembler for Bendix G-15 photo (paper) tape images.
+*
+* Input is a text file in David Green's paper-tape image format
+*
+* The disasssembler is written in Javascript embedded within an HTML
+* web page. To use, load the assembler into a browser, e.g., from
+* https://github.com/pkimpel/retro-g15/...
+* Then use the file picker to select the paper-tape image file.
+* Selecting the file initiates the disassembly process.
+*
+************************************************************************
+* 2022-03-27  P.Kimpel
+*   Original version, cloned from retro-220 BAC-Disassembler.html.
+***********************************************************************/
+-->
+<meta name="Author" content="Paul Kimpel">
+<meta http-equiv="Content-Script-Type" content="text/javascript">
+<meta http-equiv="Content-Style-Type" content="text/css">
+
+<style>
+HTML {
+    height:             100%}
+
+BODY {
+    position:           relative;
+    background-color:   #FFC;
+    font-family:        Arial, Helvetica, sans-serif;
+    height:             calc(100% - 3ex);
+    margin:             1ex}
+
+DIV.heading {
+    margin-top:         12px;
+    margin-bottom:      6px;
+    width:              640px;
+    font-weight:        bold}
+
+LABEL {
+    font-size:          smaller}
+
+#OptionsDiv {
+    width:              calc(100% - 8px)}
+
+#TapeReaderPanel {
+    color:              white;
+    background-color:   #666;
+    width:              calc(100% - 8px);
+    border:             1px solid black;
+    border-radius:      8px;
+    font-size:          smaller;
+    padding:            8px}
+
+#TapeReaderTable {
+    border-spacing:     0;
+    border-collapse:    collapse;
+    table-layout:       fixed;
+    width:              calc(100% - 8px)}
+#TapeReaderCol1 {
+    width:              18ex}
+#TapeReaderTable TD {
+    vertical-align:     middle;
+    padding-top:        1px;
+    padding-bottom:     1px;
+    padding-left:       2px;
+    padding-right:      2px}
+
+#TextPanel {
+    position:           absolute;
+    left:               0;
+    top:                96px; /* initially */
+    bottom:             0px;
+    width:              calc(100% - 8px);
+    white-space:        pre;
+    overflow:           scroll;
+    padding:            4px;
+    border:             1px solid black;
+    color:              black;
+    background-color:   white;
+    font-family:        DejaVu Sans Mono, Consolas, Courier, monospace;
+    font-size:          8pt;
+    font-weight:        normal}
+
+.center {
+    text-align:         center}
+.floatRight {
+    float:              right}
+.rj {
+    text-align:         right}
+</style>
+</head>
+
+<body>
+<div class=heading>
+    <!--
+    <div class=floatRight>
+        <a href="https://github..."
+        target="_new" title="...">Help</a>
+    </div>
+    -->
+
+    Disassembler for Bendix G-15 Photo Tapes
+</div>
+
+<div id=OptionsDiv>
+    <div id=TapeReaderPanel>
+        <table id=TapeReaderTable>
+        <colgroup><col id=TapeReaderCol1><col><col></colgroup>
+        <tr><td>Load Tape &amp; Go
+            <td>
+                <input id=CRFileSelector type=file size=90>
+            <td class=rj>
+                <button id=ExtractListing type=button>Extract Listing</button>
+        </table>
+    </div>
+</div>
+
+<div id=TextPanel></div>  <!-- Don't add any whitespace inside the div! -->
+
+
+<script>
+"use strict";
+
+window.addEventListener("load", function() {
+
+    const autoReload = false;           // whether tapes require auto-reload (AS) functionality
+    const hexRex = /[abcdefABCDEF]/g;   // standard hex characters
+    const rTrimRex = /\s*$/;
+
+    const wordBits = 29;                // bits per G-15 word
+    const wordBytes = 4;                // bytes per G-15 word (32 bits holding 29 bits)
+    const longLineSize = 108;           // words per long drum line
+    const fastLineSize = 4;             // words per fast drum line
+
+    const wordMask = 0x1FFFFFFF;        // 29 bits
+    const absWordMask = 0x1FFFFFFE;     // all but the sign bit
+    const two28 = 0x10000000;           // 2**28 for complementing word values
+
+    // Peripheral device data codes
+    const ioDataMask =       0b10000;   // mask bit for data-valued I/O codes
+    const ioCodeSpace =      0b00000;   // space/empty-frame code
+    const ioCodeMinus =      0b00001;   // minus sign
+    const ioCodeCR =         0b00010;   // carriage-return
+    const ioCodeTab =        0b00011;   // tab
+    const ioCodeStop =       0b00100;   // block end/stop code
+    const ioCodeReload =     0b00101;   // buffer reload code (/)
+    const ioCodePeriod =     0b00100;   // period character code
+    const ioCodeWait =       0b00111;   // data-skip code
+
+    const panel = $$("TextPanel");
+
+    let tapeData = {
+        atEOF:          false,
+        offset:         0,
+        buffer:         "",
+        length:         0,
+        sourceName:     "?"};
+
+    // Assembly storage
+    let errorCount = 0;                 // assembler error count
+    let lineNr = 1;                     // assembly output line number
+    let location = 0;                   // current instruction address
+    let startAddress = 0;               // starting execution address
+
+    const printCodes = [
+        " ", "-", "\n", "\t", "$", "!", ".", "~", " ", "-", "\n", "\t", "$", "!", ".", "~",
+        "0", "1",  "2",  "3", "4", "5", "6", "7", "8", "9",  "u",  "v", "w", "x", "y", "z"];
+
+    // Filter ASCII character values to I/O frame code values.
+    const ioCodeFilter = [
+            // 0    1    2    3    4    5    6    7    8    9   10   11   12   13   14   15
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,  // 00-0F
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,  // 10-1F
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01,0x06,0x05,  // 20-2F
+            0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0x00,0x00,0x00,0x00,0x00,0x00,  // 30-3F
+            0x00,0x00,0x00,0x02,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,  // 40-4F
+            0x00,0x00,0x00,0x04,0x03,0x1A,0x1B,0x1C,0x1D,0x1E,0x1F,0x00,0x00,0x00,0x00,0x00,  // 50-5F
+            0x00,0x00,0x00,0x02,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,  // 60-6F
+            0x00,0x00,0x00,0x04,0x03,0x1A,0x1B,0x1C,0x1D,0x1E,0x1F,0x00,0x00,0x00,0x07,0x00]; // 70-7F
+
+
+    /*******************************************************************
+    * Miscellaneous Utility Functions                                  *
+    *******************************************************************/
+
+    /**************************************/
+    function $$(id) {
+        return document.getElementById(id);
+    }
+
+    /**************************************/
+    function g15Hex(v) {
+        /* Converts the value "v" to a hexidecimal string using the G-15
+        convention. This is not a particularly efficient way to do this */
+
+        return v.toString(16).replace(hexRex, (c) => {
+            switch (c) {
+            case "a": case "A":
+                return "u";
+            case "b": case "B":
+                return "v";
+            case "c": case "C":
+                return "w";
+            case "d": case "D":
+                return "x";
+            case "e": case "E":
+                return "y";
+            case "f": case "F":
+                return "z";
+            default:
+                return "?";
+            }
+        });
+    }
+
+    /**************************************/
+    function padLeft(s, len, fill) {
+        /* Pads the string "s" on the left to length "len" with the filler character
+        "fill". If fill is empty or missing, space is used. If the initial string is
+        longer than "len", it is truncated on the left to that length */
+        let pad = (fill || " ").charAt(0);
+        let result = s.toString();
+        let rLen = result.length;
+
+        if (rLen > len) {
+            result = result.substring(rLen-len);
+        } else if (rLen < len) {
+            result = result.padStart(len, pad);
+        }
+
+        return result;
+    }
+
+    /**************************************/
+    function padRight(s, len, fill) {
+        /* Pads the string "s" on the right to length "len" with the filler character
+        "fill". If fill is empty or missing, space is used. If the initial string is
+        longer than "len", it is truncated on the right to that length */
+        let pad = (fill || " ").charAt(0);
+        let result = s.toString();
+        let rLen = s.length;
+
+        if (rLen > len) {
+            result = result.substring(0, len);
+        } else if (rLen < len) {
+            result = result.padEnd(len, pad);
+        }
+
+        return result;
+    }
+
+    /**************************************/
+    function rTrim(s) {
+        /* Returns the string "s" stripped of any trailing whitespace */
+        let x = s.search(rTrimRex);
+
+        if (x < 0 ) {
+            return s;
+        } else if (x < 1) {
+            return "";
+        } else {
+            return s.substring(0, x);
+        }
+    }
+
+
+    /*******************************************************************
+    * Listing Utilities                                                *
+    *******************************************************************/
+
+    /**************************************/
+    function clearPanel() {
+        /* Clears the text panel */
+
+        panel.textContent = "";
+    }
+
+    /**************************************/
+    function readCode() {
+        /* Reads one character from the tape buffer, returns it as a G-15 data code */
+
+        if (tapeData.offset >= tapeData.length) {
+            tapeData.atEOF = true;
+            return ioCodeStop;
+        } else {
+            let code = ioCodeFilter[tapeData.buffer.charCodeAt(tapeData.offset) & 0x7F];
+            ++tapeData.offset;
+            return code;
+        }
+    }
+
+    /**************************************/
+    function gobbleWhiteSpace() {
+        /* Bypasses characters in the tape buffer until either EOF or a
+        non-whitespace (ASCII code > space) is encountered */
+
+        do {
+            if (tapeData.offset < tapeData.length) {
+                if ((tapeData.buffer.charCodeAt(tapeData.offset) & 0x7f) <= 0x20) {
+                    ++tapeData.offset;
+                } else {
+                    break; // out of do loop
+                }
+            } else {
+                tapeData.atEOF = true;
+                break; // out of do loop
+            }
+        } while (true);
+    }
+
+    /**************************************/
+    function printLine(text) {
+        /* Appends "text"+NL as a new text node to the panel DOM element */
+        let e = document.createTextNode(text + "\n");
+
+        panel.appendChild(e);
+        panel.scrollTop = panel.scrollHeight;   // scroll line into view
+    }
+
+    /**************************************/
+    function printError(msg) {
+        /* Prints an error message to the text panel and bumps the error count */
+
+        ++errorCount;
+        printLine("******** " + msg);
+    }
+
+
+    /*******************************************************************
+    * Disassembler Output                                              *
+    *******************************************************************/
+
+    /**************************************/
+    function extractListing(ev) {
+        /* Copies the text contents of the "paper" area of the assembler listing,
+        opens a new temporary window, and pastes that text into the window so it
+        can be copied or saved by the user */
+        let doc = null;                 // temp window document object
+        let text = panel.textContent;
+        let title = "G15-Disassembler Listing";
+        let win = window.open("../../webUI/FramePaper.html", "G15-Disasm-Listing",
+                "scrollbars,resizable,width=600,height=500");
+
+        function copyText(ev) {
+            let doc = ev.target;
+            let win = doc.defaultView;
+
+            win.removeEventListener("load", copyText, false);
+            doc = win.document;
+            doc.title = title;
+            doc.getElementById("Paper").textContent = text;
+        }
+
+        //clearPanel();
+        win.addEventListener("load", copyText, false);
+        win.moveTo((screen.availWidth-win.outerWidth)/2, (screen.availHeight-win.outerHeight)/2);
+        ev.preventDefault();
+        ev.stopPropagation();
+    }
+
+
+    /*******************************************************************
+    *  Disassembly                                                     *
+    *******************************************************************/
+
+    /**************************************/
+    function disassembleBlock(block) {
+        /* Disassembles one block of words */
+        let ch = "";
+        let head = "";
+        let op = "";
+        let sign = 0;
+        let signCode = "";
+        let signedValue = "";
+        let src = "";
+        let dest = "";
+        let seq = "";
+        let tail = "";
+        let timing = "";
+        let value = 0;
+        let word = 0;
+
+        let p = 0;                      // prefix -- 0=immediate, 1=deferred
+        let t = 0;                      // T -- timing number
+        let bp = 0;                     // breakpoint bit
+        let n = 0;                      // N -- next instruction location
+        let c = 0;                      // characteristic
+        let s = 0;                      // source line
+        let d = 0;                      // destination line
+        let dp = 0;                     // double-precision bit
+        let cs = 0;                     // "via AR" flip flop
+
+        for (let loc=0; loc<longLineSize; ++loc) {
+            word = block[loc];
+            value = word >> 1;
+            sign = word & 1;
+            signCode = (sign ? "-" : " ");
+            signedValue = (sign ? -value : value);
+
+            // Decode the instruction
+            dp = word & 0x01;             // single/double mode
+            d =  (word >> 1) & 0x1F;      // destination line
+            s =  (word >> 6) & 0x1F;      // source line
+            c =  (word >> 11) & 0x03;     // characteristic code
+            n =  (word >> 13) & 0x7F;     // next command location
+            bp = (word >> 20) & 0x01;     // breakpoint flag
+            t =  (word >> 21) & 0x7F;     // operand timing number
+            p =  (word >> 28) & 0x01;     // prefix (immediate/deferred execution) bit
+
+            // Set "via AR" flip-flop (CX . S7/ . D7/)
+            cs = (((word >> 12) & 1) && ((~(word >> 8)) & 7) && ((~(word >> 3)) & 7) ? 1 : 0);
+
+            /*******************************************************************
+            // Officially, L=107 is disqualified as a location for a command. The
+            // reason is that location arithmetic is done using a 7-bit number (with
+            // values 0-127) but the location following 107 is 0, not 108. The number
+            // track (CN) normally handles this by increasing the N and (usually) T
+            // numbers by 20 when passing location 107 to turn location 108 into
+            // location 128, which in a 7-bit register is the same as zero. Alas,
+            // this adjustment does not occur when a command is executed from
+            // location 107, so N and (usually) T in the command will behave as if
+            // they are 20 word-times too low. The following code adjusts T and N
+            // so that they will behave as the hardware would have.
+
+            if (loc == 127) {
+                n = (n + 20 + longLineSize) % longLineSize;
+                if (!(d == 31 && (s & 0b11100) == 0b11000)) {    // not 24-27: MUL, DIV, SHIFT, NORM
+                    t = (t + 20 + longLineSize) % longLineSize;
+                }
+            }
+            *******************************************************************/
+
+            head = g15Hex(word).padStart(8, "0") + " " +
+                signCode + g15Hex(value).padStart(7, "0") + " " +
+                signedValue.toString().padStart(10, " ") + " " +
+                signCode + (value/two28).toFixed(9) + " " +
+                ("id").at(p) +
+                t.toString().padStart(4, " ") +
+                n.toString().padStart(4, " ") +
+                (dp*4 + c).toString().padStart(2, " ") +
+                s.toString().padStart(3, " ") +
+                d.toString().padStart(3, " ") +
+                (dp ? "1" : "").padStart(2, " ") +
+                (bp ? "b" : "").padStart(3, " ");
+
+            // Now interpret that mess...
+
+            // Indicate immediate/deferred & single/double precision.
+            tail = loc.toString().padStart(4, " ") + ": " +(p ? "d " : "i ") + (dp ? "D-" : "");
+
+            // Determine transfer characteristic.
+            switch (c) {
+            case 0:
+                ch = "TR";
+                break;
+            case 1:
+                ch = "AD";
+                break;
+            case 2:
+                ch = (cs ? "TVA" : "AV");
+                break;
+            case 3:
+                ch = (cs ? "AVA" : "SU");
+                break;
+            }
+
+            // Determine operand address and command timing.
+            op = (p ? t : loc+1);
+            timing = (p ? dp+1 : t-loc-1);
+            if (timing <= 0) {
+                timing += longLineSize;
+            }
+
+            // Determine transfer source location.
+            if (s < 24) {
+                src = s.toString() + ":";
+                if (s < 20) {
+                   src += op;
+                } else {
+                   src += (op % 4);
+                }
+            } else if (s < 32) {
+                switch (s) {
+                case 24:
+                    src = "MQ:" + (op % 2);
+                    break;
+                case 25:
+                    src = "ID:" + (op % 2);
+                    break;
+                case 26:
+                    src = "PN:" + (op % 2);
+                    break;
+                case 27:
+                    src = "(20.21+20/.AR):" + op % 4;
+                    break;
+                case 28:
+                    src = "AR";
+                    break;
+                case 29:
+                    src = "(20.IR):" + op % 4;
+                    break;
+                case 30:
+                    src = "(20/.21):" + op % 4;
+                    break;
+                case 31:
+                    src = "(20.21):" + op % 4;
+                    break;
+                default:
+                    src = "<Src Invalid>";
+                    break;
+                }
+            }
+
+            // Determine destination transfer location.
+            if (d < 24) {
+                dest = d.toString() + ":";
+                if (d < 20) {
+                   dest += op.toString();
+                } else {
+                   dest += (op % 4).toString();
+                }
+            } else if (d < 31) {
+                switch (d) {
+                case 24:
+                    dest = "MQ:" + (op % 2);
+                    break;
+                case 25:
+                    dest = "ID:" + (op % 2);
+                    break;
+                case 26:
+                    dest = "PN:" + (op % 2);
+                    break;
+                case 27:
+                    dest = "TEST:" + op;
+                    break;
+                case 28:
+                    dest = "AR";
+                    break;
+                case 29:
+                    dest = "AR+";
+                    break;
+                case 30:
+                    dest = "PN+:" + op % 2;
+                    break;
+                }
+            } else if (d == 31) {
+                switch (s) {
+                case 0:
+                    dest = "SET I/O READY:" + op;
+                    break;
+                case 1:
+                    dest = "MAG WRITE " + c + ":" + op;
+                    break;
+                case 2:
+                    dest = "FAST PUNCH LEADER:" + op;
+                    break;
+                case 3:
+                    dest = "FAST PUNCH 19:" + op;
+                    break;
+                case 4:
+                    dest = "MAG SEARCH REV " + c + ":" + op;
+                    break;
+                case 5:
+                    dest = "MAG SEARCH FWD " + c + ":" + op;
+                    break;
+                case 6:
+                    dest = "PHOTO TAPE REV1:" + op;
+                    break;
+                case 7:
+                    dest = "PHOTO TAPE REV2:" + op;
+                    break;
+                case 8:
+                    dest = "TYPE AR:" + op;
+                    break;
+                case 9:
+                    dest = "TYPE 19:" + op;
+                    break;
+                case 10:
+                    dest = "PUNCH 19:" + op;
+                    break;
+                case 11:
+                    dest = "CARD PUNCH 19:" + op;
+                    break;
+                case 12:
+                    dest = "TYPE IN:" + op;
+                    break;
+                case 13:
+                    dest = "MAG READ " +c + ":" + op;
+                    break;
+                case 14:
+                    dest = "CARD READ:" + op;
+                    break;
+                case 15:
+                    dest = "PHOTO TAPE READ:" + op;
+                    break;
+                case 16:
+                    dest = "HALT:" + op;
+                    break;
+                case 17:
+                    dest = "RING BELL:" + op;
+                    switch (c) {
+                    case 1:
+                        dest += ", TEST MANUAL PUNCH";
+                        break;
+                    case 2:
+                        dest += ", START IR";
+                        break;
+                    case 3:
+                        dest += ", STOP IR";
+                        break;
+                    }
+                    break;
+                case 18:
+                    dest = "TR 20:" + op + ".ID" + (op % 2) + " > OR";
+                    break;
+                case 19:
+                    dest = "DA-1 ";
+                    switch (c) {
+                    case 0:
+                        dest += "START";
+                        break;
+                    case 1:
+                        dest += "STOP";
+                        break;
+                    default:
+                        dest += "<ch=" + c + ">";
+                    }
+
+                    dest += ":" + op;
+                    break;
+                case 20:
+                    dest = "RETURN:" + op + ", CD=" + (dp*4 + c);
+                    break;
+                case 21:
+                    dest = "MARK:" + op + ", CD=" + (dp*4 + c);
+                    if (p) {
+                        timing = 1;
+                    }
+                    break;
+                case 22:
+                    dest = "TEST AR-SIGN";
+                    break;
+                case 23:
+                    switch (c) {
+                    case 0:
+                        dest = "CLEAR MQ/ID/PN/IP:" + op;
+                        break;
+                    case 1:
+                        dest = "TR PN:" + (op % 2) + ".2:" + op + " > ID, PN:" + (op % 2) + ".2/:" + op + " > PN";
+                        break;
+                    default:
+                        dest = "D23:" + op + " <ch=" + c + ">";
+                    }
+                    break;
+                case 24:
+                    dest = "MUL:" + op;
+                    break;
+                case 25:
+                    dest = "DIV:" + op;
+                    if (c != 1) {
+                        dest += " <ch != 1>";
+                    }
+                    break;
+                case 26:
+                    dest = "SHIFT MQ-L/ID-R:" + op;
+                    if (c == 0) {
+                        dest += ", ++AR"
+                    } else if (c > 1) {
+                        dest += " <ch=" + c + ">";
+                    }
+                    break;
+                case 27:
+                    dest = "NORM MQ:" + op;
+                    if (c == 0) {
+                        dest += ", ++AR"
+                    } else if (c > 1) {
+                        dest += " <ch=" + c + ">";
+                    }
+                    break;
+                case 28:
+                    switch (c) {
+                    case 0:
+                        dest = "TEST I/O READY:" + op;
+                        break;
+                    case 1:
+                        dest = "TEST READY IN:" + op;
+                        break;
+                    case 2:
+                        dest = "TEST READY OUT:" + op;
+                        break;
+                    case 3:
+                        dest = "TEST DA-1 OFF:" + op;
+                    }
+                    break;
+                case 29:
+                    dest = "TEST OVERFLOW:" + op;
+                    break;
+                case 30:
+                    dest = "MAG FILE CODE " + c + ":" + op;
+                    break;
+                case 31:
+                    switch (c) {
+                    case 0:
+                        dest = "NEXT CMD FROM AR:" + op;
+                        break;
+                    case 1:
+                        dest = "TR NT+18 > 18:" + op;
+                        break;
+                    case 2:
+                        dest = "TR 20+18 > 18:" + op;
+                        break;
+                    case 3:
+                        dest = "D31:" + op + " <ch=3>";
+                        break;
+                    }
+                    break;
+                default:
+                    dest = "<D=31 Source Invalid>";
+                    break;
+                }
+            } else {
+                dest = "<Dest Invalid>";
+            }
+
+            // Put it all together.
+            seq = (n == loc || n == loc+1 ? "" : "*");  // next is current or +1
+            if (d < 31) {
+                tail += `${ch} ${src} > ${dest}`;
+            } else {
+                tail += dest;
+            }
+
+            printLine(`${head}${tail}${(p ? "" : " #" + timing)}, nL=${(p ? t+1 : t)}, N=${n}${seq}`);
+        }
+    }
+
+    /**************************************/
+    function ioPrecess23To19(line23, line19) {
+        /* Precesses all of line23 to line19, leaving the original contents
+        of 23 in words 0-3 of 19, precessing the original contents of line19
+        by four words to higher addresses in the line, and leaving the original
+        contents of words 104-107 of line19 in line23 */
+
+        for (let x=0; x<longLineSize; ++x) {
+            let mx = x % fastLineSize;
+            let w23 = line23[mx];
+            line23[mx] = line19[x];
+            line19[x] = w23;
+        }
+    }
+
+    /**************************************/
+    function ioPrecessCodeTo23(code, bits, line23) {
+        /* Stores the value of "code" into the low-order "bits" of line23
+        word 0, precessing the original contents of line23 to higher word
+        numbers and returning the high-order "bits" number of bits from
+        line23 word 3. This will normally be called 29 times to fully populate
+        line23 before doing a Reload operation */
+        let keepBits = wordBits - bits;
+        let keepMask = wordMask >> bits;
+        let codeMask = wordMask >> keepBits;
+        let carry = code & codeMask;
+
+        for (let x=0; x<fastLineSize; ++x) {
+            let word = line23[x] & wordMask;
+            line23[x] = ((word & keepMask) << bits) | carry;
+            carry = word >> keepBits;
+        }
+        return carry;
+    }
+
+    /**************************************/
+    function readBlock(line23, line19) {
+        /* Reads one block of codes from the tape, returning the binary words
+        of the block in the "line19" parameter. This simulates the way the photo
+        tape reader precessed codes into line 23, from line 23 to line MZ, and
+        from line MZ to line 19. MZ was used only as a fast buffer to solve
+        timing contraints, so it is eliminated here and words precess from 23
+        directly into 19 in this implementation */
+        let bitCount = 0;               // current block bit count
+        let bx = 0;                     // block word index
+        let code = 0;                   // current data code from tape
+        let sign = 0;                   // current sign bit
+
+        do {
+            code = readCode();
+            if (code & ioDataMask) {    // it's a data frame
+                ioPrecessCodeTo23(code, 4, line23);
+                bitCount += 4;
+            } else {
+                switch(code & 0b00111) {
+                case ioCodeMinus:       // minus: set sign FF
+                    sign = 1;
+                    break;
+                case ioCodeCR:          // carriage return: shift sign into word
+                case ioCodeTab:         // tab: shift sign into word
+                    ioPrecessCodeTo23(sign, 1, line23);
+                    sign = 0;
+                    ++bitCount;
+                    break;
+                case ioCodeStop:        // end/stop
+                    // no break: Stop implies Reload
+                case ioCodeReload:      // reload
+                    ioPrecess23To19(line23, line19);
+                    bitCount = 0;
+                    break;
+                case ioCodePeriod:      // period: ignored
+                    break;
+                case ioCodeWait:        // wait: insert a 0 digit on input
+                    ioPrecessCodeTo23(0, 4, line23);
+                    bitCount += 4;
+                    break;
+                default:                // treat everything else as space & ignore
+                    break;
+                }
+            }
+
+            // Check if automatic reload is enabled
+            if (autoReload && bitCount >= fastLineSize*wordBits) {
+                ioPrecess23To19(line23, line19);
+                bitCount = 0;
+            }
+        } while (code != ioCodeStop);
+
+        gobbleWhiteSpace();
+    }
+
+    /**************************************/
+    function disassembleTape() {
+        /* Initializes or reinitializes the disassembler for a new tape file */
+        let blockNr = 0;
+        let line19 = new Array(longLineSize);   // line 19 buffer
+        let line23 = new Array(fastLineSize);   // line 23 buffer
+        let stamp = new Date();
+
+        clearPanel();
+        printLine("Disassembler for Bendix G-15 Photo Tapes -- " +
+                stamp.getFullYear().toString() + "-" +
+                padLeft(stamp.getMonth()+1, 2, "0") + "-" +
+                padLeft(stamp.getDate(), 2, "0") + " " +
+                padLeft(stamp.getHours(), 2, "0") + ":" +
+                padLeft(stamp.getMinutes(), 2, "0"));
+        printLine("");
+        printLine("Source File: " + tapeData.sourceName);
+        printLine("");
+        printLine(" Raw hex     ±hex    Decimal   Fractional i/d T   N C  S  D DP BP  L  Interpretation");
+        printLine("");
+
+        errorCount = 0;
+        lineNr = 0;
+        location = 0;
+        tapeData.atEOF = false;
+        startAddress = 0;
+        line19.fill(0);
+        line23.fill(0);
+
+        do {
+            ++blockNr;
+            printLine("");
+            printLine(`Block # ${blockNr}:`);
+            printLine("");
+            readBlock(line23, line19);
+            disassembleBlock(line19);
+        } while (!tapeData.atEOF);
+
+        printLine("");
+        printLine("--END--");
+        panel.scrollTop = 0;                    // scroll to top
+        panel.focus();
+        $$("CRFileSelector").value = null;      // reset the <input> elements
+}
+
+
+    /*******************************************************************
+    * Initialization and Termination                                   *
+    *******************************************************************/
+
+    /**************************************/
+    function loadTape(ev) {
+        /* Handle the <input type=file> onchange event when a file is selected */
+        let f = ev.target.files[0];
+        let reader = new FileReader();
+
+        function fileLoader_onLoad(ev) {
+            /* Handles the onload event for a readAsText FileReader */
+
+            tapeData.buffer = ev.target.result;
+            tapeData.offset = 0;
+            tapeData.length = tapeData.buffer.length;
+            setTimeout(disassembleTape, 100);
+        }
+
+        tapeData.sourceName = f.name;
+        /********************
+        alert("File selected: " + f.name +
+                "\nModified " + f.lastModifiedDate +
+                "\nType=" + f.type + ", Size=" + f.size + " octets");
+        ********************/
+
+        reader.onload = fileLoader_onLoad;
+        reader.readAsText(f);
+    }
+
+    /**************************************/
+    function checkBrowser() {
+        /* Checks whether this browser can support the necessary stuff */
+        let missing = "";
+
+        if (!window.File        ) {missing += ", File"}
+        if (!window.FileReader  ) {missing += ", FileReader"}
+        if (!window.FileList    ) {missing += ", FileList"}
+        if (!window.DOMTokenList) {missing += ", DOMTokenList"}
+        if (!window.ArrayBuffer ) {missing += ", ArrayBuffer"}
+        if (!window.DataView    ) {missing += ", DataView"}
+        if (!window.Promise     ) {missing += ", Promise"}
+
+        if (missing.length == 0) {
+            return false;
+        } else {
+            alert("No can do... your browser does not\n" +
+                  "support the following features:\n" + missing.substring(2));
+            return true;
+        }
+    }
+
+    /**************************************/
+    function repositionTextPanel() {
+        /* Repositions and resizes the #TextPanel element so that it fills the
+        bottom portion of the window */
+        let opts = $$("OptionsDiv");
+        let panel = $$("TextPanel");
+
+        panel.style.top = (opts.offsetTop + opts.offsetHeight + 8).toFixed() + "px";
+    }
+
+    /******************** Start of window.onload() ********************/
+    repositionTextPanel();
+    if (checkBrowser()) {
+        return;
+    }
+
+    $$("CRFileSelector").value = null;  // clear any prior file selection
+    $$("CRFileSelector").addEventListener("change", loadTape, false);
+    $$("ExtractListing").addEventListener("click", extractListing);
+}, false);
+</script>
+
+</body>
+</html>
