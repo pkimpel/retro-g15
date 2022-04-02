@@ -63,9 +63,12 @@ class DiagPanel {
     /**************************************/
     dumpLine() {
         /* Dumps the currently-specified line to the LineDump <pre> in signed hex */
-        let lineNr = parseInt(this.$$("LineNr").value) || 0;
+        let text = this.$$("LineNr").value.trim().toUpperCase();
+        let lineNr = (text == "MZ" ? 32 : parseInt(text) || 0);
 
-        if (lineNr >= 0 && lineNr < 24) {
+        switch (true) {
+        case lineNr >= 0 && lineNr < 24:
+        case lineNr == 32:
             let drum = this.context.processor.drum;
             let top = (lineNr < 20 ? Util.longLineSize : Util.fastLineSize);
             let inc = (lineNr < 20 ? 12 : Util.fastLineSize);
@@ -75,8 +78,8 @@ class DiagPanel {
                 text += x.toString().padStart(3, " ");
                 for (let y=0; y<inc; ++y) {
                     let word = drum.line[lineNr][x+y];
-                    text += " " + (word >> 1).toString(16).padStart(7, "0") +
-                                  ((word & 1) ? "-" : " ");
+                    text += " " + ((word & 1) ? "-" : " ") +
+                                  (word >> 1).toString(16).padStart(7, "0");
                 }
 
                 text += "\n";
@@ -93,37 +96,37 @@ class DiagPanel {
         let drum = p.drum;              // local copy of Drum reference
         let now = performance.now();
 
-        this.drumLoc.updateLampGlow(drum.L.glow);
-        this.cmdLoc.updateLampGlow(p.cmdLoc.glow);
-        this.CDReg.updateLampGlow(p.CD.glow);
-        this.RCLamp.set(p.RC.glow);
-        this.TRLamp.set(p.TR.glow);
-        this.CHLamp.set(p.CH.glow);
-        this.CGLamp.set(p.CG.glow);
-        this.CQLamp.set(p.CQ.glow);
-        this.CSLamp.set(p.CS.glow);
-        this.FOLamp.set(p.FO.glow);
+        this.drumLoc.updateFromRegister(drum.L);
+        this.cmdLoc.updateFromRegister(p.cmdLoc);
+        this.CDReg.updateFromRegister(p.CD);
+        this.RCLamp.updateFromFlipFlop(p.RC);
+        this.TRLamp.updateFromFlipFlop(p.TR);
+        this.CHLamp.updateFromFlipFlop(p.CH);
+        this.CGLamp.updateFromFlipFlop(p.CG);
+        this.CQLamp.updateFromFlipFlop(p.CQ);
+        this.CSLamp.updateFromFlipFlop(p.CS);
+        this.FOLamp.updateFromFlipFlop(p.FO);
 
-        this.DILamp.set(p.DI.glow);
-        this.TReg.updateLampGlow(p.T.glow);
-        this.BPLamp.set(p.BP.glow);
-        this.NReg.updateLampGlow(p.N.glow);
-        this.CAReg.updateLampGlow(p.CA.glow);
-        this.SReg.updateLampGlow(p.S.glow);
-        this.DReg.updateLampGlow(p.D.glow);
-        this.C1Lamp.set(p.C1.glow);
+        this.DILamp.updateFromFlipFlop(p.DI);
+        this.TReg.updateFromRegister(p.T);
+        this.BPLamp.updateFromFlipFlop(p.BP);
+        this.NReg.updateFromRegister(p.N);
+        this.CReg.updateFromRegister(p.C);
+        this.SReg.updateFromRegister(p.S);
+        this.DReg.updateFromRegister(p.D);
+        this.C1Lamp.updateFromFlipFlop(p.C1);
 
-        this.ARReg.updateLampGlow(drum.AR.glow);
-        this.IPLamp.set(p.IP.glow);
+        this.ARReg.updateFromRegister(drum.AR);
+        this.IPLamp.updateFromFlipFlop(p.IP);
 
-        this.ID1Reg.updateLampGlow(drum.ID[1].glow);
-        this.ID0Reg.updateLampGlow(drum.ID[0].glow);
+        this.ID1Reg.updateFromRegister(drum.ID[1]);
+        this.ID0Reg.updateFromRegister(drum.ID[0]);
 
-        this.MQ1Reg.updateLampGlow(drum.MQ[1].glow);
-        this.MQ0Reg.updateLampGlow(drum.MQ[0].glow);
+        this.MQ1Reg.updateFromRegister(drum.MQ[1]);
+        this.MQ0Reg.updateFromRegister(drum.MQ[0]);
 
-        this.PN1Reg.updateLampGlow(drum.PN[1].glow);
-        this.PN0Reg.updateLampGlow(drum.PN[0].glow);
+        this.PN1Reg.updateFromRegister(drum.PN[1]);
+        this.PN0Reg.updateFromRegister(drum.PN[0]);
 
         if (Math.trunc(now/1000) % 2) {
             this.dumpLine();
@@ -139,8 +142,8 @@ class DiagPanel {
         this.window = this.doc.defaultView;
         this.panel = this.$$("DiagPanel");
 
-        this.drumLoc = new DiagRegister(this.$$("DrumLocBox"), 7, false, false, "DrumLoc_", "Drum Loc");
-        this.cmdLoc = new DiagRegister(this.$$("CmdLocBox"), 7, false, false, "CmdLoc_", "Cmd Loc");
+        this.drumLoc = new DiagRegister(this.$$("DrumLocBox"), 7, false, false, "DrumL_", "Drum L");
+        this.cmdLoc = new DiagRegister(this.$$("CmdLocBox"), 7, false, false, "CmdL_", "Cmd L");
         this.CDReg = new DiagRegister(this.$$("CDBox"), 3, false, false, "CDReg_", "CD");
         this.RCLamp = new DiagLamp(this.$$("RCBox"), 4, 2, "RCLamp");
         this.RCLamp.setCaption("RC");
@@ -163,7 +166,7 @@ class DiagPanel {
         this.BPLamp = new DiagLamp(this.$$("BPBox"), 4, 2, "BPLamp");
         this.BPLamp.setCaption("BP");
         this.NReg = new DiagRegister(this.$$("NBox"), 7, false, false, "NReg_", "N");
-        this.CAReg = new DiagRegister(this.$$("CABox"), 2, false, false, "CAReg_", "CHAR");
+        this.CReg = new DiagRegister(this.$$("CBox"), 2, false, false, "CReg_", "C");
         this.SReg = new DiagRegister(this.$$("SBox"), 5, false, false, "SReg_", "S");
         this.DReg = new DiagRegister(this.$$("DBox"), 5, false, false, "DReg_", "D");
         this.C1Lamp = new DiagLamp(this.$$("C1Box"), 4, 2, "SDLamp");
@@ -188,6 +191,7 @@ class DiagPanel {
         this.$$("StopBtn").addEventListener("click", this.boundProcStop);
         this.window.addEventListener("unload", this.boundShutDown);
 
+        this.updatePanel();
         if (!this.intervalToken) {
             this.intervalToken = this.window.setInterval(this.boundUpdatePanel, DiagPanel.displayRefreshPeriod);
         }

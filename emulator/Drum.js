@@ -114,9 +114,12 @@ class Drum {
 
     /**************************************/
     startTiming() {
-        /* Initializes the drum and emulation timing */
+        /* Initializes the drum and emulation timing. The Math.max() is used
+        to compensate for many browsers limiting the precision of
+        performance.now() to one millisecond, which can make real time appear
+        to go backwards */
 
-        this.eTime = performance.now();
+        this.eTime = Math.max(performance.now(), this.eTime);
         this.eTimeSliceEnd = this.eTime + Drum.minDelayTime;
         this.L.value = Math.round(this.eTime/Util.wordTime) % Util.longLineSize;
     }
@@ -126,14 +129,15 @@ class Drum {
         /* Returns a promise that unconditionally resolves after a delay to
         allow browser real time to catch up with the emulation clock, this.eTime.
         Since most browsers will force a setTimeout() to wait for a minimum of
-        4ms, this routine will not delay if the difference between real time
-        (as reported by performance.now()) and emulation time is less than
-        Drum.minDelayTime */
+        4ms, this routine will not delay if emulation time has not yet reached
+        the end of its time slice or the difference between real time (as
+        reported by performance.now()) and emulation time is less than
+        Util.minTimeout */
 
         if (this.eTime < this.eTimeSliceEnd) {
             return Promise.resolve(null);       // i.e., don't wait at all
         } else {
-            this.eTimeSliceEnd = this.eTime + Drum.minDelayTime;
+            this.eTimeSliceEnd += Drum.minDelayTime;
             return this.drumTimer.delayUntil(this.eTime);
         }
     }
@@ -145,7 +149,7 @@ class Drum {
         location by that amount and advances the emulation clock accordingly */
 
         this.L.value = (this.L.value + wordTimes) % Util.longLineSize;
-        this.eTime += Util.wordTime*wordTimes;
+        this.eTime += wordTimes*Util.wordTime;
     }
 
     /**************************************/
@@ -261,10 +265,13 @@ class Drum {
 
     /**************************************/
     ioStartTiming() {
-        /* Initializes the drum and emulation timing for I/O */
+        /* Initializes the drum and emulation timing for I/O. Math.max()
+        is used to compensate for many browsers limiting the precision of
+        performance.now() to one millisecond, which can make real time appear
+        to go backwards */
 
-        this.ioTime = this.eTime;
-        this.ioL.value = this.L.value;
+        this.ioTime = Math.max(performance.now(), this.ioTime);
+        this.ioL.value = Math.round(this.ioTime/Util.wordTime) % Util.longLineSize;
     }
 
     /**************************************/
@@ -274,7 +281,7 @@ class Drum {
         Since most browsers will force a setTimeout() to wait for a minimum of
         4ms, this routine will not delay if the difference between real time
         (as reported by performance.now()) and emulation time is less than
-        Drum.minDelayTime */
+        Util.minTimeout */
 
         return this.ioTimer.delayUntil(this.ioTime);
     }
@@ -286,7 +293,7 @@ class Drum {
         location by that amount and advances the emulation clock accordingly */
 
         this.ioL.value = (this.ioL.value + wordTimes) % Util.longLineSize;
-        this.ioTime += Util.wordTime*wordTimes;
+        this.ioTime += wordTimes*Util.wordTime;
     }
 
     /**************************************/
@@ -365,19 +372,21 @@ class Drum {
     async ioPrecessARToCode(bits) {
         /* Precesses the original contents of AR (line 28) by "bits" bits,
         inserting zero in the four low-order bits of the word, and returning
-        the original "bits" high order bits of the word. This is normally used
-        to get the next data code for output */
+        the original "bits" high order bits of the word and a Boolean that is
+        always false (to make the return value signature identical to
+        ioPrecess19ToCode). This is normally used to get the next data code
+        for output */
         let keepBits = Util.wordBits - bits;
         let keepMask = Util.wordMask >> bits;
         let codeMask = Util.wordMask >> keepBits;
 
         let word = this.read(28) & Util.wordMask;
-        let carry = word >> keepBits;
+        let code = word >> keepBits;
         this.write(28, (word & keepMask) << bits);
         this.ioWaitFor(1);
 
-        await this.ioThrottle();
-        return carry;
+        // await this.ioThrottle();
+        return [code, false];
     }
 
     /**************************************/
@@ -388,7 +397,9 @@ class Drum {
         contents of words 104-107 of line 19 in line MZ. Since this operation
         can run concurrently with other I/O-based drum operations, it doesn't
         use the regular ioReadX or ioWriteX routines nor update this.ioL */
-        let delay = (Util.longLineSize - this.ioL) % Util.longLineSize;
+
+        // Compute delay until line 19 word 0.
+        let delay = ((Util.longLineSize - this.ioL) % Util.longLineSize)*Util.wordTime;
 
         for (let x=0; x<Util.longLineSize; ++x) {
             // Synchronize drum timing
@@ -434,18 +445,19 @@ class Drum {
         let keepBits = Util.wordBits - bits;
         let keepMask = Util.wordMask >> bits;
         let codeMask = Util.wordMask >> keepBits;
-        let carry = 0;
+        let code = 0;
+        let word = 0;
 
-        this.ioWaitUntil(0);
+        this.ioWaitUntil4(0);
         for (let x=0; x<Util.fastLineSize; ++x) {
-            let word = this.ioReadMZ() & Util.wordMask;
-            this.ioWriteMZ(((word & keepMask) << bits) | carry);
-            carry = word >> keepBits;
+            word = this.ioReadMZ() & Util.wordMask;
+            this.ioWriteMZ(((word & keepMask) << bits) | code);
+            code = word >> keepBits;
             this.ioWaitFor(1);
         }
 
         await this.ioThrottle();
-        return carry;
+        return code;
     }
 
     /**************************************/
@@ -459,18 +471,19 @@ class Drum {
         let keepBits = Util.wordBits - bits;
         let keepMask = Util.wordMask >> bits;
         let codeMask = Util.wordMask >> keepBits;
-        let carry = 0;
+        let code = 0;
+        let word = 0;
 
         this.ioWaitUntil(0);
         for (let x=0; x<Util.fastLineSize; ++x) {
-            let word = this.line[line][x] & Util.wordMask;
-            this.ioWriteMZ(((word & keepMask) << bits) | carry);
-            carry = word >> keepBits;
+            word = this.line[line][x] & Util.wordMask;
+            this.ioWriteMZ(((word & keepMask) << bits) | code);
+            code = word >> keepBits;
             this.ioWaitFor(1);
         }
 
         await this.ioThrottle();
-        return carry;
+        return code;
     }
 
     /**************************************/
@@ -490,50 +503,35 @@ class Drum {
     async ioPrecess19ToCode(bits) {
         /* Precesses the original contents of line 19 by "bits" bits to higher
         word numbers, inserting zero in the four low-order bits of word 0, and
-        returning the original "bits" high order bits of word 107. This is
+        returning the original "bits" high order bits of word 107 and a Boolean
+        indicating whether line 19 is now "empty" (all zeroes). This is
         normally used to get the next data code for output. The sign bit in word
         107 is sampled before precession of that word takes place, and the state
         of that bit is also returned */
         let keepBits = Util.wordBits - bits;
         let keepMask = Util.wordMask >> bits;
         let codeMask = Util.wordMask >> keepBits;
-        let carry = 0;
+        let code = 0;
+        let empty = true;
+        let word = 0;
 
         this.ioWaitUntil(0);
         for (let x=0; x<Util.longLineSize; ++x) {
-            let word = this.ioRead19() & Util.wordMask;
-            this.ioWrite19(((word & keepMask) << bits) | carry);
-            carry = word >> keepBits;
+            word = this.ioRead19() & Util.wordMask;
+            if (word) {
+                empty = false;
+            }
+
+            this.ioWrite19(((word & keepMask) << bits) | code);
+            code = word >> keepBits;
             this.ioWaitFor(1);
-            if (x % 15 == 0) {
+            if (x % 16 == 0) {          // 4.30ms
                 await this.ioThrottle();
             }
         }
 
         await this.ioThrottle();
-        return carry;
-    }
-
-    /**************************************/
-    async ioTest19Zero() {
-        /* Tests the contents of line 19 over one full drum cycle for zero.
-        If no non-zero words are found, returns true, otherwise false */
-        let zeroed = true;
-
-        this.ioWaitUntil(0);
-        for (let x=0; x<Util.longLineSize; ++x) {
-            if (this.ioRead19() != 0) {
-                zeroed = false;
-            }
-
-            this.ioWaitFor(1);
-            if (x % 15 == 0) {
-                await this.ioThrottle();
-            }
-        }
-
-        await this.ioThrottle();
-        return zeroed;
+        return [code, empty];
     }
 
     /**************************************/
@@ -547,20 +545,15 @@ class Drum {
         let keepMask = Util.wordMask >> bits;
         let codeMask = Util.wordMask >> keepBits;
         let carry = code & codeMask;
+        let word = 0;
 
         this.ioWaitUntil4(0);
         for (let x=0; x<Util.fastLineSize; ++x) {
-            let word = this.ioRead23() & Util.wordMask;
+            word = this.ioRead23() & Util.wordMask;
             this.ioWrite23(((word & keepMask) << bits) | carry);
             carry = word >> keepBits;
             this.ioWaitFor(1);
         }
-
-        //console.log("PrecessCodeTo23: %s  %s %s %s %s", (code & codeMask).toString(16),
-        //    this.line[23][0].toString(16).padStart(8, "0"),
-        //    this.line[23][1].toString(16).padStart(8, "0"),
-        //    this.line[23][2].toString(16).padStart(8, "0"),
-        //    this.line[23][3].toString(16).padStart(8, "0"));
         await this.ioThrottle();
         return carry;
     }

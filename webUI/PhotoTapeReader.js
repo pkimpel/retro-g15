@@ -146,12 +146,17 @@ class PhotoTapeReader {
         let code = 0;                   // current G-15 code
         let eob = false;                // end-of-block flag
         let nextFrameStamp = performance.now() + PhotoTapeReader.framePeriod;
+        let precessionComplete = Promise.resolve();
         let x = this.bufIndex;          // current buffer index
 
         this.busy = true;
         this.$$("PaperTapeReaderCaption").classList.add("active");
 
         do {
+            this.tapeSupplyBar.value = bufLength-x;
+            await this.timer.delayUntil(nextFrameStamp);
+            nextFrameStamp += PhotoTapeReader.framePeriod;
+
             if (x >= bufLength) {       // end of buffer -- send stop code
                 code = IOCodes.ioCodeStop;
             } else {
@@ -160,13 +165,16 @@ class PhotoTapeReader {
                 ++x;
             }
 
-            this.tapeSupplyBar.value = bufLength-x;
-            await this.timer.delayUntil(nextFrameStamp);
-            nextFrameStamp += PhotoTapeReader.framePeriod;
-            eob = await this.processor.receiveInputCode(code);
-            if (code == IOCodes.ioCodeStop || eob || this.canceled) {
+            eob = await precessionComplete;
+            if (eob || this.canceled) {
                 this.canceled = false;
                 break; // out of do loop
+            } else {
+                precessionComplete = this.processor.receiveInputCode(code);
+                if (code == IOCodes.ioCodeStop) {
+                    await precessionComplete;
+                    break; // out of do loop
+                }
             }
         } while (true);
 

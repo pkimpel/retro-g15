@@ -11,6 +11,7 @@
 *   Original version, from retro-205 D205.js.
 ***********************************************************************/
 
+import * as Version from "../emulator/Version.js";
 import {ControlPanel} from "./ControlPanel.js";
 import {DiagPanel} from "./DiagPanel.js";
 import {Processor} from "../emulator/Processor.js";
@@ -42,70 +43,6 @@ let globalLoad = (ev) => {
         /* Displays the name of the current system configuration */
 
         $$("ConfigName").textContent = config.getConfigName();
-    }
-
-    /**************************************/
-    function beforeUnload(ev) {
-        var msg = "Closing this window will terminate the emulator";
-
-        ev.preventDefault();
-        ev.returnValue = msg;
-        return msg;
-    }
-
-    /**************************************/
-    function systemShutDown() {
-        /* Powers down the Processor and shuts down all of the panels and I/O devices */
-        let devices = context.devices;
-        let processor = context.processor;
-
-        processor.stop();
-        for (const e in devices) {
-            if (devices[e]) {
-                devices[e].shutDown();
-                devices[e] = null;
-            }
-        }
-
-        closeDiagPanel();
-        context.controlPanel.shutDown();
-        context.controlPanel = null;
-
-        processor.powerDown();
-        context.devices = null;
-        context.processor = null;
-
-        $$("G15Logo").removeEventListener("dblclick", openDiagPanel, false);
-        $$("FrontPanel").style.display = "none";
-        $$("StartUpBtn").disabled = false;
-        $$("StartUpBtn").focus();
-        window.removeEventListener("beforeunload", beforeUnload);
-        //$$("ConfigureBtn").disabled = false;
-        //config.flush();
-    }
-
-    /**************************************/
-    function systemStartup(ev) {
-        /* Establishes the system components */
-
-        ev.target.disabled = true;
-        $$("StartUpBtn").disabled = true;
-        //$$("ConfigureBtn").disabled = true;
-
-        window.addEventListener("beforeunload", beforeUnload);
-        $$("FrontPanel").style.display = "block";       // must be done before panel is built
-        $$("G15Logo").addEventListener("dblclick", openDiagPanel, false);
-
-        context.processor = new Processor(context);
-        context.controlPanel = new ControlPanel(context);
-        context.devices = {
-            "photoTapeReader":          new PhotoTapeReader(context),
-            "photoTapePunch":           new PhotoTapePunch(context),
-            "typewriter":               new Typewriter(context)
-        }
-
-        context.devices.photoTapeReader.preload();      // preload the PPR image
-        context.processor.powerUp();
     }
 
     /**************************************/
@@ -152,6 +89,76 @@ let globalLoad = (ev) => {
     }
 
     /**************************************/
+    function systemStartup(ev) {
+        /* Establishes the system components */
+
+        ev.target.disabled = true;
+        $$("StartUpBtn").disabled = true;
+        //$$("ConfigureBtn").disabled = true;
+
+        window.addEventListener("beforeunload", beforeUnload);
+        $$("FrontPanel").style.display = "block";       // must be done before panel is built
+        $$("G15Logo").addEventListener("dblclick", openDiagPanel, false);
+
+        context.processor = new Processor(context);
+        context.controlPanel = new ControlPanel(context);
+        context.devices = {
+            "photoTapeReader":          new PhotoTapeReader(context),
+            "photoTapePunch":           new PhotoTapePunch(context),
+            "typewriter":               new Typewriter(context)
+        }
+
+        context.devices.photoTapeReader.preload();      // preload the PPR image
+        context.processor.powerUp();
+    }
+
+    /**************************************/
+    function systemShutDown() {
+        /* Powers down the Processor and shuts down all of the panels and I/O devices */
+        let processor = context.processor;
+
+        while (processor.CH.value == 0 || processor.OC.value & 0b1111) {
+            processor.stop();
+            processor.cancelIO();
+            setTimeout(systemShutDown, 1000);
+            return;
+        }
+
+        let devices = context.devices;
+        for (const e in devices) {
+            if (devices[e]) {
+                devices[e].shutDown();
+                devices[e] = null;
+            }
+        }
+
+        closeDiagPanel();
+        context.controlPanel.shutDown();
+        context.controlPanel = null;
+
+        processor.powerDown();
+        context.devices = null;
+        context.processor = null;
+
+        $$("G15Logo").removeEventListener("dblclick", openDiagPanel, false);
+        $$("FrontPanel").style.display = "none";
+        $$("StartUpBtn").disabled = false;
+        $$("StartUpBtn").focus();
+        window.removeEventListener("beforeunload", beforeUnload);
+        //$$("ConfigureBtn").disabled = false;
+        //config.flush();
+    }
+
+    /**************************************/
+    function beforeUnload(ev) {
+        var msg = "Closing this window will terminate the emulator";
+
+        ev.preventDefault();
+        ev.returnValue = msg;
+        return msg;
+    }
+
+    /**************************************/
     function checkBrowser() {
         /* Checks whether this browser can support the necessary stuff */
         let missing = "";
@@ -164,8 +171,6 @@ let globalLoad = (ev) => {
         if (!window.FileList) {missing += ", FileList"}
         if (!window.JSON) {missing += ", JSON"}
         if (!window.localStorage) {missing += ", LocalStorage"}
-        if (!window.indexedDB) {missing += ", IndexedDB"}
-        if (!window.postMessage) {missing += ", window.postMessage"}
         if (!(window.performance && "now" in performance)) {missing += ", performance.now"}
         if (!window.Promise) {missing += ", Promise"}
 
@@ -183,7 +188,7 @@ let globalLoad = (ev) => {
 
     window.removeEventListener("load", globalLoad, false);
     $$("StartUpBtn").disabled = true;
-    //$$("EmulatorVersion").textContent = Processor.version;
+    $$("EmulatorVersion").textContent = Version.g15Version;
     if (checkBrowser()) {
         $$("StartUpBtn").disabled = false;
         $$("StartUpBtn").addEventListener("click", systemStartup, false);

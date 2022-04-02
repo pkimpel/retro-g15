@@ -97,6 +97,7 @@ class Typewriter {
         case "S": case "s":
         case "U": case "V": case "W": case "X": case "Y": case "Z":
         case "u": case "v": case "w": case "x": case "y": case "z":
+            ev.preventDefault();
             this.printChar(ev.key);
             p.receiveKeyboardCode(IOCodes.ioCodeFilter[code]);
             break;
@@ -110,18 +111,22 @@ class Typewriter {
         case "Q": case "q":
         case "R": case "r":
         case "T": case "t":
+            ev.preventDefault();
             this.printChar(ev.key);
             p.receiveKeyboardCode(-code);
             break;
         case "Enter":
-            this.printNewLine("");
+            ev.preventDefault();
+            this.printNewLine();
             p.receiveKeyboardCode(IOCodes.ioCodeCR);
             break;
         case "Tab":
+            ev.preventDefault();
             this.printTab();
             p.receiveKeyboardCode(IOCodes.ioCodeTab);
             break;
         case "Escape":
+            ev.preventDefault();
             if (!ev.repeating) {
                 p.enableSwitchChange(1);
                 this.$$("EnableSwitchOff").checked = false;
@@ -129,9 +134,6 @@ class Typewriter {
             }
             break;
         }
-
-        ev.preventDefault();
-        ev.stopPropagation();
     }
 
     /**************************************/
@@ -141,14 +143,12 @@ class Typewriter {
 
         switch (ev.key) {
         case "Escape":
+            ev.preventDefault();
             p.enableSwitchChange(0);
             this.$$("EnableSwitchOff").checked = true;
             this.$$("EnableSwitchOn").checked = false;
             break;
         }
-
-        ev.preventDefault();
-        ev.stopPropagation();
     }
 
 
@@ -169,21 +169,20 @@ class Typewriter {
     }
 
     /**************************************/
-    printNewLine(text) {
-        /* Appends a newline to the
-        current text node, and then a new text node to the end of the <pre> element
-        within the paper element. Note that "text" is an ANSI string */
+    printNewLine() {
+        /* Appends a newline to the current text node, and then a new text
+        node to the end of the <pre> element within the paper element */
         let paper = this.paper;
-        let line = text || "";
+        let line = paper.lastChild.nodeValue;
 
         while (paper.childNodes.length > Typewriter.maxScrollLines) {
             paper.removeChild(paper.firstChild);
         }
 
-        paper.lastChild.nodeValue += "\n";     // newline
-        paper.appendChild(this.doc.createTextNode(line));
+        paper.lastChild.nodeValue = line.substring(0, line.length-1) + "\n";
+        paper.appendChild(this.doc.createTextNode(Typewriter.cursorChar));
         ++this.printerLine;
-        this.printerCol = line.length;
+        this.printerCol = 0;
         this.paper.scrollTop = this.paper.scrollHeight; // scroll to end
     }
 
@@ -194,11 +193,12 @@ class Typewriter {
         let len = line.length;
 
         if (len < 1) {                  // first char on line
-            this.paper.lastChild.nodeValue = char;
+            this.paper.lastChild.nodeValue = char + Typewriter.cursorChar;
             this.printerCol = 1;
             this.paper.scrollTop = this.paper.scrollHeight;     // scroll line into view
         } else if (len < Typewriter.maxCols) { // normal char
-            this.paper.lastChild.nodeValue = line + char;
+            this.paper.lastChild.nodeValue =
+                    `${line.substring(0, len-1)}${char}${Typewriter.cursorChar}`;
             ++this.printerCol;
         } else {                        // right margin overflow -- overprint last col
              this.paper.lastChild.nodeValue = line.substring(0, len-1) + "\u2588";      // full block
@@ -232,7 +232,7 @@ class Typewriter {
 
         switch (code) {
         case IOCodes.ioCodeCR:
-            this.printNewLine("");
+            this.printNewLine();
             break;
         case IOCodes.ioCodeTab:
             this.printTab();
@@ -243,6 +243,11 @@ class Typewriter {
             // ignored by the typewriter
             break;
         default:
+            // TEMP to provide automatic newline on line overflow       TEMP TEMP TEMP TEMP //
+            if (this.printerCol >= 80) {
+                this.printNewLine();
+            }
+
             this.printChar(Typewriter.printCodes[code]);
             break;
         }
@@ -293,6 +298,7 @@ class Typewriter {
 
 // Static properties
 
+Typewriter.cursorChar = "_";            // end-of-line cursor indicator
 Typewriter.maxScrollLines = 10000;      // max lines retained in "paper" area
 Typewriter.maxCols = 132;               // maximum number of columns per line
 Typewriter.printCodes = [

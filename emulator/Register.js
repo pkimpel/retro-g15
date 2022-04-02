@@ -54,7 +54,7 @@ class Register {
     }
 
     /**************************************/
-    updateLampGlow(beta) {
+    updateLampGlow(beta=0) {
         /* Updates the lamp glow averages based on this.clock.eTime. Note that the
         glow is always aged by at least one clock tick. Beta is a bias in the
         range (0,1). For normal update, use 0; to freeze the current state, use 1 */
@@ -117,7 +117,7 @@ class Register {
             // Update the lamp glow for the former state.
             if (this.visible) {
                 let alpha = Math.min(Math.max(eTime-this.lastETime, Util.bitTime)/
-                                     FlipFlop.neonPersistence + beta, 1.0);
+                                     FlipFlop.neonPersistence, 1.0);
                 this.glow[bitNr] = this.glow[bitNr]*(1.0-alpha) + bit*alpha;
             }
 
@@ -140,7 +140,7 @@ class Register {
             // Update the lamp glow for the former state.
             if (this.visible) {
                 let alpha = Math.min(Math.max(eTime-this.lastETime, Util.bitTime)/
-                                     FlipFlop.neonPersistence + beta, 1.0);
+                                     FlipFlop.neonPersistence, 1.0);
                 this.glow[bitNr] = this.glow[bitNr]*(1.0-alpha) + bit*alpha;
             }
 

@@ -237,6 +237,14 @@ H1 {
     transform:          translate(-50%, 0);
     width:              208px}
 
+#G15Version {
+    position:           absolute;
+    right:              8px;
+    bottom:             8px;
+    z-index:            1;
+    font-size:          x-small;
+    line-height:        100%}
+
 /* Typewriter switch panel */
 
 #TypewriterSwitchPanel {
@@ -387,6 +395,6 @@ H1 {
     overflow:           auto;
     padding:            4px;
     color:              black;
-    background-color:   white;
+    background-color:   #FFE;
     font-size:          12px;
     font-family:        Courier New, Courier, Consolas, monospace}

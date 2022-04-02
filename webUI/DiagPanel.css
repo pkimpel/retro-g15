@@ -135,7 +135,7 @@ DIV.diagRegCaption {
 #NBox {
     top:                14px;
     right:              218px}
-#CABox {
+#CBox {
     top:                14px;
     right:              178px}
 #SBox {
@@ -209,6 +209,7 @@ DIV.diagRegCaption {
     font-size:          8pt;
     text-align:         right}
 #LineDump {
+    font-family:        Lucida Sans Typewriter, Consolas, Courier New, monospace;
     font-size:          8pt}
 
 #ButtonDiv {

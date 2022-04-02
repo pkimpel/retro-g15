@@ -16,6 +16,7 @@ export {ControlPanel};
 
 import * as IOCodes from "../emulator/IOCodes.js";
 import * as Util from "../emulator/Util.js";
+import * as Version from "../emulator/Version.js";
 import {ColoredLamp} from "./ColoredLamp.js";
 import {NeonLamp} from "./NeonLamp.js";
 import {PanelRegister} from "./PanelRegister.js";
@@ -131,6 +132,8 @@ class ControlPanel {
         this.violationLamp = new ColoredLamp(powerPanel, null, null, "ViolationLamp", "orangeLamp", "orangeLit");
         this.violationSwitch = new ToggleSwitch(powerPanel, null, null, "ViolationSwitch", "./resources/ToggleDown.png", "./resources/ToggleUp.png");
 
+        $$("G15Version").textContent = Version.g15Version;
+
         // Events
 
         $$("PowerOffBtn").addEventListener("click", context.systemShutDown, false);
@@ -160,7 +163,7 @@ class ControlPanel {
 
         p.updateLampGlow(0);
         this.regCmdLine.updateLampGlow(p.CD.glow);
-        this.regCharacteristic.updateLampGlow(p.CA.glow);
+        this.regCharacteristic.updateLampGlow(p.C.glow);
         this.regDest.updateLampGlow(p.D.glow);
         this.regSource.updateLampGlow(p.S.glow);
         this.regIO.updateLampGlow(p.OC.glow);

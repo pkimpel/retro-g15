@@ -90,6 +90,13 @@ class DiagLamp {
         return e;
     }
 
+    /**************************************/
+    updateFromFlipFlop(ff) {
+        /* Update the lamp state from a FlipFlop object */
+
+        this.set(ff.glow);
+    }
+
 } // class DiagLamp
 
 

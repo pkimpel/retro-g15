@@ -59,9 +59,15 @@ class DiagRegister {
         parent.style.height = this.panelHeight().toString() + "px";
         this.captionDiv = document.createElement("div");
         this.captionDiv.className = DiagRegister.captionClass;
+        this.captionValue = null;
         if (caption) {
             this.captionDiv.appendChild(document.createTextNode(caption));
+            if (bits > 1) {
+                this.captionValue = document.createElement("span");
+                this.captionDiv.appendChild(this.captionValue);
+            }
         }
+
         parent.appendChild(this.captionDiv);
     }
 
@@ -92,6 +98,14 @@ class DiagRegister {
         if (thisValue != lastValue) {
             let bitBase = 0;
             this.lastValue = thisValue; // save it for next time
+            if (this.captionValue) {
+                if (!this.signed) {
+                    this.captionValue.textContent = "=" + thisValue.toString();
+                } else {
+                    this.captionValue.textContent = "=" +
+                            ((thisValue & 1) ? "-" : "") + (thisValue >> 1).toString();
+                }
+            }
 
             do {
                 // Loop through the masks 30 bits at a time so we can use Javascript bit ops
@@ -128,6 +142,14 @@ class DiagRegister {
         for (let bitNr=this.bits-1; bitNr>=0; --bitNr) {
             this.lamps[bitNr].set(glow[bitNr]);
         }
+    }
+
+    /**************************************/
+    updateFromRegister(reg) {
+        /* Update the register value and lamp glow from a Register object */
+
+        this.update(reg.value);
+        this.updateLampGlow(reg.glow);
     }
 
 } // class DiagRegister
