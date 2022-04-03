@@ -176,14 +176,14 @@ class DiagPanel {
         this.IPLamp = new DiagLamp(this.$$("IPBox"), 4, 2, "IPLamp");
         this.IPLamp.setCaption("IP");
 
-        this.ID1Reg = new DiagRegister(this.$$("ID1Box"), 29, true, false, "ID1Reg_", "ID odd");
-        this.ID0Reg = new DiagRegister(this.$$("ID0Box"), 29, true, true, "ID0Reg_", "ID even");
+        this.ID1Reg = new DiagRegister(this.$$("ID1Box"), 29, true, false, "ID1Reg_", "ID:1");
+        this.ID0Reg = new DiagRegister(this.$$("ID0Box"), 29, true, true,  "ID0Reg_", "ID:0");
 
-        this.MQ1Reg = new DiagRegister(this.$$("MQ1Box"), 29, true, false, "MQ1Reg_", "MQ odd");
-        this.MQ0Reg = new DiagRegister(this.$$("MQ0Box"), 29, true, true, "MQ0Reg_", "MQ even");
+        this.MQ1Reg = new DiagRegister(this.$$("MQ1Box"), 29, true, false, "MQ1Reg_", "MQ:1");
+        this.MQ0Reg = new DiagRegister(this.$$("MQ0Box"), 29, true, true,  "MQ0Reg_", "MQ:0");
 
-        this.PN1Reg = new DiagRegister(this.$$("PN1Box"), 29, true, false, "PN1Reg_", "PN odd");
-        this.PN0Reg = new DiagRegister(this.$$("PN0Box"), 29, true, true, "PN0Reg_", "PN even");
+        this.PN1Reg = new DiagRegister(this.$$("PN1Box"), 29, true, false, "PN1Reg_", "PN:1");
+        this.PN0Reg = new DiagRegister(this.$$("PN0Box"), 29, true, true,  "PN0Reg_", "PN:0");
 
         this.$$("LineNr").addEventListener("change", this.boundDumpLine);
         this.$$("StepBtn").addEventListener("click", this.boundProcStep);

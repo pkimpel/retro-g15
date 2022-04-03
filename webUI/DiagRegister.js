@@ -99,11 +99,11 @@ class DiagRegister {
             let bitBase = 0;
             this.lastValue = thisValue; // save it for next time
             if (this.captionValue) {
-                if (!this.signed) {
-                    this.captionValue.textContent = "=" + thisValue.toString();
-                } else {
+                if (this.signed) {
                     this.captionValue.textContent = "=" +
                             ((thisValue & 1) ? "-" : "") + (thisValue >> 1).toString();
+                } else {
+                    this.captionValue.textContent = "=" + thisValue.toString();
                 }
             }
 

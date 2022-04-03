@@ -99,6 +99,13 @@ class Drum {
     }
 
     /**************************************/
+    get CE() {
+        /* Returns 1 if at an even word, 0 if odd */
+
+        return 1 - this.L.value % 2;
+    }
+
+    /**************************************/
     get L2() {
         /* Returns the current word-time for two-word registers */
 

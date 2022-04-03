@@ -852,9 +852,6 @@ window.addEventListener("load", function() {
                 padLeft(stamp.getMinutes(), 2, "0"));
         printLine("");
         printLine("Source File: " + tapeData.sourceName);
-        printLine("");
-        printLine(" Raw hex     ±hex    Decimal   Fractional i/d T   N C  S  D DP BP  L  Interpretation");
-        printLine("");
 
         errorCount = 0;
         lineNr = 0;
@@ -866,6 +863,8 @@ window.addEventListener("load", function() {
 
         do {
             ++blockNr;
+            printLine("");
+            printLine(" Raw hex     ±hex    Decimal   Fractional i/d T   N C  S  D DP BP  L  Interpretation");
             printLine("");
             printLine(`Block # ${blockNr}:`);
             printLine("");
