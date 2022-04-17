@@ -248,7 +248,44 @@ class Drum {
     }
 
     /**************************************/
-    setPNSign(sign) {
+    getID1T1Bit() {
+        /* Returns the value of the low-order (T1) bit of ID:1 (odd word) */
+
+        return this.ID[1].value & 1;
+    }
+
+    /**************************************/
+    setMQ0T2Bit(bit) {
+        /* Sets the T2 (low-order magnitude) bit of MQ:0 (even word). This is
+        used after division to apply quotient bits and Princeton Rounding to
+        the quotient */
+
+        this.MQ[0].setBit(1, bit);
+    }
+
+    /**************************************/
+    getMQ0T29Bit() {
+        /* Returns the value of the high-order (T29) bit of MQ:0 (even word) */
+
+        return (this.MQ[0].value >> 28) & 1;
+    }
+
+    /**************************************/
+    getMQ1T29Bit() {
+        /* Returns the value of the high-order (T29) bit of MQ:1 (odd word) */
+
+        return (this.MQ[1].value >> 28) & 1;
+    }
+
+    /**************************************/
+    getPN0T1Bit() {
+        /* Returns the value of the sign bit of PN:0 (even word) */
+
+        return this.PN[0] & 1;
+    }
+
+    /**************************************/
+    setPN0T1Bit(sign) {
         /* Sets the sign bit in the even word of PN. This is used after an
         addition or subtraction to PN to set the final sign of the operation.
         It's a bit of a kludge, but the way PN works is a bit of a kludge,
@@ -256,6 +293,21 @@ class Drum {
         operates on this.PN[0] unconditionally */
 
         this.PN[0].setBit(0, sign);
+    }
+
+    /**************************************/
+    flipPN0T1Bit() {
+        /* Flips the sign bit in the even word of PN. This is used during
+        divison */
+
+        this.PN[0].flipBit(0);
+    }
+
+    /**************************************/
+    getPN0T29Bit() {
+        /* Returns the value of the high-order (T29) bit of MQ:0 (even word) */
+
+        return (this.PN[0].value >> 28) & 1;
     }
 
 

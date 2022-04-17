@@ -73,11 +73,18 @@ class Processor {
 
         // General emulator state
         this.cmdLine = 0;                               // current actual command line (see CDXlate)
-        this.dpCarry = 0;                               // inter-word carry bit for double-precision
-        this.evenSign = 0;                              // sign of the even word of a double-precision pair
         this.deferredBP = false;                        // breakpoint deferred due to return exit cmd
         this.poweredOn = false;                         // powered up and ready to run
         this.tracing = true;                            // trace command debugging
+
+        // Single- and double-precision inter-word globals
+        this.dpCarry = 0;                               // inter-word carry bit for double-precision
+        this.dpEvenSign = 0;                            // sign of the even word of a double-precision pair
+        this.mqShiftCarry = 0;                          // left-precession carry bit for MQ
+        this.pnAddCarry = 0;                            // addition inter-word carry bit for PN
+        this.pnAddendSign = 0;                          // sign of double-precision addend
+        this.pnAugendSign = 0;                          // sign of double-precision augend (PN)
+        this.pnSign = 0;                                // sign bit from PN even word
 
         // UI switch state
         this.computeSwitch = 0;                         // 0=OFF, 1=GO, 2=BP
@@ -94,6 +101,11 @@ class Processor {
         // Bound methods
         this.boundTransformNormal = this.transformNormal.bind(this);
     }
+
+
+    /*******************************************************************
+    *  Utility Methods                                                 *
+    *******************************************************************/
 
     /**************************************/
     traceState() {
@@ -168,27 +180,81 @@ class Processor {
         this.drum.CM.updateLampGlow(gamma);
     }
 
-    /**************************************/
-    setCommandLine(cmd) {
-        /* Sets this.CD and this.cmdLine to specify the drum line for command
-        execution */
-
-        cmd &= 0x07;                    // only the low-order three bits
-        this.CD.value = cmd;
-        this.cmdLine = Processor.CDXlate[cmd];
-    }
-
 
     /*******************************************************************
     *  Transfer State                                                  *
     *******************************************************************/
 
     /**************************************/
-    waitUntilT() {
-        /* Advances the drum to the end of Transfer State: if immediate, T.
-        If deferred, T+1+DP */
+    addSingle(a, b) {
+        /* Adds two signed, single-precision words. Assumes negative numbers
+        have been converted to complement form. Sets the overflow indicator
+        if the signs of the operands are the same and the sign of the sum
+        does not match). Returns the sum in G-15 complement form */
+        let aSign = a & 1;          // sign of a
+        let aMag = a >> 1;          // 2s complement magnitude of a
+        let bSign = b & 1;          // sign of b
+        let bMag = b >> 1;          // 2s complement magniturde of b
 
-        this.drum.waitUntil(this.DI.value ? this.T+1+this.C1.value : this.T);
+        // Put the signs in their 2s-complement place and develop the raw sum.
+        let sum = (aMag | (aSign << 28)) + (bMag | (bSign << 28));
+        let sumSign = (sum >> 28) & 1;
+
+        // Check for overflow
+        if (aSign == bSign && aSign != sumSign) {
+            this.FO.value = 1;
+        }
+
+        // Put the sum back into G-15 complement format and return it
+        sum = (sum << 1) & Util.wordMask;
+        if (sum) {
+            return sum | sumSign;
+        } else {
+            return 0;               // inhibit generating -0
+        }
+    }
+
+    /**************************************/
+    addDoubleEven(a, b) {
+        /* Adds the even word "b" (representing the source word) of a double-
+        precison pair to the even word of "a" (representing PN-even).
+        Assumes negative numbers have been converted to complement form.
+        Sets this.pnAddCarry from the 30th bit of the raw sum, but does not set
+        the overflow indicator. Returns the even-word partial sum */
+
+        this.pnAugendSign = a & 1;              // sign of DP augend (PN)
+        this.pnAddendSign = b & 1;              // sign of DP addend
+
+        // Zero the original signs in the words and develop the even-word sum and carry.
+        let sum = (a & Util.absWordMask) + (b & Util.absWordMask);
+        this.pnAddCarry = (sum >> 29) & 1;      // extract the carry into the odd word
+
+        // Return the even-word sum (sign bit will be 0).
+        return sum & Util.wordMask;
+    }
+
+    /**************************************/
+    addDoubleOdd(a, b) {
+        /* Adds the odd word "b" (representing the source word) of a double-
+        precision pair to the odd word "a" (representing PN-odd). Assumes
+        negative numbers have been converted to complement form. Sets the
+        overflow indicator if the signs of the operands were the same and
+        the sign of the sum does not match. Computes the result sign and
+        returns the odd-word sum (which does not have a sign bit) with the
+        result sign in this.pnSign */
+
+        // Put the signs in their 2s-complement places and develop the odd-word sum.
+        let sum = (a | (this.pnAugendSign << 29)) + (b | (this.pnAddendSign << 29)) +
+                  this.pnAddCarry;
+        this.pnSign = (sum >> 29) & 1;          // extract the 2s-complement sign
+
+        // Check for overflow.
+        if (this.pnAugendSign == this.pnAddendSign && this.pnAugendSign != this.pnSign) {
+            this.FO.value = 1;
+        }
+
+        // Return the odd-word sum with the result sign this.pnSign.
+        return sum & Util.wordMask;
     }
 
     /**************************************/
@@ -201,7 +267,7 @@ class Processor {
         let sign = word & 1;
         let mag = word >> 1;
 
-        this.evenSign = (this.drum.L2 ? 0 : sign);      // set to 0 on odd words
+        this.dpEvenSign = (this.drum.CE ? sign : 0);    // set to 0 on odd words
         if (sign) {
             mag = Util.two28 - mag;     // convert to 2-s complement if negative
         }
@@ -215,14 +281,83 @@ class Processor {
         /* Converts the second word of a double-precision operand between
         complement forms, returning the converted word. this.dpCarry is assumed
         to hold any carry from complementing the even word of the pair.
-        this.evenSign is assumed to hold the sign from the even word of the
+        this.dpEvenSign is assumed to hold the sign from the even word of the
         pair. Any overflow from complementing the high-order word is discarded */
 
-        if (this.evenSign) {            // even word was negative
+        if (this.dpEvenSign) {          // even word was negative
             return (Util.wordMask - word + this.dpCarry) & Util.wordMask;
         } else {
             return (word + this.dpCarry) & Util.wordMask;
         }
+    }
+
+    /**************************************/
+    shiftIDRightEven() {
+        /* Shifts the even word of ID right by one bit, discarding the former
+        low-order bit, forcing the new sign bit to zero, and inserting the low-
+        order bit from the odd word into the vacated high-order bit. Returns
+        the value of ID:0 AFTER the shift. Assumes this.drum.L is even */
+        let word = ((this.drum.read(regID) >> 1) & Util.absWordMask) |
+                (this.drum.getID1T1Bit() << 28);
+
+        this.drum.write(regID, word);
+        return word;
+    }
+
+    /**************************************/
+    shiftIDRightOdd() {
+        /* Shifts the odd word of ID right by one bit and inserts zero into
+        the vacated high-order bit. Returns the value of ID:1 AFTER the shift.
+        Assumes this.drum.L is odd */
+        let word = (this.drum.read(regID) >> 1) & Util.wordMask;
+
+        this.drum.write(regID, word);
+        return word;
+    }
+
+    /**************************************/
+    shiftMQLeftEven() {
+        /* Copies the high-order bit into this.mqShiftCarry for inserting into
+        the odd word during the next word time, then shifts the even word of MQ
+        left by one bit, discarding the former high-order bit, inserting a zero
+        in the new sign bit. Assumes this.drum.L is even */
+        let word = this.drum.read(regMQ);
+
+        this.drum.write(regMQ, (word << 1) & Util.wordMask);
+        this.mqShiftCarry = (word >> 28) & 1;
+    }
+
+    /**************************************/
+    shiftMQLeftOdd() {
+        /* Shifts the odd word of MQ left by one bit, inserting this.mqShiftCarry
+        into the vacated low-order bit, and discarding the former high-order
+        bit. Assumes this.drum.L is odd. Note that before the first call on
+        this routine within an operation, this.mqShiftCarry must be initialized
+        to the high-order bit of MQ:0, which if the operation begins on an even
+        word will be done by shiftMQLeftEven, but if it begins on an odd word,
+        should be done by this.drum.getMQ0T29Bit() */
+        let word = this.drum.read(regMQ);
+
+        this.drum.write(regMQ, ((word << 1) & Util.wordMask) | this.mqShiftCarry);
+        this.mqShiftCarry = (word >> 28) & 1;
+    }
+
+    /**************************************/
+    setCommandLine(cmd) {
+        /* Sets this.CD and this.cmdLine to specify the drum line for command
+        execution */
+
+        cmd &= 0x07;                    // only the low-order three bits
+        this.CD.value = cmd;
+        this.cmdLine = Processor.CDXlate[cmd];
+    }
+
+    /**************************************/
+    waitUntilT() {
+        /* Advances the drum to the end of Transfer State: if immediate, T.
+        If deferred, T+1+DP */
+
+        this.drum.waitUntil(this.DI.value ? this.T+1+this.C1.value : this.T);
     }
 
     /**************************************/
@@ -262,9 +397,9 @@ class Processor {
         case 26:        // PN
             {   let word = this.drum.read(this.S.value);
                 // IP is applied as sign only for TR and TVA
-                if (!(this.C.value == 0 || this.CS.value)) {
+                if (this.C.value == 0 || (this.C.value == 2 && this.CS.value)) {
                     if (!this.C1.value || this.drum.CE) {       // sign time: not DP or at even word
-                        word = (word & Util.absWordMask) | this.IP;
+                        word = (word & Util.absWordMask) | this.IP.value;
                     }
                 }
                 return word;
@@ -399,9 +534,9 @@ class Processor {
             switch (this.C.value) {
             case 0: // TR (transfer)
                 switch (this.S.value) {
-                case 24:
-                case 25:
-                case 26:
+                case 24:    // MQ
+                case 25:    // ID
+                case 26:    // PN
                     if (!this.C1.value || this.drum.CE) {
                         word &= Util.absWordMask;       // zero sign bit on even word for DP
                     }
@@ -422,9 +557,9 @@ class Processor {
                         this.CQ.value = 1;
                     }
                     switch (this.S.value) {
-                    case 24:
-                    case 25:
-                    case 26:
+                    case 24:    // MQ
+                    case 25:    // ID
+                    case 26:    // PN
                         if (!this.C1.value || this.drum.CE) {
                             word &= Util.absWordMask;   // zero sign bit on even word for DP
                         }
@@ -681,35 +816,8 @@ class Processor {
 
     /**************************************/
     addToAR() {
-        /* Executes an addition from any source to the AR register (D=29) */
-
-        let addSingle = (a, b) => {
-            /* Adds two signed, single-precision words. Assumes negative numbers
-            have been converted to complement form. Sets the overflow indicator
-            if the signs of the operands are the same and the sign of the sum
-            does not match. Returns the sum */
-            let aSign = a & 1;          // sign of a
-            let aMag = a >> 1;          // 2s complement magnitude of a
-            let bSign = b & 1;          // sign of b
-            let bMag = b >> 1;          // 2s complement magniturde of b
-
-            // Put the signs in their 2s-complement place and develop the raw sum.
-            let sum = (aMag | (aSign << 28)) + (bMag | (bSign << 28));
-            let sumSign = (sum >> 28) & 1;
-
-            // Check for overflow
-            if (aSign == bSign && aSign != sumSign) {
-                this.FO.value = 1;
-            }
-
-            // Put the sum back into G-15 complement format and return it
-            sum = (sum << 1) & Util.wordMask;
-            if (sum) {
-                return sum | sumSign;
-            } else {
-                return 0;               // inhibit generating -0
-            }
-        }
+        /* Executes an addition from any source to the AR register (D=29).
+        AR is assumed to be in complement form. Sets OVERFLOW if necessary */
 
         this.transferDriver(() => {
             let a = this.drum.read(regAR);
@@ -717,27 +825,27 @@ class Processor {
 
             switch (this.C.value) {
             case 0: // TR
-                this.drum.write(regAR, addSingle(a, word));
+                this.drum.write(regAR, this.addSingle(a, word));
                 break;
             case 1: // AD
                 if (!this.C1.value || this.drum.CE) {   // SP operation or even word
-                    this.drum.write(regAR, addSingle(a, this.complementSingle(word)));
+                    this.drum.write(regAR, this.addSingle(a, this.complementSingle(word)));
                 } else {                // DP odd word
-                    this.drum.write(regAR, addSingle(a, this.complementDoubleOdd(word)));
+                    this.drum.write(regAR, this.addSingle(a, this.complementDoubleOdd(word)));
                 }
                 break;
             case 2: // AV
                 if (!this.C1.value || this.drum.CE) {   // SP operation or even word
-                    this.drum.write(regAR, addSingle(a, word & Util.absWordMask));
+                    this.drum.write(regAR, this.addSingle(a, word & Util.absWordMask));
                 } else {                // DP odd word
-                    this.drum.write(regAR, addSingle(a, this.complementDoubleOdd(word)));
+                    this.drum.write(regAR, this.addSingle(a, this.complementDoubleOdd(word)));
                 }
                 break;
             case 3: // SU
                 if (!this.C1.value || this.drum.CE) {   // SP operation or even word
-                    this.drum.write(regAR, addSingle(a, this.complementSingle(word ^ 1))); // change sign bit
+                    this.drum.write(regAR, this.addSingle(a, this.complementSingle(word ^ 1))); // change sign bit
                 } else {                // DP odd word
-                    this.drum.write(regAR, addSingle(a, this.complementDoubleOdd(word)));
+                    this.drum.write(regAR, this.addSingle(a, this.complementDoubleOdd(word)));
                 }
                 break;
             } // switch this.C
@@ -745,54 +853,30 @@ class Processor {
     }
 
     /**************************************/
+    incrementAR() {
+        /* Adds 1 to the AR register. AR is assumed to be in complement form.
+        If the addition overflows, sets AR to 0 but does not set the FO flip-flop.
+        Returns the new value of AR */
+        let a = this.drum.read(regAR);
+
+        if (a == Util.absWordMask) {
+            a = 0;                      // simulate AR overflow without affecting FO
+        } else {
+            a = this.addSingle(a, 2);   // increment the low-order magnitude bit
+        }
+
+        this.drum.write(regAR, a);
+        return a;
+    }
+
+    /**************************************/
     addToPN() {
         /* Executes an addition from any source to the PN register (D=30) */
-        let aSign = 0;                  // sign of augend (PN)
-        let bSign = 0;                  // sign of addend (source word)
-        let carry = 0;                  // carry bit from even word to odd word
-        let pnSign = 0;                 // final sign to be applied to PN
-        let rawSign = 0;                // raw sign result from even word addition
-
-        let addDoubleEven = (a, b) => {
-            /* Adds the even word "b" (representing the source word) of a double-
-            precison pair to the even word of "a" (representing PN-even).
-            Assumes negative numbers have been converted to complement form.
-            Sets carry from the 30th bit of the raw sum, but does not set the
-            overflow indicator. Returns the one-word partial sum */
-
-            aSign = a & 1;              // sign of a (PN)
-            bSign = b & 1;              // sign of b (source word)
-
-            // Zero the original signs in the words and develop the raw sum, carry, and sign.
-            let sum = (a & Util.absWordMask) + (b & Util.absWordMask);
-            carry = (sum >> 29) & 1;    // carry into the odd word
-            rawSign = aSign ^ bSign;    // add the signs without carry for use in the odd word
-
-            // Put the sum back into G-15 sign format (sign bit is 0) and return it.
-            return sum & Util.wordMask;
-        }
-
-        let addDoubleOdd = (a, b) => {
-            /* Adds the odd word "b" (representing the source word) of a double-
-            precision pair to the odd word "a" (representing PN-odd). Assumes
-            negative numbers have been converted to complement form. Sets the
-            overflow indicator if the signs of the operands are the same and
-            the sign of the sum does not match. Computes the final sign and
-            returns the sum */
-
-            // Put the raw sign in its 2s-complement place and develop the raw sum.
-            let sum = (a | (rawSign << 29)) + b + carry;
-
-            pnSign = (sum >> 29) & 1;   // extract the 2s-complement sign
-
-            // Check for overflow -- if the signs are the same, then rawSign=0.
-            if (!rawSign && aSign != pnSign) {
-                this.FO.value = 1;
-            }
-
-            // Return the sum with the new sign carried forward in pnSign
-            return sum & Util.wordMask;
-        }
+        let isZero = false;             // whether whole sum is zero
+        this.pnAddCarry = 0;            // carry bit from even word to odd word
+        this.pnAddendSign = 0;          // raw sign result from even word addition
+        this.pnAugendSign = 0;          // sign of augend (PN)
+        this.pnSign = 0;                // final sign to be applied to PN
 
         this.transferDriver(() => {
             let isEven = (this.drum.CE);        // at even word
@@ -800,45 +884,296 @@ class Processor {
             let word = this.readSource();       // current source word
 
             if (isEven) {               // establish current PN sign
-                pw = (pw & Util.absWordMask) | pnSign;
+                pw = (pw & Util.absWordMask) | this.pnSign;
             }
 
-            switch (this.C.value) {
-            case 0: // TR
-                if (!this.C1.value || isEven) {
-                    pw = addDoubleEven(pw, word);
-                } else {
-                    pw = addDoubleOdd(pw, word);
+            if (!this.C1.value || isEven) {
+                switch (this.C.value) {
+                case 0: // TR
+                    pw = this.addDoubleEven(pw, word);
+                    break;
+                case 1: // AD
+                    pw = this.addDoubleEven(pw, this.complementSingle(word));
+                    break;
+                case 2: // AV           // since it's absolute value, no complementing is necessary
+                    pw = this.addDoubleEven(pw, word & Util.absWordMask);
+                    break;
+                case 3: // SU
+                    pw = this.addDoubleEven(pw, this.complementSingle(word ^ 1)); // change sign bit
+                    break;
                 }
-                break;
-            case 1: // AD
-                if (!this.C1.value || isEven) {
-                    pw = addDoubleEven(pw, this.complementSingle(word));
-                } else {
-                    pw = addDoubleOdd(pw, this.complementDoubleOdd(word));
+
+                isZero = ((pw & Util.absWordMask) == 0);
+            } else {
+                switch (this.C.value) {
+                case 0: // TR
+                    pw = this.addDoubleOdd(pw, word);
+                    break;
+                case 1: // AD
+                    pw = this.addDoubleOdd(pw, this.complementDoubleOdd(word));
+                    break;
+                case 2: // AV           // since it's absolute value, no complementing is necessary
+                    pw = this.addDoubleOdd(pw, word);
+                    break;
+                case 3: // SU
+                    pw = this.addDoubleOdd(pw, this.complementDoubleOdd(word));
+                    break;
                 }
-                break;
-            case 2: // AV               // since it's absolute value, no complementing is necessary
-                if (!this.C1.value || isEven) {
-                    pw = addDoubleEven(pw, word & Util.absWordMask);
-                } else {
-                    pw = addDoubleOdd(pw, word);
+
+                if (pw == 0 && isZero) {
+                    this.pnSign = 0;    // assure we don't generate -0 in PN
                 }
-                break;
-            case 3: // SU
-                if (!this.C1.value || isEven) {
-                    pw = addDoubleEven(pw, this.complementSingle(word ^ 1)); // change sign bit
-                } else {
-                    pw = addDoubleOdd(pw, this.complementDoubleOdd(word));
-                }
-                break;
-            } // switch this.C
+            }
 
             this.drum.write(regPN, pw);
         });
 
         // Finally, apply the final sign of the addition to the even word of PN
-        this.drum.setPNSign(pnSign);
+        this.drum.setPN0T1Bit(this.pnSign);
+    }
+
+    /**************************************/
+    multiply() {
+        /* Multiplies the contents of the ID register by the contents of the
+        MQ register, developing the double-precision product in the PN register.
+        The command should be coded as immediate and be in an odd location so
+        that transfer starts on an even word. The C (characteristic) and C1
+        (double-precision) bits in the command are ignored. T for single-precision
+        operands in ID and MQ should be coded as 56 and for double-precision 114.
+        Sign of the product is maintained by the IP flip-flop, not used here */
+        let count = this.T.value;       // shift+add iteration count times 2
+        let id = 0;                     // local copy of current ID word
+        let pm = 0;                     // PM flip-flop: high-order bit of multipler
+
+        // Initialize the register inter-word carries in case we start on an odd word.
+        this.mqShiftCarry = this.drum.getMQ0T29Bit();
+        this.pnAddCarry = 0;
+        this.pnAddendSign = 0;
+        this.pnAugendSign = 0;
+        this.pnSign = 0;
+
+        if (this.DI.value) {
+            this.drum.waitUntil(this.T.value);
+        }
+
+        if (!this.drum.CE) {
+            this.violation("Multiply starting on ODD word");
+        }
+
+        // Since T is considered relative, do a modified transfer cycle.
+        do {
+            if (this.drum.CE) {         // even word
+                pm = this.drum.getMQ1T29Bit();  // determine whether to add in this cycle
+                id = this.shiftIDRightEven();
+                this.shiftMQLeftEven();
+                if (pm) {
+                    this.drum.write(regPN, this.addDoubleEven(this.drum.read(regPN), id));
+                }
+            } else {                    // odd word
+                id = this.shiftIDRightOdd();
+                this.shiftMQLeftOdd();
+                if (pm) {
+                    this.drum.write(regPN, this.addDoubleOdd(this.drum.read(regPN), id));
+                }
+            }
+
+            this.drum.waitFor(1);
+        } while (--count > 0);
+    }
+
+    /**************************************/
+    divide() {
+        /* Divides PN by ID leaving the double-precision quotient in MQ and
+        remainder in PN. This command must be coded as immediate and be in an
+        odd location so that transfer starts on an even word. The C (characteristic)
+        must be 1 and C1 (double-precision bit) is ignored. T for single-precision
+        operands in PN and ID should normally be 57 and for double-precision 114,
+        although other values can be useful. Sign of the quotient is maintained
+        in the IP flip-flop, not used here */
+        let count = this.T.value;       // shift+add iteration count times 2
+        let id = 0;                     // current ID register word
+        let pn = 0;                     // current PN register word
+        let pnShiftCarry =              // inter-word carry for PN left shifts
+                this.drum.getPN0T29Bit();
+        let rSign = 0;                  // sign of remainder (controls add/sub on next cycle)
+        let qBit = 0;                   // current quotient bit
+
+        let oFlow = 0;                  // *** DEBUG ***
+        let pna = 0;                    // *** DEBUG ***
+        let pnb = 0;                    // *** DEBUG ***
+        let pnc = 0;                    // *** DEBUG ***
+
+        let debugTraceEven = () => {
+            console.log("<Div> %3i %2i %8s%s %8s%s %8s%s %s%s    %2i %8s%s %2i",
+                    count, this.drum.L2,
+                    (id >>1).toString(16).padStart(8," "), (id &1 ? "-" : " "),
+                    (pnb>>1).toString(16).padStart(8," "), (pnb&1 ? "-" : " "),
+                    (pna>>1).toString(16).padStart(8," "), (pna&1 ? "-" : " "),
+                    (rSign ? "-" : "+"), (this.pnSign ? "-" : "+"), qBit,
+                    (pn >>1).toString(16).padStart(8," "), (pn &1 ? "-" : " "),
+                    pnc);
+        };
+
+        let debugTraceOdd = () => {
+            console.log("<Div> %3i %2i%9s %9s %9s  %s%s %2i %2i%9s  %2i",
+                    count, this.drum.L2,
+                    id .toString(16).padStart(9," "),
+                    pnb.toString(16).padStart(9," "),
+                    pna.toString(16).padStart(9," "),
+                    (rSign ? "-" : "+"), (this.pnSign ? "-" : "+"), oFlow, qBit,
+                    pn .toString(16).padStart(9," "),
+                    pnc);
+            console.log(" ");
+        };
+
+        console.log(" ");
+        console.log("<Div>   T L2       ID     PN-B4     PN-AA  P± OF  Q       PN   C");
+                 //        ttt     ddddddd-  bbbbbbb-  aaaaaaa- ss  f  q   ppppppp- c
+
+        // Initialize the register inter-word carries in case we start on an odd word.
+        this.mqShiftCarry = this.drum.getMQ0T29Bit();
+        this.pnAddCarry = 0;
+        this.pnAddendSign = 0;
+        this.pnAugendSign = 0;
+        this.pnSign = 0;
+
+        if (this.DI.value) {
+            this.drum.waitUntil(this.T.value);
+        }
+
+        if (!this.drum.CE) {
+            this.violation("Division starting on ODD word");
+        }
+
+        // Since T is considered relative, do a modified transfer cycle.
+        do {
+            id = this.drum.read(regID);
+            pn = this.drum.read(regPN);
+            if (this.drum.CE) {         // even word
+                this.drum.setMQ0T2Bit(qBit);    // insert the current quotient bit into MQ:0 T2
+                this.shiftMQLeftEven();
+                id = (id & Util.absWordMask) | (1-rSign);       // + or - denominator
+                id = this.complementSingle(id);
+                pn = (pn & Util.absWordMask) | this.pnSign;
+                pnb = pn;                       // *** DEBUG ***
+                pn = this.addDoubleEven(pn, id);
+                pna = pn;                       // *** DEBUG ***
+                pnShiftCarry = (pn >> 28) & 1;
+                pnc = pnShiftCarry;
+                pn = ((pn & Util.absWordMask) << 1) & Util.wordMask;
+                debugTraceEven();               // *** DEBUG ***
+            } else {                    // odd word
+                this.shiftMQLeftOdd();
+                id = this.complementDoubleOdd(id);
+                pnb = pn;                       // *** DEBUG ***
+                pn = this.addDoubleOdd(pn, id);
+                rSign = this.pnSign;            // controls add/subtract of denominator in next cycle
+                pna = pn;                       // *** DEBUG ***
+                oFlow = this.FO.value;          // *** DEBUG ***
+                if (this.FO.value) {            // overflows can happen with negative remainders...
+                    this.FO.value = 0;          //     ...ignore them
+                }
+
+                pnc = (pn >> 28);               // *** DEBUG ***
+                this.pnSign = (pn >> 28) & 1;   // new PN sign after shifting
+                pn = ((pn << 1) & Util.absWordMask) | pnShiftCarry;
+
+                qBit = 1-rSign;                 // determine the quotient bit from the remainder sign
+                debugTraceOdd();                // *** DEBUG ***
+            }
+
+            this.drum.write(regPN, pn);
+            this.drum.waitFor(1);
+        } while (--count > 0);
+
+        if (this.mqShiftCarry) {                // quotient overflow
+            this.FO.value = 1;
+        }
+
+        this.drum.setMQ0T2Bit(1);       // Princeton roundoff to quotient
+    }
+
+    /**************************************/
+    shiftMQLeftIDRight() {
+        /* Shifts MQ left and ID right by one bit for every two word times.
+        The command should be coded as immediate and be in an odd location so
+        that transfer starts on an even word. The C1 (double-precision) bit in
+        the command is ignored. Shifting is terminated when the T count is
+        exhausted. If the characteristic is zero, AR will be incremented by 1
+        for each shift, and shifting will be terminated before the T count is
+        exhausted if AR is incremented to zero or overflows */
+        let count = this.T.value;               // max shift count times 2
+
+        // Initialize the register inter-word carries.
+        this.mqShiftCarry = this.drum.getMQ0T29Bit();
+
+        if (this.DI.value) {
+            this.drum.waitUntil(this.T.value);
+        }
+
+        if (!this.drum.CE) {
+            this.violation("Shift MQ/ID starting on ODD word");
+        }
+
+        // Since T is considered relative, do a modified transfer cycle.
+        while (count > 0) {
+            if (this.drum.CE) {         // even word
+                this.shiftIDRightEven();
+                this.shiftMQLeftEven();
+            } else {                    // odd word
+                this.shiftIDRightOdd();
+                this.shiftMQLeftOdd();
+                if (this.C.value == 0) {        // increment AR and check for overflow
+                    if (this.incrementAR() == 0) {
+                        break; // out of while loop
+                    }
+                }
+            }
+
+            this.drum.waitFor(1);
+            --count;
+        }
+    }
+
+    /**************************************/
+    normalizeMQ() {
+        /* Shifts the MQ register left as necessary so that the high-order bit
+        of the odd word (MQ:1) is a 1. If the characteristic is 0, AR is
+        incremented by 1 for every shift. Transfer is terminated whenever the
+        T count (which is relative) is exhausted or the high-order bit of MQ
+        becomes 1. If the word is initially normalized, no shift occurs. The
+        command must be coded immediate and located an odd word time so that
+        transfer will start on an even word time. The C1 (double-precision) bit
+        is ignored */
+        let count = this.T.value;               // max shift count times 2
+        let pm = this.drum.getMQ1T29Bit();      // PM flip-flop: high-order bit of multipler
+
+        // Initialize the register inter-word carry.
+        this.mqShiftCarry = this.drum.getMQ0T29Bit();
+
+        if (this.DI.value) {
+            this.drum.waitUntil(this.T.value);
+        }
+
+        if (!this.drum.CE) {
+            this.violation("Normalize MQ starting on ODD word");
+        }
+
+        // Since T is considered relative, do a modified transfer cycle.
+        while (!pm && count > 0) {
+            if (this.drum.CE) {         // even word
+                this.shiftMQLeftEven();
+            } else {                    // odd word
+                this.shiftMQLeftOdd();
+                pm = this.drum.getMQ1T29Bit();
+                if (this.C.value == 0) {
+                    this.incrementAR();
+                }
+            }
+
+            this.drum.waitFor(1);
+            --count;
+        }
     }
 
 
@@ -1303,7 +1638,8 @@ class Processor {
     /**************************************/
     async reversePhotoTapePhase1() {
         /* Performs Phase 1 of photo tape search reverse, then performs Phase 2.
-        The result is to leave the tape positioned to the prior block */
+        The result is to leave the tape positioned ready to read to the prior
+        block */
 
         this.OC.value = IOCodes.ioCmdPhotoRev1;
         await this.devices.photoTapeReader.reverseBlock();
@@ -1506,7 +1842,13 @@ class Processor {
             break;
 
         case 17:        // ring bell & friends
-            this.panel.ringBell((this.T.value - this.drum.L.value + Util.longLineSize) % Util.longLineSize);
+        {
+            let wordTimes = this.T.value - this.drum.L.value;
+            if (wordTimes <= 0) {
+                wordTimes += Util.longLineSize
+            }
+
+            this.panel.ringBell(wordTimes);
             switch (this.C.value ) {
             case 1:     // ring bell and test control panel PUNCH switch
                 if (this.punchSwitch == 1) {
@@ -1520,6 +1862,7 @@ class Processor {
                 // INPUT REGISTER not implemented (no violation)
                 break;
             }
+        }
             this.waitUntilT();
             break;
 
@@ -1566,31 +1909,28 @@ class Processor {
                 break;
             case 3:                     // PN.M2 -> ID, PN.M2/ -> PN
                 this.transferDriver(() => {
-                    this.drum.write(regID, this.drum.read(regPN) & this.drum.read(2));
-                    this.drum.write(regPN, this.drum.read(regPN) & (~this.drum.read(2)));
+                    let pn = this.drum.read(regPN);
+                    this.drum.write(regID, pn & this.drum.read(2));
+                    this.drum.write(regPN, pn & (~this.drum.read(2)));
                 });
                 break;
             }
             break;
 
         case 24:        // multiply
-            this.violation(`D=31 S=${this.S.value} Multiply not implemented`);
-            this.waitUntilT();
+            this.multiply();
             break;
 
         case 25:        // divide
-            this.violation(`D=31 S=${this.S.value} Divide not implemented`);
-            this.waitUntilT();
+            this.divide();
             break;
 
         case 26:        // shift MQ left and ID right
-            this.violation(`D=31 S=${this.S.value} Shift MQ/ID not implemented`);
-            this.waitUntilT();
+            this.shiftMQLeftIDRight();
             break;
 
         case 27:        // normalize MQ
-            this.violation(`D=31 S=${this.S.value} Normalize MQ not implemented`);
-            this.waitUntilT();
+            this.normalizeMQ();
             break;
 
         case 28:        // ready, etc. to TEST
@@ -1713,7 +2053,8 @@ class Processor {
         }
 
         // Complement T and N in CM (for display purposes only)
-        this.drum.CM.value = cmd ^ 0b0_1111111_0_1111111_00_00000_00000_0;
+        this.drum.CM.value = (this.drum.CM.value & 0b1_0000000_1_0000000_11_11111_11111_1) |
+                                         ((~cmd) & 0b0_1111111_0_1111111_00_00000_00000_0);
 
         // Transition from read-command to transfer state
         this.RC.value = 0;                      // end of read-command state
@@ -1854,6 +2195,7 @@ class Processor {
 
         if (this.poweredOn && !this.CH.value) {
             this.CH.value = 1;          // set HALT FF
+            this.CZ.value = 1;          // disable stepping
             this.CG.value = 0;          // reset Next from AR FF
             this.CQ.value = 0;          // reset TEST FF
         }
@@ -1942,7 +2284,8 @@ class Processor {
         /* Resets the system and initiates loading paper tape. Activated from
         the ControlPanel RESET button */
 
-        if (this.poweredOn && this.CH.value) {
+        this.poweredOn = true;
+        if (this.CH.value) {
             this.CZ.value = 1;          // enable read-command state (i.e., disable stepping)
             this.RC.value = 1;          // set read-command state
             this.TR.value = 0;          // reset transfer state
@@ -1971,7 +2314,6 @@ class Processor {
         /* Powers up and initializes the processor */
 
         if (!this.poweredOn) {
-            this.poweredOn = true;
             this.CH.value = 1;          // set HALT FF
             this.panel = this.context.controlPanel;     // ControlPanel object
             this.devices = this.context.devices;        // I/O device objects
@@ -2025,6 +2367,25 @@ class Processor {
             store(lineNr, loc, ((word & 0xFFFFFFF) << 1) | sign);
         };
 
+        int(0, 84, 0b101000);                           // division denominator
+        int(0, 86, 0b011001);                           // division numerator
+
+        //  M   L  DI   T    N  C   S   D  C1  BP
+        asm(0,  0, 1,  84,   1, 2,  0, 25,  1);         // TVA multiplicand to ID
+        asm(0,  1, 1,  86,   3, 2,  0, 24,  1);         // TVA multiplier to MQ
+
+        asm(0,  3, 0,  56,   4, 0, 24, 31);             // Multiply IDxMQ > PN
+        asm(0,  4, 0,   5,   5, 0, 16, 31);             // halt, then continue
+        asm(0,  5, 1,   0,   6, 0, 26, 20,  1);         // DP-TR PN to 20:0
+        asm(0,  6, 1,  84,   7, 2,  0, 25,  1);         // TVA divisor to ID
+        //asm(0,  7, 1,   0,   9, 0, 20, 26,  1);         // DP-TR 20:0 to PN
+        asm(0,  7, 1,  86,   9, 2,  0, 26,  1);         // TVA numerator/dividend to PN
+
+        asm(0,  9, 0, 116,  99, 1, 25, 31,  1);         // divide PN/ID > MQ
+
+        asm(0, 99, 0, 100,   0, 0, 16, 31);             // halt, then go to 0
+
+        /***************************************
         int(0, 90, 0);
         int(0, 91, 1);
         int(0, 92, 2);
@@ -2047,8 +2408,16 @@ class Processor {
         //asm(0, 12, 0,  14,  11, 0, 16, 31);             // halt, then go to ring bell
 
         asm(0, 12, 0,  14,  13, 0, 16, 31);             // halt
-        asm(0, 13, 0,  15,  14, 0,  9, 31);             // type line 19
-        asm(0, 14, 0,  16,  14, 0, 16, 31);             // loop on halt
+        asm(0, 13, 0,  16,  14, 0, 23, 31);             // clear ID, MQ, PN, IP
+        asm(0, 14, 1,  98,  15, 2,  0, 25, 1);          // load ID from 0:98
+        asm(0, 15, 1,  92,  17, 2,  0, 24, 1);          // load MQ from 0:92
+        asm(0, 17, 0,  56,  18, 0, 24, 31);             // multiply ID x MQ to PN
+        asm(0, 18, 0,  18,  18, 0, 16, 31);             // halt
+
+        //asm(0, 12, 0,  14,  13, 0, 16, 31);             // halt
+        //asm(0, 13, 0,  15,  14, 0,  9, 31);             // type line 19
+        //asm(0, 14, 0,  16,  14, 0, 16, 31);             // loop on halt
+        ***************************************/
     }
 
 } // class Processor

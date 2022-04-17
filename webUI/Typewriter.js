@@ -196,7 +196,7 @@ class Typewriter {
             this.paper.lastChild.nodeValue = char + Typewriter.cursorChar;
             this.printerCol = 1;
             this.paper.scrollTop = this.paper.scrollHeight;     // scroll line into view
-        } else if (len < Typewriter.maxCols) { // normal char
+        } else if (len <= Typewriter.maxCols) { // normal char
             this.paper.lastChild.nodeValue =
                     `${line.substring(0, len-1)}${char}${Typewriter.cursorChar}`;
             ++this.printerCol;
@@ -243,10 +243,11 @@ class Typewriter {
             // ignored by the typewriter
             break;
         default:
-            // TEMP to provide automatic newline on line overflow       TEMP TEMP TEMP TEMP //
-            if (this.printerCol >= 80) {
+            /***** TEMP to provide automatic newline on line overflow - TEMP TEMP TEMP TEMP *****/
+            if (this.printerCol >= Typewriter.maxCols) {
                 this.printNewLine();
             }
+            /****** end TEMP *****/
 
             this.printChar(Typewriter.printCodes[code]);
             break;

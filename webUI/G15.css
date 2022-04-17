@@ -166,11 +166,13 @@ H1 {
     color:              white}
 
 #PaperTapeRewindCaption {
+    display:            none;           /* for now... */
     position:           absolute;
     top:                4px;
     right:              52px;
     text-align:         right}
 #PRRewindBtn {
+    display:            none;           /* for now... */
     position:           absolute;
     top:                -2px;
     right:              24px}

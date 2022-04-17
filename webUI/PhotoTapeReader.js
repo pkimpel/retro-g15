@@ -145,7 +145,8 @@ class PhotoTapeReader {
         let c = 0;                      // current character code
         let code = 0;                   // current G-15 code
         let eob = false;                // end-of-block flag
-        let nextFrameStamp = performance.now() + PhotoTapeReader.framePeriod;
+        let nextFrameStamp = performance.now() + // simulate startup time
+                PhotoTapeReader.framePeriod*PhotoTapeReader.startStopFrames ;
         let precessionComplete = Promise.resolve();
         let x = this.bufIndex;          // current buffer index
 
@@ -179,6 +180,7 @@ class PhotoTapeReader {
         } while (true);
 
         this.$$("PaperTapeReaderCaption").classList.remove("active");
+        await this.timer.set(PhotoTapeReader.framePeriod*PhotoTapeReader.startStopFrames); // stop time
         this.busy = false;
         this.bufIndex = x;
     }
@@ -203,7 +205,8 @@ class PhotoTapeReader {
         pointing to the beginning of the buffer */
         let bufLength = this.bufLength; // current buffer length
         let c = 0;                      // current character code
-        let nextFrameStamp = performance.now() + PhotoTapeReader.framePeriod;
+        let nextFrameStamp = performance.now() + // simulate startup time
+                PhotoTapeReader.framePeriod*PhotoTapeReader.startStopFrames ;
         let x = this.bufIndex;          // point to prior character
 
         this.busy = true;
@@ -231,6 +234,7 @@ class PhotoTapeReader {
         } while (true);
 
         this.$$("PaperTapeReaderCaption").classList.remove("active");
+        await this.timer.set(PhotoTapeReader.framePeriod*PhotoTapeReader.startStopFrames); // stop time
         this.busy = false;
         this.bufIndex = x;
     }
@@ -266,4 +270,5 @@ class PhotoTapeReader {
 // Static properties
 
 PhotoTapeReader.speed = 250;                                    // frames/sec
+PhotoTapeReader.startStopFrames = 35;                           // 3.5 inches of tape
 PhotoTapeReader.framePeriod = 1000/PhotoTapeReader.speed;       // ms/frame
