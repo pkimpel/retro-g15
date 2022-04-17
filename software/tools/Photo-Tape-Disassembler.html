@@ -376,19 +376,19 @@ window.addEventListener("load", function() {
     /**************************************/
     function disassembleBlock(block) {
         /* Disassembles one block of words */
-        let ch = "";
-        let head = "";
-        let op = "";
-        let sign = 0;
-        let signCode = "";
-        let signedValue = "";
-        let src = "";
-        let dest = "";
-        let seq = "";
-        let tail = "";
-        let timing = "";
-        let value = 0;
-        let word = 0;
+        let ch = "";                    // command characteristic interpretation
+        let head = "";                  // left-hand fields
+        let op = 0;                     // operand address (T or L+1)
+        let sign = 0;                   // sign bit of current word
+        let signCode = "";              // interpreted sign bit
+        let signedValue = "";           // internal signed value of word
+        let src = "";                   // source interpretation
+        let dest = "";                  // destination interpretation
+        let seq = "";                   // flag indicating whether next command is at this or next word
+        let tail = "";                  // right-hand fields
+        let timing = 0;                 // transfer state timing
+        let value = 0;                  // magnitude of current word
+        let word = 0;                   // current word being interpreted
 
         let p = 0;                      // prefix -- 0=immediate, 1=deferred
         let t = 0;                      // T -- timing number
@@ -399,6 +399,7 @@ window.addEventListener("load", function() {
         let d = 0;                      // destination line
         let dp = 0;                     // double-precision bit
         let cs = 0;                     // "via AR" flip flop
+        let nL = 0;                     // drum location after transfer state
 
         for (let loc=0; loc<longLineSize; ++loc) {
             word = block[loc];
@@ -456,7 +457,7 @@ window.addEventListener("load", function() {
             // Now interpret that mess...
 
             // Indicate immediate/deferred & single/double precision.
-            tail = loc.toString().padStart(4, " ") + ": " +(p ? "d " : "i ") + (dp ? "D-" : "");
+            tail = loc.toString().padStart(4, " ") + ": " +(p ? "d " : "i ") + (dp ? "DP-" : "");
 
             // Determine transfer characteristic.
             switch (c) {
@@ -471,6 +472,9 @@ window.addEventListener("load", function() {
                 break;
             case 3:
                 ch = (cs ? "AVA" : "SU");
+                break;
+            default:
+                ch = `<C=${c} Invalid>`;
                 break;
             }
 
@@ -516,7 +520,7 @@ window.addEventListener("load", function() {
                     src = "(20.21):" + op % 4;
                     break;
                 default:
-                    src = "<Src Invalid>";
+                    src = `<S=${s} Invalid>`;
                     break;
                 }
             }
@@ -551,6 +555,9 @@ window.addEventListener("load", function() {
                     break;
                 case 30:
                     dest = "PN+:" + op % 2;
+                    break;
+                default:
+                    dest = `<D=${d} Invalid>`;
                     break;
                 }
             } else if (d == 31) {
@@ -609,6 +616,8 @@ window.addEventListener("load", function() {
                 case 17:
                     dest = "RING BELL:" + op;
                     switch (c) {
+                    case 0:
+                        break;          // just ring the bell
                     case 1:
                         dest += ", TEST MANUAL PUNCH";
                         break;
@@ -617,6 +626,9 @@ window.addEventListener("load", function() {
                         break;
                     case 3:
                         dest += ", STOP IR";
+                        break;
+                    default:
+                        dest += `<C=${c} Invalid>`;
                         break;
                     }
                     break;
@@ -633,7 +645,8 @@ window.addEventListener("load", function() {
                         dest += "STOP";
                         break;
                     default:
-                        dest += "<ch=" + c + ">";
+                        dest += `<C=${c} Invalid>`;
+                        break;
                     }
 
                     dest += ":" + op;
@@ -644,7 +657,7 @@ window.addEventListener("load", function() {
                 case 21:
                     dest = "MARK:" + op + ", CD=" + (dp*4 + c);
                     if (p) {
-                        timing = 1;
+                        timing = 1;             // deferred MARK ignores DP bit
                     }
                     break;
                 case 22:
@@ -655,24 +668,28 @@ window.addEventListener("load", function() {
                     case 0:
                         dest = "CLEAR MQ/ID/PN/IP:" + op;
                         break;
-                    case 1:
-                        dest = "TR PN:" + (op % 2) + ".2:" + op + " > ID, PN:" + (op % 2) + ".2/:" + op + " > PN";
+                    case 3:
+                        dest = `TR PN:${(op % 2)}.2:$op} > ID, PN:${(op % 2)}.2/:${op} > PN`;
                         break;
                     default:
-                        dest = "D23:" + op + " <ch=" + c + ">";
+                        dest = `D23:${op} <C=${c} Invalid>`;
+                        break;
                     }
                     break;
                 case 24:
                     dest = "MUL:" + op;
+                    timing = t;
                     break;
                 case 25:
                     dest = "DIV:" + op;
+                    timing = t;
                     if (c != 1) {
                         dest += " <ch != 1>";
                     }
                     break;
                 case 26:
                     dest = "SHIFT MQ-L/ID-R:" + op;
+                    timing = t;
                     if (c == 0) {
                         dest += ", ++AR"
                     } else if (c > 1) {
@@ -681,6 +698,7 @@ window.addEventListener("load", function() {
                     break;
                 case 27:
                     dest = "NORM MQ:" + op;
+                    timing = t;
                     if (c == 0) {
                         dest += ", ++AR"
                     } else if (c > 1) {
@@ -700,6 +718,10 @@ window.addEventListener("load", function() {
                         break;
                     case 3:
                         dest = "TEST DA-1 OFF:" + op;
+                        break;
+                    default:
+                        dest = `<S=28, C=${c} Invalid>`;
+                        break;
                     }
                     break;
                 case 29:
@@ -719,17 +741,17 @@ window.addEventListener("load", function() {
                     case 2:
                         dest = "TR 20+18 > 18:" + op;
                         break;
-                    case 3:
-                        dest = "D31:" + op + " <ch=3>";
+                    default:
+                        dest = `S=31:${op} <C=${c} Invalid>`;
                         break;
                     }
                     break;
                 default:
-                    dest = "<D=31 Source Invalid>";
+                    dest = `<D=31 S=${s} Invalid>`;
                     break;
                 }
             } else {
-                dest = "<Dest Invalid>";
+                dest = `<D=${d} Invalid>`;
             }
 
             // Put it all together.
@@ -740,7 +762,8 @@ window.addEventListener("load", function() {
                 tail += dest;
             }
 
-            printLine(`${head}${tail}${(p ? "" : " #" + timing)}, nL=${(p ? t+1 : t)}, N=${n}${seq}`);
+            nL = (op + timing + longLineSize) % longLineSize;
+            printLine(`${head}${tail}${(p ? "" : " #" + timing)}, nL=${nL}, N=${n}${seq}`);
         }
     }
 
@@ -864,9 +887,9 @@ window.addEventListener("load", function() {
         do {
             ++blockNr;
             printLine("");
-            printLine(" Raw hex     ±hex    Decimal   Fractional i/d T   N C  S  D DP BP  L  Interpretation");
-            printLine("");
             printLine(`Block # ${blockNr}:`);
+            printLine("");
+            printLine(" Raw hex     ±hex    Decimal   Fractional i/d T   N C  S  D DP BP  L  Interpretation");
             printLine("");
             readBlock(line23, line19);
             disassembleBlock(line19);
