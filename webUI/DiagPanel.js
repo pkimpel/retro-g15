@@ -79,7 +79,7 @@ class DiagPanel {
                 for (let y=0; y<inc; ++y) {
                     let word = drum.line[lineNr][x+y];
                     text += " " + ((word & 1) ? "-" : " ") +
-                                  (word >> 1).toString(16).padStart(7, "0");
+                                  Util.g15Hex(word >> 1).padStart(7, "0");
                 }
 
                 text += "\n";
@@ -87,6 +87,22 @@ class DiagPanel {
 
             this.$$("LineDump").textContent = text;
         }
+    }
+
+    /**************************************/
+    dumpFastLine(lineNr) {
+        /* Dumps the currently-specified fast (4-word) line to the to its text
+        area in signed hex */
+        let drum = this.context.processor.drum;
+        let text = "";
+
+        for (let x=0; x<Util.fastLineSize; ++x) {
+            let word = drum.line[lineNr][x];
+            text += " " + ((word & 1) ? "-" : " ") +
+                          Util.g15Hex(word >> 1).padStart(7, "0");
+        }
+
+        this.$$(`Line${lineNr}Dump`).textContent = text;
     }
 
     /**************************************/
@@ -128,7 +144,11 @@ class DiagPanel {
         this.PN1Reg.updateFromRegister(drum.PN[1]);
         this.PN0Reg.updateFromRegister(drum.PN[0]);
 
-        if (Math.trunc(now/1000) % 2) {
+        if (Math.trunc(now/250) % 2) {
+            this.dumpFastLine(20);
+            this.dumpFastLine(21);
+            this.dumpFastLine(22);
+            this.dumpFastLine(23);
             this.dumpLine();
         }
     }

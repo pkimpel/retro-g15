@@ -13,6 +13,7 @@
 
 export {DiagRegister};
 
+import * as Util from "../emulator/Util.js";
 import {DiagLamp} from "./DiagLamp.js";
 
 class DiagRegister {
@@ -93,15 +94,18 @@ class DiagRegister {
         compares the value of the register that was previously updated against the new
         one in an attempt to minimize the number of lamp flips that need to be done */
         let lastValue = this.lastValue;
-        let thisValue = Math.floor(Math.abs(value)) % 0x40000000;
+        let thisValue = Math.floor(Math.abs(value)) % DiagRegister.two30;
 
         if (thisValue != lastValue) {
             let bitBase = 0;
             this.lastValue = thisValue; // save it for next time
             if (this.captionValue) {
                 if (this.signed) {
+                    let sign = thisValue & 1;
+                    let mag = thisValue >> 1;
                     this.captionValue.textContent = "=" +
-                            ((thisValue & 1) ? "-" : "") + (thisValue >> 1).toString();
+                            (sign ? "-" : "") +
+                            (sign ? (Util.two28 - mag)%Util.two28 : mag).toString();
                 } else {
                     this.captionValue.textContent = "=" + thisValue.toString();
                 }
@@ -110,10 +114,10 @@ class DiagRegister {
             do {
                 // Loop through the masks 30 bits at a time so we can use Javascript bit ops
                 let bitNr = bitBase;
-                let lastMask = lastValue % 0x40000000;          // get the low-order 30 bits
-                let thisMask = thisValue % 0x40000000;          // ditto for the second value
-                lastValue = (lastValue-lastMask)/0x40000000;    // shift the value right 30 bits
-                thisValue = (thisValue-thisMask)/0x40000000;
+                let lastMask = lastValue % DiagRegister.two30;          // get the low-order 30 bits
+                let thisMask = thisValue % DiagRegister.two30;          // ditto for the second value
+                lastValue = (lastValue-lastMask)/DiagRegister.two30;    // shift the value right 30 bits
+                thisValue = (thisValue-thisMask)/DiagRegister.two30;
 
                 lastMask ^= thisMask;       // determine which bits have changed
                 while (lastMask) {
@@ -161,7 +165,8 @@ DiagRegister.hSpacing = 10;             // horizontal lamp spacing, pixels
 DiagRegister.hOffset = 4;               // horizontal lamp offset within container, pixels
 DiagRegister.vOffset = 2;               // vertical lamp offset within container, pixels
 DiagRegister.groupSpacing = 6;          // horizontal inter-group spacing, pixels
-DiagRegister.lampHeight = 10;           // lamp outer height, pixels
+DiagRegister.lampHeight = 8;            // lamp outer height, pixels
 DiagRegister.lampWidth = 6;             // lamp outer width, pixels
+DiagRegister.two30 = 0x40000000;        // 2**30
 DiagRegister.panelClass = "diagRegister";
 DiagRegister.captionClass = "diagRegCaption";

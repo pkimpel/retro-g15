@@ -26,7 +26,29 @@ export const drumCycleTime = wordTime*longLineSize;
                                                 // one drum cycle (108 words), ms
 export const minTimeout = 4;                    // browsers will do setTimeout for at least 4ms
 
+const hexRex = /[abcdefABCDEF]/g;               // standard hex characters
+const g15HexXlate = {
+        "a": "u", "A": "u",
+        "b": "v", "B": "v",
+        "c": "w", "C": "w",
+        "d": "x", "D": "x",
+        "e": "y", "E": "y",
+        "f": "z", "F": "z"};
 
+
+/**************************************/
+export function g15Hex(v) {
+    /* Converts the value "v" to a hexidecimal string using the G-15
+    convention. This is not a particularly efficient way to do this */
+
+    return v.toString(16).replace(hexRex, (c) => {
+        const g = g15HexXlate[c];
+        return (g ? g : "?");
+    });
+}
+
+
+/**************************************/
 export class Timer {
 
     constructor() {

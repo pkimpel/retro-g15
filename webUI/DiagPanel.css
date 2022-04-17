@@ -27,7 +27,7 @@ DIV.diagRegister {
 
 DIV.diagLampBox {
     position:           absolute;
-    height:             14px;
+    height:             12px;
     width:              14px;
     border:             1px solid #333}
 
@@ -35,7 +35,7 @@ DIV.diagLamp {
     position:           absolute;
     z-index:            1;
     width:              4px;
-    height:             8px;
+    height:             6px;
     border:             1px solid #666;
     background-color:   #EEE}
 DIV.diagLit1 {
@@ -77,8 +77,12 @@ DIV.diagRegCaption {
     left:               calc(50% - 60px);
     width:              120px}
 
+#Header {
+    font-weight:        bold}
+
 #DiagPanel {
-    position:           relative}
+    position:           relative;
+    margin-top:         8px}
 
 #ControlDiv {
     position:           absolute;
@@ -87,130 +91,127 @@ DIV.diagRegCaption {
     width:              100%;
     height:             30px}
 #DrumLocBox {
-    top:                14px;
+    top:                10px;
     right:              616px}
 #CDBox {
-    top:                14px;
+    top:                10px;
     right:              566px}
 #CmdLocBox {
-    top:                14px;
+    top:                10px;
     right:              476px}
 #RCBox {
-    top:                14px;
+    top:                10px;
     right:              446px}
 #TRBox {
-    top:                14px;
+    top:                10px;
     right:              416px}
 #CHBox {
-    top:                14px;
+    top:                10px;
     right:             128px}
 #CQBox {
-    top:                14px;
+    top:                10px;
     right:              98px}
 #CGBox {
-    top:                14px;
+    top:                10px;
     right:              68px}
 #CSBox {
-    top:                14px;
+    top:                10px;
     right:              38px}
 #FOBox {
-    top:                14px;
+    top:                10px;
     right:              8px}
 
 #CmdDiv {
     position:           absolute;
-    top:                40px;
+    top:                32px;
     right:              0;
     width:              100%;
     height:             30px}
 #DIBox {
-    top:                14px;
+    top:                10px;
     right:              428px}
 #TBox {
-    top:                14px;
+    top:                10px;
     right:              338px}
 #BPBox {
-    top:                14px;
+    top:                10px;
     right:              308px}
 #NBox {
-    top:                14px;
+    top:                10px;
     right:              218px}
 #CBox {
-    top:                14px;
+    top:                10px;
     right:              178px}
 #SBox {
-    top:                14px;
+    top:                10px;
     right:              108px}
 #DBox {
-    top:                14px;
+    top:                10px;
     right:              38px}
 #C1Box {
-    top:                14px;
+    top:                10px;
     right:              8px}
 
 #ARDiv {
     position:           absolute;
-    top:                80px;
+    top:                64px;
     right:              0;
     width:              100%;
     height:             30px}
 #ARBox {
-    top:                14px;
+    top:                10px;
     right:              8px}
 #IPBox {
-    top:                14px;
+    top:                10px;
     right:              676px}
 
 #IDDiv {
     position:           absolute;
-    top:                120px;
+    top:                96px;
     right:              0;
     width:              100%;
     height:             30px}
 #ID1Box {
-    top:                14px;
+    top:                10px;
     right:              354px}
 #ID0Box {
-    top:                14px;
+    top:                10px;
     right:              8px}
 
 #MQDiv {
+    position:           absolute;
+    top:                128px;
+    right:              0;
+    width:              100%;
+    height:             30px}
+#MQ1Box {
+    top:                10px;
+    right:              354px}
+#MQ0Box {
+    top:                10px;
+    right:              8px}
+
+#PNDiv {
     position:           absolute;
     top:                160px;
     right:              0;
     width:              100%;
     height:             30px}
-#MQ1Box {
-    top:                14px;
-    right:              354px}
-#MQ0Box {
-    top:                14px;
-    right:              8px}
-
-#PNDiv {
-    position:           absolute;
-    top:                200px;
-    right:              0;
-    width:              100%;
-    height:             30px}
 #PN1Box {
-    top:                14px;
+    top:                10px;
     right:              354px}
 #PN0Box {
-    top:                14px;
+    top:                10px;
     right:              8px}
 
 #LineDumpDiv {
     position:           absolute;
-    top:                290px;
+    top:                228px;
     left:               8px;
     right:              16px}
 #LineNr {
     font-size:          8pt;
-    text-align:         right}
-#LineDump {
-    font-family:        Lucida Sans Typewriter, Consolas, Courier New, monospace;
-    font-size:          8pt}
+    text-align:         center}
 
 #ButtonDiv {
     position:           absolute;
@@ -218,3 +219,7 @@ DIV.diagRegCaption {
     left:               8px;
     right:              16px}
 
+.dumpText {
+    white-space:        pre;
+    font-family:        Lucida Sans Typewriter, Consolas, Courier New, monospace;
+    font-size:          8pt}

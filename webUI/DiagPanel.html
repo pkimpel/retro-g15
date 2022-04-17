@@ -25,7 +25,7 @@
 </head>
 
 <body>
-<p class=bold>retro-g15 Diagnostic Panel</p>
+<div id=Header>retro-g15 Diagnostic Panel</div>
 
 <div id=DiagPanel>
     <div id=ControlDiv>
@@ -74,9 +74,14 @@
 </div>
 
 <div id=LineDumpDiv>
-    <p><strong>Line #</strong>
-       <input id=LineNr class="data rj" type=text size=8 maxLength=3 value=-1></p>
-    <pre id=LineDump class=data></pre>
+    <div>Line
+       <input id=LineNr type=text size=2 maxLength=2 value=0>
+    </div>
+    <div id=LineDump class=dumpText></div>
+    <div>Line 20: <span id=Line20Dump class=dumpText></span></div>
+    <div>Line 21: <span id=Line21Dump class=dumpText></span></div>
+    <div>Line 22: <span id=Line22Dump class=dumpText></span></div>
+    <div>Line 23: <span id=Line23Dump class=dumpText></span></div>
 </div>
 
 <div id=ButtonDiv>

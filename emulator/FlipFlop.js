@@ -91,4 +91,4 @@ class FlipFlop {
 
 // Static class properties
 
-FlipFlop.neonPersistence = 7;           // persistence of neon bulb glow [ms]
+FlipFlop.neonPersistence = 0;          // persistence of neon bulb glow [ms] // ** was 7 ** \\
