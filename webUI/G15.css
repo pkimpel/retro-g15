@@ -194,6 +194,12 @@ H1 {
     width:              calc(100% - 144px);
     height:             16px}
 
+#PRBlockNrDiv {
+    position:           absolute;
+    top:                36px;
+    left:               calc(50% - 12px);
+    font-size:          x-small}
+
 /* Control Panel lamps */
 
 #ControlPanel {

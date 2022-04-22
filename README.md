@@ -2,7 +2,7 @@
 
 The Bendix G-15 was a mid-1950s, binary, vacuum-tube, drum-memory computer system. The system was designed by Harry Huskey for Bendix during his tenure at Wayne State University in Detroit, Michigan.
 
-The main goal of this project is creation of a web browser-based emulator for the G-15.
+The main goal of this project is creation of a web browser-based emulator for the G-15D.
 
 The contents of this project are licensed under the [MIT License](http://www.opensource.org/licenses/mit-license.php).
 

@@ -52,6 +52,7 @@ class PhotoTapeReader {
         this.busy = false;              // an I/O is in progress
         this.canceled = false;          // current I/O canceled
 
+        this.blockNr = 0;
         this.buffer = "";               // reader input buffer (paper-tape reel)
         this.bufLength = 0;             // current input buffer length (characters)
         this.bufIndex = 0;              // 0-relative offset to next character to be read
@@ -66,6 +67,7 @@ class PhotoTapeReader {
         this.buffer = "";                   // discard the input buffer
         this.bufLength = 0;
         this.bufIndex = 0;
+        this.$$("PRBlockNr").textContent = this.blockNr = 0;
         this.$$("PRFileSelector").value = null; // reset the control so the same file can be reloaded
     }
 
@@ -151,6 +153,7 @@ class PhotoTapeReader {
         let x = this.bufIndex;          // current buffer index
 
         this.busy = true;
+        this.$$("PRBlockNr").textContent = ++this.blockNr;
         this.$$("PaperTapeReaderCaption").classList.add("active");
 
         do {
@@ -233,6 +236,7 @@ class PhotoTapeReader {
             }
         } while (true);
 
+        this.$$("PRBlockNr").textContent = --this.blockNr;
         this.$$("PaperTapeReaderCaption").classList.remove("active");
         await this.timer.set(PhotoTapeReader.framePeriod*PhotoTapeReader.startStopFrames); // stop time
         this.busy = false;
@@ -250,6 +254,7 @@ class PhotoTapeReader {
             await this.reverseBlock();
         }
 
+        this.$$("PRBlockNr").textContent = this.blockNr = 0;
         this.$$("PaperTapeReaderCaption").classList.remove("active");
         this.busy = false;
         this.bufIndex = 0;

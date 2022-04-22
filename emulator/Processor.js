@@ -111,9 +111,9 @@ class Processor {
     traceState() {
         // Log current processor state to the console
 
-        console.warn("<TRACE>     L=%2d.%3d DI=%d T=%3d BP=%d N=%3d C=%d S=%2d D=%2d C1=%d",
-                this.cmdLine, this.cmdLoc.value, this.DI.value, this.T.value, this.BP.value,
-                this.N.value, this.C.value, this.S.value, this.D.value, this.C1.value);
+        console.warn("<TRACE>     L=%3d @%2d.%3d DI=%d T=%3d BP=%d N=%3d C=%d S=%2d D=%2d C1=%d",
+                this.drum.L.value, this.cmdLine, this.cmdLoc.value, this.DI.value, this.T.value,
+                this.BP.value, this.N.value, this.C.value, this.S.value, this.D.value, this.C1.value);
     }
 
     /**************************************/
@@ -121,9 +121,9 @@ class Processor {
         /* Posts a violation of standard-command usage */
 
         this.VV.value = 1;
-        console.warn("<VIOLATION> L=2%d.%3d DI=%d T=%3d BP=%d N=%3d C=%d S=%2d D=%2d C1=%d : %s",
-                this.cmdLine, this.cmdLoc.value, this.DI.value, this.T.value, this.BP.value,
-                this.N.value, this.C.value, this.S.value, this.D.value, this.C1.value, msg);
+        console.warn("<VIOLATION> L=%3d @2%d.%3d DI=%d T=%3d BP=%d N=%3d C=%d S=%2d D=%2d C1=%d : %s",
+                this.drum.L.value, this.cmdLine, this.cmdLoc.value, this.DI.value, this.T.value,
+                this.BP.value, this.N.value, this.C.value, this.S.value, this.D.value, this.C1.value, msg);
         if (this.violationHaltSwitch) {
             this.stop();
         }
@@ -357,7 +357,7 @@ class Processor {
         /* Advances the drum to the end of Transfer State: if immediate, T.
         If deferred, T+1+DP */
 
-        this.drum.waitUntil(this.DI.value ? this.T+1+this.C1.value : this.T);
+        this.drum.waitUntil(this.DI.value ? this.T.value+1+this.C1.value : this.T.value);
     }
 
     /**************************************/
@@ -418,7 +418,7 @@ class Processor {
             return this.drum.read(20) & this.IR.value;
             break;
         case 30:        // 20/.21
-            return ~this.drum.read(20) & this.drum.read(21);
+            return (~this.drum.read(20)) & this.drum.read(21);
             break;
         case 31:        // 20.21
             return this.drum.read(20) & this.drum.read(21);
@@ -1061,7 +1061,9 @@ class Processor {
                 pnShiftCarry = (pn >> 28) & 1;
                 pnc = pnShiftCarry;
                 pn = ((pn & Util.absWordMask) << 1) & Util.wordMask;
-                debugTraceEven();               // *** DEBUG ***
+                //if (this.tracing) {             // *** DEBUG ***
+                //    debugTraceEven();           // *** DEBUG ***
+                //}                               // *** DEBUG ***
             } else {                    // odd word
                 this.shiftMQLeftOdd();
                 id = this.complementDoubleOdd(id);
@@ -1079,7 +1081,9 @@ class Processor {
                 pn = ((pn << 1) & Util.absWordMask) | pnShiftCarry;
 
                 qBit = 1-rSign;                 // determine the quotient bit from the remainder sign
-                debugTraceOdd();                // *** DEBUG ***
+                //if (this.tracing) {             // *** DEBUG ***
+                //    debugTraceOdd();            // *** DEBUG ***
+                //}                               // *** DEBUG ***
             }
 
             this.drum.write(regPN, pn);
@@ -1333,13 +1337,13 @@ class Processor {
         the code to be output to the device. If the AS flip-flop is set and the
         precessor function indicates that the line is now empty (all zeroes),
         unconditionally returns a Stop code */
-        let code = 0;
-        let empty = false;
+        let code = 0;                   // I/O code for the device
+        let zeroed = false;             // precessor function reports line 19 all zeroes
 
         switch (fmt) {
         case 0b000:     // digit
-            [code, empty] = (await this.drum[precessor](4));
-            if (empty && this.AS.value) {
+            [code, zeroed] = (await this.drum[precessor](4));
+            if (zeroed && this.AS.value) {
                 code = IOCodes.ioCodeStop;      // AN auto stop
             } else {
                 code |= IOCodes.ioDataMask;
@@ -1350,8 +1354,8 @@ class Processor {
             break;
         case 0b010:     // carriage return - precess and discard the sign bit
             await this.drum[precessor](1);
-            [code, empty] = await this.drum[precessor](1);
-            if (empty && this.AS.value) {
+            [code, zeroed] = await this.drum[precessor](1);
+            if (zeroed && this.AS.value) {
                 code = IOCodes.ioCodeStop;      // AN auto stop
             } else {
                 code = IOCodes.ioCodeCR;
@@ -1367,16 +1371,16 @@ class Processor {
             code = IOCodes.ioCodeReload;
             break;
         case 0b110:     // tab - precess and discard the sign bit
-            [code, empty] = await this.drum[precessor](1);
-            if (empty && this.AS.value) {
+            [code, zeroed] = await this.drum[precessor](1);
+            if (zeroed && this.AS.value) {
                 code = IOCodes.ioCodeStop;      // AN auto stop
             } else {
                 code = IOCodes.ioCodeTab;
             }
             break;
         case 0b111:     // wait - precess and discard the digit
-            [code, empty] = await this.drum[precessor](4);
-            if (empty && this.AS.value) {
+            [code, zeroed] = await this.drum[precessor](4);
+            if (zeroed && this.AS.value) {
                 code = IOCodes.ioCodeStop;      // AN auto stop
             } else {
                 code = IOCodes.ioCodeWait;
@@ -1384,7 +1388,7 @@ class Processor {
             break;
         }
 
-        return [code, empty];
+        return [code, zeroed];
     }
 
     /**************************************/
@@ -1393,9 +1397,10 @@ class Processor {
         bits of of word 107, and precessing the line with each character until
         the line is all zeroes */
         let code = 0;                   // output character code
-        let empty = false;              // line 19 all zeroes
         let fmt = 0;                    // format code
+        let line19Empty = false;        // line 19 is now empty
         let punching = true;            // true until STOP or I/O cancel
+        let zeroed = false;             // precessor function reports line 19 all zeroes
 
         const punchPeriod = Util.drumCycleTime*2;
 
@@ -1417,10 +1422,14 @@ class Processor {
             // The character cycle.
             do {
                 this.OS.value = this.drum.ioDetect19Sign107();
-                [code, empty] = await this.formatOutputCharacter(fmt, "ioPrecess19ToCode");
+                [code, zeroed] = await this.formatOutputCharacter(fmt, "ioPrecess19ToCode");
+                if (zeroed) {
+                    line19Empty = true;
+                }
+
                 switch (code) {
                 case IOCodes.ioCodeStop:
-                    if (empty) {
+                    if (line19Empty) {
                         punching = false;
                     } else {
                         code = IOCodes.ioCodeReload;
@@ -1434,7 +1443,7 @@ class Processor {
                     this.devices.photoTapePunch.write(code);    // no await
                     await this.ioTimer.delayUntil(outTime);
                     outTime += punchPeriod;
-                    fmt = await this.drum.ioPrecessMZToCode(3); // get next format code
+                    fmt = await this.drum.ioPrecessMZToCode(2); // get next format code
                 }
             } while (code != IOCodes.ioCodeReload && punching);
         } while (punching);
@@ -1447,10 +1456,10 @@ class Processor {
         /* Types the contents of AR, starting with the four high-order
         bits of the word, and precessing the word with each character */
         let code = 0;                   // output character code
-        let empty = false;              // (ignored for AR typeout)
         let fmt = 0;                    // format code
         let printing = true;            // true until STOP or I/O cancel
         let suppressing = false;        // zero suppression in force
+        let zeroed = false;             // (ignored for AR typeout)
 
         const printPeriod = Util.drumCycleTime*4;
 
@@ -1469,7 +1478,7 @@ class Processor {
             // The character cycle.
             do {
                 this.OS.value = this.drum.AR.value & 1;         // detect AR sign before precession
-                [code, empty] = await this.formatOutputCharacter(fmt, "ioPrecessARToCode");
+                [code, zeroed] = await this.formatOutputCharacter(fmt, "ioPrecessARToCode");
 
                 // Not sure if the following is correct, but it appears from the
                 // Theory of Operation manual that once all bits have been processed
@@ -1540,10 +1549,11 @@ class Processor {
         bits of word 107, and precessing the line with each character until
         the line is all zeroes */
         let code = 0;                   // output character code
-        let empty = false;              // line 19 all zeroes
         let fmt = 0;                    // format code
+        let line19Empty = false;        // line 19 is now all zeroes
         let printing = true;            // true until STOP or I/O cancel
         let suppressing = false;        // zero suppression in force
+        let zeroed = false;             // precessor function reports line 19 all zeroes
 
         const printPeriod = Util.drumCycleTime*4;
 
@@ -1561,7 +1571,11 @@ class Processor {
             // The character cycle.
             do {
                 this.OS.value = this.drum.ioDetect19Sign107();
-                [code, empty] = await this.formatOutputCharacter(fmt, "ioPrecess19ToCode");
+                [code, zeroed] = await this.formatOutputCharacter(fmt, "ioPrecess19ToCode");
+                if (zeroed) {
+                    line19Empty = true;
+                }
+
                 switch (code) {
                 case IOCodes.ioDataMask:        // digit zero
                     if (suppressing) {
@@ -1579,7 +1593,7 @@ class Processor {
                     // does not affect suppression
                     break;
                 case IOCodes.ioCodeStop:
-                    if (empty) {
+                    if (line19Empty) {
                         printing = false;
                     } else {
                         code = IOCodes.ioCodeReload;
@@ -1606,7 +1620,7 @@ class Processor {
 
                     await this.ioTimer.delayUntil(outTime);
                     outTime += printPeriod;
-                    fmt = await this.drum.ioPrecessMZToCode(3); // get next format code
+                    fmt = await this.drum.ioPrecessMZToCode(2); // get next format code
                 }
             } while (code != IOCodes.ioCodeReload && printing);
         } while (printing);
@@ -1971,7 +1985,7 @@ class Processor {
 
         case 31:        // odds & sods
             switch (this.C.value) {
-            case 0:                     // next command from N+1
+            case 0:                     // next command from AR
                 this.CG.value = 1;
                 this.waitUntilT();
                 break;
@@ -2013,7 +2027,7 @@ class Processor {
 
         this.drum.waitUntil(loc);
         if (this.CG.value) {            // next command from AR
-            this.cmdLoc.value = 127;
+            this.cmdLoc.value = 127;    // for display purposes only to signal "from AR"
             cmd = this.drum.read(regAR);
             this.CG.value = 0;
         } else {                        // next command from one of the CD lines
@@ -2044,7 +2058,7 @@ class Processor {
         // they are 20 word-times too low. The following code adjusts T and N
         // so that they will behave as the hardware would have.
 
-        if (loc == 127) {
+        if (loc == 107) {
             this.violation("Execute command from L=107");
             this.N.value = (this.N.value - 20 + Util.longLineSize) % Util.longLineSize;
             if (!(this.D.value == 31 && (this.S.value & 0b11100) == 0b11000)) { // not 24-27: MUL, DIV, SHIFT, NORM
@@ -2314,10 +2328,10 @@ class Processor {
         /* Powers up and initializes the processor */
 
         if (!this.poweredOn) {
-            this.CH.value = 1;          // set HALT FF
+            this.CH.value = 1;                          // set HALT FF
             this.panel = this.context.controlPanel;     // ControlPanel object
             this.devices = this.context.devices;        // I/O device objects
-            this.loadMemory();          // DEBUG ONLY
+            //this.loadMemory();                          // DEBUG ONLY
         }
     }
 
