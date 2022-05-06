@@ -42,6 +42,7 @@ class PhotoTapeReader {
         $$("PRFileSelector").addEventListener("change", this.boundFileSelectorChange);
         $$("PRRewindBtn").addEventListener("click", this.boundRewindButtonClick);
         $$("PRUnloadBtn").addEventListener("click", this.boundUnloadButtonClick);
+        $$("PRUnloadCaption").addEventListener("click", this.boundUnloadButtonClick);
     }
 
     /**************************************/
@@ -154,7 +155,7 @@ class PhotoTapeReader {
 
         this.busy = true;
         this.$$("PRBlockNr").textContent = ++this.blockNr;
-        this.$$("PaperTapeReaderCaption").classList.add("active");
+        this.$$("PRCaption").classList.add("active");
 
         do {
             this.tapeSupplyBar.value = bufLength-x;
@@ -182,7 +183,7 @@ class PhotoTapeReader {
             }
         } while (true);
 
-        this.$$("PaperTapeReaderCaption").classList.remove("active");
+        this.$$("PRCaption").classList.remove("active");
         await this.timer.set(PhotoTapeReader.framePeriod*PhotoTapeReader.startStopFrames); // stop time
         this.busy = false;
         this.bufIndex = x;
@@ -213,7 +214,7 @@ class PhotoTapeReader {
         let x = this.bufIndex;          // point to prior character
 
         this.busy = true;
-        this.$$("PaperTapeReaderCaption").classList.add("active");
+        this.$$("PRCaption").classList.add("active");
 
         do {
             if (x <= 0) {
@@ -237,7 +238,7 @@ class PhotoTapeReader {
         } while (true);
 
         this.$$("PRBlockNr").textContent = --this.blockNr;
-        this.$$("PaperTapeReaderCaption").classList.remove("active");
+        this.$$("PRCaption").classList.remove("active");
         await this.timer.set(PhotoTapeReader.framePeriod*PhotoTapeReader.startStopFrames); // stop time
         this.busy = false;
         this.bufIndex = x;
@@ -248,14 +249,14 @@ class PhotoTapeReader {
         /* Rewinds the tape to its beginning */
 
         this.busy = true;
-        this.$$("PaperTapeReaderCaption").classList.add("active");
+        this.$$("PRCaption").classList.add("active");
 
         while (this.bufIndex > 0) {
             await this.reverseBlock();
         }
 
         this.$$("PRBlockNr").textContent = this.blockNr = 0;
-        this.$$("PaperTapeReaderCaption").classList.remove("active");
+        this.$$("PRCaption").classList.remove("active");
         this.busy = false;
         this.bufIndex = 0;
     }
@@ -268,6 +269,7 @@ class PhotoTapeReader {
         this.$$("PRFileSelector").removeEventListener("change", this.boundFileSelectorChange);
         this.$$("PRRewindBtn").removeEventListener("click", this.boundRewindButtonClick);
         this.$$("PRUnloadBtn").removeEventListener("click", this.boundUnloadButtonClick);
+        this.$$("PRUnloadCaption").removeEventListener("click", this.boundUnloadButtonClick);
     }
 }
 

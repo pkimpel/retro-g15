@@ -118,13 +118,13 @@ H1 {
     left:               8px;
     right:              8px}
 
-#PunchTapeCaption {
+#PTCaption {
     position:           absolute;
     top:                4px;
     left:               0;
     width:              60px;
     text-align:         left}
-#PunchTapeView {
+#PTView {
     position:           absolute;
     top:                0px;
     left:               60px;
@@ -134,15 +134,15 @@ H1 {
     background-color:   white;
     text-align:         right;
     border:             1px solid gray}
-#PunchTapeView .red {
+#PTView .red {
     color:              #F00}
 
-#PunchTapeUnloadCaption {
+#PTUnloadCaption {
     position:           absolute;
     top:                4px;
     right:              28px;
     text-align:         right}
-#PunchTapeUnloadBtn {
+#PTUnloadBtn {
     position:           absolute;
     top:                -2px;
     right:              0}
@@ -152,7 +152,7 @@ H1 {
     top:                32px;
     left:               8px;
     right:              8px}
-#PaperTapeReaderCaption {
+#PRCaption {
     top:                16px;
     left:               0;
     width:              60px;
@@ -165,7 +165,7 @@ H1 {
     width:              calc(100% - 170px);
     color:              white}
 
-#PaperTapeRewindCaption {
+#PRRewindCaption {
     display:            none;           /* for now... */
     position:           absolute;
     top:                4px;
@@ -177,7 +177,7 @@ H1 {
     top:                -2px;
     right:              24px}
 
-#PaperTapeReaderUnloadCaption {
+#PRUnloadCaption {
     position:           absolute;
     top:                26px;
     right:              28px;
@@ -252,6 +252,8 @@ H1 {
     z-index:            1;
     font-size:          x-small;
     line-height:        100%}
+#G15Version.active {
+    color:              yellow}
 
 /* Typewriter switch panel */
 

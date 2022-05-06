@@ -33,12 +33,13 @@ class PhotoTapePunch {
         let $$ = this.$$ = context.$$;
         this.processor = context.processor;
         this.window = context.window;
-        this.tapeView = $$("PunchTapeView");
+        this.tapeView = $$("PTView");
         this.boundUnloadButtonClick = this.unloadButtonClick.bind(this);
 
         this.clear();
 
-        $$("PunchTapeUnloadBtn").addEventListener("click", this.boundUnloadButtonClick);
+        $$("PTUnloadBtn").addEventListener("click", this.boundUnloadButtonClick);
+        $$("PTUnloadCaption").addEventListener("click", this.boundUnloadButtonClick);
     }
 
     /**************************************/
@@ -104,7 +105,7 @@ class PhotoTapePunch {
     /**************************************/
     write(code) {
         /* Writes one character code to the punch. The physical punch device
-        (a standard Flexowriter tape punch unit) could output in excess of 17
+        (a standard Flexowriter tape punch unit) could output in excess of 18
         characters per second, but the timing was controlled by the processor,
         which sent codes to the device at a rate of one every two drum cycles,
         about 17.2 characters per second */
@@ -141,7 +142,8 @@ class PhotoTapePunch {
     shutDown() {
         /* Shuts down the device */
 
-        this.$$("PRUnloadBtn").removeEventListener("click", this.boundUnloadButtonClick);
+        this.$$("PTUnloadBtn").removeEventListener("click", this.boundUnloadButtonClick);
+        this.$$("PTUnloadCaption").removeEventListener("click", this.boundUnloadButtonClick);
     }
 }
 
@@ -150,5 +152,5 @@ class PhotoTapePunch {
 
 PhotoTapePunch.bufferLimit = 0x40000;   // maximum output that will be buffered (about 4 hours worth)
 PhotoTapePunch.tapeCodes = [
-    " ", "-", "C", "T", "S", "/", ".", "~", " ", "-", "C", "T", "S", "/", ".", "~",
+    " ", "-", "C", "T", "S", "/", ".", "~", " ", "-", "C", "T", "S", "/", "P", "~",
     "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "u", "v", "w", "x", "y", "z"];

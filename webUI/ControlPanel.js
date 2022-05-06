@@ -35,6 +35,7 @@ class ControlPanel {
         */
         let $$ = this.$$ = context.$$;
         let panel = this.panel = $$("ControlPanel");
+        let processor = context.processor;
         const panelCenter = panel.clientWidth / 2;
 
         this.context = context;
@@ -42,17 +43,19 @@ class ControlPanel {
         this.boundControlSwitchChange = this.controlSwitchChange.bind(this);
         this.boundUpdatePanel = this.updatePanel.bind(this);
         this.boundSystemReset = this.systemReset.bind(this);
+        this.boundToggleTracing = this.toggleTracing.bind(this);
 
         this.systemBell = $$("SystemBell");
         this.lastBellTime = 0;
 
         // Paper tape panel
-        $$("PunchTapeView").textContent = "";
+        $$("PTView").textContent = "";
         $$("PRFileSelector").value = null;
         $$("PRTapeSupplyBar").value = 0;
 
         // Characteristic register
-        this.regCharacteristic = new PanelRegister($$("CharacteristicReg"), 2, 1, "CharacteristicReg_", "CHARACTERISTIC");
+        this.regCharacteristic = new PanelRegister($$("CharacteristicReg"), 2, 1,
+                "CharacteristicReg_", "CHARACTERISTIC");
         this.regCharacteristic.lamps[0].element.style.left =
                 (this.regCharacteristic.lamps[0].element.offsetLeft + 20).toString() + "px";
 
@@ -69,16 +72,19 @@ class ControlPanel {
         this.lampOverflow.setCaption("O'FLO", false);
 
         // GO-DA lamp
-        this.lampGODA = new NeonLamp(panel, panelCenter+132+PanelRegister.hSpacing, 36, "GODALamp");
+        this.lampGODA = new NeonLamp(panel, panelCenter+132+PanelRegister.hSpacing,
+                36, "GODALamp");
         this.lampGODA.setCaption("GO", false);
         this.lampGODA.setCaption("D.A.", true);
 
         // HALT lamp
-        this.lampHalt = new NeonLamp(panel, panelCenter+132+PanelRegister.hSpacing*2, 36, "HaltLamp");
+        this.lampHalt = new NeonLamp(panel, panelCenter+132+PanelRegister.hSpacing*2,
+                36, "HaltLamp");
         this.lampHalt.setCaption("HALT", false);
 
         // Command Line register
-        this.regCmdLine = new PanelRegister($$("CmdLineReg"), 3, 1, "CmdLineReg_", "COMMAND LINE");
+        this.regCmdLine = new PanelRegister($$("CmdLineReg"), 3, 1,
+                "CmdLineReg_", "COMMAND LINE");
 
         // Destination register
         this.regDest = new PanelRegister($$("DestReg"), 5, 1, "DestReg_", "DESTINATION");
@@ -93,11 +99,14 @@ class ControlPanel {
         this.lampDBPR.setCaption("DB-PR", false);
 
         // PN-register sign lamp
-        this.lampPSign = new NeonLamp(panel, panelCenter+122+PanelRegister.hSpacing*2, 104, "PSignLamp");
+        this.lampPSign = new NeonLamp(panel,
+                panelCenter+122+PanelRegister.hSpacing*2, 104, "PSignLamp");
         this.lampPSign.setCaption("P - SIGN", false);
 
         // NC-AR lamp
-        this.lampNCAR = new NeonLamp(panel, panelCenter-248+PanelRegister.hOffset+PanelRegister.hSpacing, 172, "NCARLamp");
+        this.lampNCAR = new NeonLamp(panel,
+                panelCenter-248+PanelRegister.hOffset+PanelRegister.hSpacing,
+                172, "NCARLamp");
         this.lampNCAR.setCaption("NC-AR", false);
 
         // Input/Output register
@@ -113,7 +122,8 @@ class ControlPanel {
         this.lampTest.setCaption("TEST", false);
 
         // Input/Output Auto/Standard reload lamp
-        this.lampAS = new NeonLamp(panel, panelCenter+122+PanelRegister.hSpacing*2, 172, "ASLamp");
+        this.lampAS = new NeonLamp(panel, panelCenter+122+PanelRegister.hSpacing*2,
+                172, "ASLamp");
         this.lampAS.setCaption("AS", false);
 
         // Typewriter switch panel
@@ -126,15 +136,24 @@ class ControlPanel {
 
         let powerPanel = $$("PowerPanel");
 
-        this.dcPowerLamp = new ColoredLamp(powerPanel, null, null, "DCPowerLamp", "redLamp", "redLit");
-        this.readyLamp = new ColoredLamp(powerPanel, null, null, "ReadyLamp", "greenLamp", "greenLit");
+        this.dcPowerLamp = new ColoredLamp(powerPanel, null, null,
+                "DCPowerLamp", "redLamp", "redLit");
+        this.readyLamp = new ColoredLamp(powerPanel, null, null,
+                "ReadyLamp", "greenLamp", "greenLit");
 
-        this.violationLamp = new ColoredLamp(powerPanel, null, null, "ViolationLamp", "orangeLamp", "orangeLit");
-        this.violationSwitch = new ToggleSwitch(powerPanel, null, null, "ViolationSwitch", "./resources/ToggleDown.png", "./resources/ToggleUp.png");
+        this.violationLamp = new ColoredLamp(powerPanel, null, null,
+                "ViolationLamp", "orangeLamp", "orangeLit");
+        this.violationSwitch = new ToggleSwitch(powerPanel, null, null,
+                "ViolationSwitch", "./resources/ToggleDown.png", "./resources/ToggleUp.png");
 
         $$("G15Version").textContent = Version.g15Version;
+        if (processor.tracing) {
+            $$("G15Version").classList.add("active");
+        }
 
         // Events
+
+        $$("G15Version").addEventListener("dblclick", this.boundToggleTracing, false);
 
         $$("PowerOffBtn").addEventListener("click", context.systemShutDown, false);
         $$("ResetBtn").addEventListener("click", this.boundSystemReset, false);
@@ -154,6 +173,23 @@ class ControlPanel {
         this.$$("PunchSwitchSet").addEventListener("click", this.boundControlSwitchChange, false);
         this.$$("ComputeSwitchSet").addEventListener("click", this.boundControlSwitchChange, false);
         this.$$("ViolationResetBtn").addEventListener("click", this.boundControlSwitchChange, false);
+    }
+
+    /**************************************/
+    toggleTracing(ev) {
+        /* Toggles the Processor's tracing option */
+        let p = this.context.processor;
+
+        this.$$("FrontPanel").focus();  // de-select the G15Version <div>
+
+        p.tracing = !p.tracing;
+        if (p.tracing) {
+            ev.target.classList.add("active");
+            console.log("<TRACE ON>");
+        } else {
+            ev.target.classList.remove("active");
+            console.log("<TRACE OFF>");
+        }
     }
 
     /**************************************/
@@ -258,6 +294,7 @@ class ControlPanel {
         this.$$("EnableSwitchSet").removeEventListener("click", this.boundControlSwitchChange, false);
         this.$$("PunchSwitchSet").removeEventListener("click", this.boundControlSwitchChange, false);
         this.$$("ComputeSwitchSet").removeEventListener("click", this.boundControlSwitchChange, false);
+        this.$$("G15Version").removeEventListener("dblclick", this.boundToggleTracing, false);
         this.$$("PowerOffBtn").removeEventListener("click", this.context.systemShutDown, false);
         this.$$("ResetBtn").removeEventListener("click", this.context.boundSystemReset, false);
         this.$$("ViolationResetBtn").removeEventListener("click", this.boundControlSwitchChange, false);

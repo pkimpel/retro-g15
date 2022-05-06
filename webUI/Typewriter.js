@@ -36,8 +36,8 @@ class Typewriter {
         this.doc = this.window.document;
         this.paper = this.$$("TypewriterPaper");
         this.printerEOP = this.$$("EndOfPaper");
-        this.tabStop = [5,9,13,17,21,25,29,33,37,41,45,49,53,57,61,65,69,73,
-                        77,81,85,89,93,97,101,105,109,113,117,121,125,129,133];
+        this.tabStop = [6,11,16,21,26,31,36,41,46,51,56,61,66,71,76,81,86,
+                        91,96,101,106,111,116,121,126,131];
         this.setPaperEmpty();
 
         this.boundPanelKeydown = this.panelKeydown.bind(this);

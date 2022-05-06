@@ -78,7 +78,7 @@ class DiagPanel {
                 text += x.toString().padStart(3, " ");
                 for (let y=0; y<inc; ++y) {
                     let word = drum.line[lineNr][x+y];
-                    text += " " + ((word & 1) ? "-" : " ") +
+                    text += " " + ((word & Util.wordSignMask) ? "-" : " ") +
                                   Util.g15Hex(word >> 1).padStart(7, "0");
                 }
 
@@ -94,15 +94,16 @@ class DiagPanel {
         /* Dumps the currently-specified fast (4-word) line to the to its text
         area in signed hex */
         let drum = this.context.processor.drum;
+        let id = `Line${(lineNr == 32 ? "MZ" : lineNr.toString())}Dump`;
         let text = "";
 
         for (let x=0; x<Util.fastLineSize; ++x) {
             let word = drum.line[lineNr][x];
-            text += " " + ((word & 1) ? "-" : " ") +
+            text += " " + ((word & Util.wordSignMask) ? "-" : " ") +
                           Util.g15Hex(word >> 1).padStart(7, "0");
         }
 
-        this.$$(`Line${lineNr}Dump`).textContent = text;
+        this.$$(id).textContent = text;
     }
 
     /**************************************/
@@ -145,11 +146,12 @@ class DiagPanel {
         this.PN0Reg.updateFromRegister(drum.PN[0]);
 
         if (Math.trunc(now/250) % 2) {
+            this.dumpLine();
             this.dumpFastLine(20);
             this.dumpFastLine(21);
             this.dumpFastLine(22);
             this.dumpFastLine(23);
-            this.dumpLine();
+            this.dumpFastLine(32);      // MZ
         }
     }
 
@@ -192,18 +194,18 @@ class DiagPanel {
         this.C1Lamp = new DiagLamp(this.$$("C1Box"), 4, 2, "SDLamp");
         this.C1Lamp.setCaption("S/D");
 
-        this.ARReg = new DiagRegister(this.$$("ARBox"), 29, true, true, "ARReg_", "AR");
+        this.ARReg = new DiagRegister(this.$$("ARBox"), Util.wordBits, true, true, "ARReg_", "AR");
         this.IPLamp = new DiagLamp(this.$$("IPBox"), 4, 2, "IPLamp");
         this.IPLamp.setCaption("IP");
 
-        this.ID1Reg = new DiagRegister(this.$$("ID1Box"), 29, true, false, "ID1Reg_", "ID:1");
-        this.ID0Reg = new DiagRegister(this.$$("ID0Box"), 29, true, true,  "ID0Reg_", "ID:0");
+        this.ID1Reg = new DiagRegister(this.$$("ID1Box"), Util.wordBits, true, false, "ID1Reg_", "ID:1");
+        this.ID0Reg = new DiagRegister(this.$$("ID0Box"), Util.wordBits, true, true,  "ID0Reg_", "ID:0");
 
-        this.MQ1Reg = new DiagRegister(this.$$("MQ1Box"), 29, true, false, "MQ1Reg_", "MQ:1");
-        this.MQ0Reg = new DiagRegister(this.$$("MQ0Box"), 29, true, true,  "MQ0Reg_", "MQ:0");
+        this.MQ1Reg = new DiagRegister(this.$$("MQ1Box"), Util.wordBits, true, false, "MQ1Reg_", "MQ:1");
+        this.MQ0Reg = new DiagRegister(this.$$("MQ0Box"), Util.wordBits, true, true,  "MQ0Reg_", "MQ:0");
 
-        this.PN1Reg = new DiagRegister(this.$$("PN1Box"), 29, true, false, "PN1Reg_", "PN:1");
-        this.PN0Reg = new DiagRegister(this.$$("PN0Box"), 29, true, true,  "PN0Reg_", "PN:0");
+        this.PN1Reg = new DiagRegister(this.$$("PN1Box"), Util.wordBits, true, false, "PN1Reg_", "PN:1");
+        this.PN0Reg = new DiagRegister(this.$$("PN0Box"), Util.wordBits, true, true,  "PN0Reg_", "PN:0");
 
         this.$$("LineNr").addEventListener("change", this.boundDumpLine);
         this.$$("StepBtn").addEventListener("click", this.boundProcStep);

@@ -12,13 +12,15 @@
 ***********************************************************************/
 
 export const wordBits = 29;                     // bits per G-15 word
+export const wordMagBits = 28;                  // magnitude bits in a G-15 word
 export const wordBytes = 4;                     // bytes per G-15 word (32 bits holding 29 bits)
 export const longLineSize = 108;                // words per long drum line
 export const fastLineSize = 4;                  // words per fast drum line
 
 export const wordMask = 0x1FFFFFFF;             // 29 bits
 export const absWordMask = 0x1FFFFFFE;          // all but the sign bit
-export const two28 = 0x10000000;                // 2**28 for complementing word values
+export const wordSignMask = 0x01;               // sign bit mask
+export const two28 = 0x10000000;                // 2**28 for complementing word magnitude values
 
 export const wordTime = 60000/1800/124;         // one word time on the drum [1800 RPM, 124 words/rev], ms
 export const bitTime = wordTime/wordBits;       // one bit time on the drum, ms
@@ -45,6 +47,13 @@ export function g15Hex(v) {
         const g = g15HexXlate[c];
         return (g ? g : "?");
     });
+}
+
+/**************************************/
+export function g15SignedHex(v) {
+    /* Formats the value of "v" as signed G-15 hex */
+
+    return g15Hex(v >> 1) + (v & 1 ? "-" : " ");
 }
 
 

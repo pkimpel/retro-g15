@@ -78,18 +78,18 @@
 
         <div id=PaperTapePanel>
             <div id=PaperTapePunch>
-                <div id=PunchTapeCaption class=caption>PUNCH</div>
-                <input id=PunchTapeView type=text READONLY>
-                <div id=PunchTapeUnloadCaption class=caption>UNLOAD</div>
-                <div id=PunchTapeUnloadBtn class=blackButton3></div>
+                <div id=PTCaption class=caption>PUNCH</div>
+                <input id=PTView type=text READONLY>
+                <div id=PTUnloadCaption class=caption>UNLOAD</div>
+                <div id=PTUnloadBtn class=blackButton3></div>
             </div>
 
             <div id=PaperTapeReader>
-                <div id=PaperTapeReaderCaption class=caption>READER</div>
+                <div id=PRCaption class=caption>READER</div>
                 <input id=PRFileSelector type=file size=60 multiple>
-                <div id=PaperTapeRewindCaption class=caption>REWIND</div>
+                <div id=PRRewindCaption class=caption>REWIND</div>
                 <div id=PRRewindBtn class=blackButton3></div>
-                <div id=PaperTapeReaderUnloadCaption class=caption>UNLOAD</div>
+                <div id=PRUnloadCaption class=caption>UNLOAD</div>
                 <div id=PRUnloadBtn class=blackButton3></div>
                 <progress id=PRTapeSupplyBar 0 max=100 value=0 title="Tape Buffer Remaining"></progress>
                 <div id=PRBlockNrDiv>
@@ -107,7 +107,8 @@
 
             <div id=IOReg class=registerRoundedBorder></div>
 
-            <div id=G15Version class="caption">?.?</div>
+            <div id=G15Version class="caption"
+                 title="Double-click to toggle tracing">?.?</div>
         </div>
 
         <div id=TypewriterSwitchPanel>
@@ -149,9 +150,9 @@
             <div id=ResetBtnCaption class=caption>RESET</div>
 
             <div id=ViolationResetBtn class=redButton3>&nbsp;</div>
-            <div id=ViolationResetBtnCaption class=caption>RESET</div>
+            <div id=ViolationResetBtnCaption class=caption>CLEAR</div>
             <div id=ViolationLampCaption class=caption>CODE VIOLATION</div>
-            <div id=ViolationSwitchCaption class=caption>HALT</div>
+            <div id=ViolationSwitchCaption class=caption>STOP</div>
 
 
             <img id=G15Logo src="./resources/G-15-logo-3B413D.jpg" alt="Bendix G-15 logo">

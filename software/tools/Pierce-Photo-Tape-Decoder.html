@@ -42,7 +42,7 @@
 *      03     T     tabulate
 *      04     S     stop
 *      05     /     reload (precess line 23 to line 19 and read next block)
-*      06     .     period (ignored on input)
+*      06     P     period (ignored on input, "." also accepted on input)
 *      07     ~     wait
 *   08-0F           (same as corresponding 00-07 codes)
 *   10-19   0-9     decimal digits
@@ -156,7 +156,7 @@ window.onload = function() {
                         line = "";
                         break;
                     case 6:     // period
-                        line += ".";
+                        line += "P";
                         break;
                     case 7:     // wait
                         line += "~";
