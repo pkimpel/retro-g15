@@ -267,21 +267,21 @@ class Drum {
     getMQ0T29Bit() {
         /* Returns the value of the high-order (T29) bit of MQ:0 (even word) */
 
-        return (this.MQ[0].value >> 28) & 1;
+        return (this.MQ[0].value >> (Util.wordBits-1)) & 1;
     }
 
     /**************************************/
     getMQ1T29Bit() {
         /* Returns the value of the high-order (T29) bit of MQ:1 (odd word) */
 
-        return (this.MQ[1].value >> 28) & 1;
+        return (this.MQ[1].value >> (Util.wordBits-1)) & 1;
     }
 
     /**************************************/
     getPN0T1Bit() {
         /* Returns the value of the sign bit of PN:0 (even word) */
 
-        return this.PN[0] & 1;
+        return this.PN[0] & Util.wordSignMask;
     }
 
     /**************************************/
@@ -305,9 +305,9 @@ class Drum {
 
     /**************************************/
     getPN0T29Bit() {
-        /* Returns the value of the high-order (T29) bit of MQ:0 (even word) */
+        /* Returns the value of the high-order (T29) bit of PN:0 (even word) */
 
-        return (this.PN[0].value >> 28) & 1;
+        return (this.PN[0].value >> (Util.wordBits-1)) & 1;
     }
 
 
@@ -437,7 +437,6 @@ class Drum {
         for output */
         let keepBits = Util.wordBits - bits;
         let keepMask = Util.wordMask >> bits;
-        let codeMask = Util.wordMask >> keepBits;
 
         let word = this.read(28) & Util.wordMask;
         let code = word >> keepBits;
@@ -492,18 +491,17 @@ class Drum {
         formatters need to call this routine BEFORE applying formatting to a
         digit, because after precession the sign bit will have shifted left */
 
-        return this.line[19][Util.fastLineSize-1] & 1;
+        return this.line[19][Util.longLineSize-1] & Util.wordSignMask;
     }
 
     /**************************************/
     async ioPrecessMZToCode(bits) {
         /* Precesses the original contents of MZ by "bits" bits to higher
-        word numbers, inserting zero in the four low-order bits of word 0, and
-        returning the original "bits" high order bits of word 3. This is
-        normally used to get the next format code for output */
+        word numbers, inserting zero in the "bits" low-order bits of word 0,
+        and returning the original "bits" high order bits of word 3. This is
+        normally used to get the next 3-bit format code for slow output */
         let keepBits = Util.wordBits - bits;
         let keepMask = Util.wordMask >> bits;
-        let codeMask = Util.wordMask >> keepBits;
         let code = 0;
         let word = 0;
 
@@ -520,16 +518,14 @@ class Drum {
     }
 
     /**************************************/
-    async ioPrecessLongLineToMZ(line) {
+    async ioPrecessLongLineToMZ(line, bits) {
         /* Precesses the original contents of words 0-3 of the specified long
-        line to MZ by three bits, inserting zero in the three low-order bits of
-        MZ word 0, and returning the original three high order bits of word 3
+        line to MZ by "bits" bits, inserting zero in the "bits" low-order bits of
+        MZ word 0, and returning the original "bits" high order bits of word 3
         from the long line. This is normally used to load MZ from the long line
-        and return the first format code for output */
-        const bits = 3;
+        and return the first 3-bit format code for slow output */
         let keepBits = Util.wordBits - bits;
         let keepMask = Util.wordMask >> bits;
-        let codeMask = Util.wordMask >> keepBits;
         let code = 0;
         let word = 0;
 
@@ -569,7 +565,6 @@ class Drum {
         of that bit is also returned */
         let keepBits = Util.wordBits - bits;
         let keepMask = Util.wordMask >> bits;
-        let codeMask = Util.wordMask >> keepBits;
         let code = 0;
         let empty = true;
         let word = 0;

@@ -68,7 +68,7 @@ class FlipFlop {
 
     /**************************************/
     set(value) {
-        /* Set the value of the FF. Use this rather than setting the value member
+        /* Set the value of the FF. Use this rather than setting the intVal member
         directly so that average lamp glow can be computed. Returns the new value */
 
         this.intVal = (value ? 1 : 0);
@@ -91,4 +91,4 @@ class FlipFlop {
 
 // Static class properties
 
-FlipFlop.neonPersistence = 0;          // persistence of neon bulb glow [ms] // ** was 7 ** \\
+FlipFlop.neonPersistence = 15;          // persistence of neon bulb glow [ms] // ** was 7 ** \\

@@ -211,7 +211,7 @@ class PhotoTapeReader {
         let c = 0;                      // current character code
         let nextFrameStamp = performance.now() + // simulate startup time
                 PhotoTapeReader.framePeriod*PhotoTapeReader.startStopFrames ;
-        let x = this.bufIndex;          // point to prior character
+        let x = this.bufIndex;          // point to current buffer position
 
         this.busy = true;
         this.$$("PRCaption").classList.add("active");
@@ -219,11 +219,11 @@ class PhotoTapeReader {
         do {
             if (x <= 0) {
                 x = 0;                  // reset the buffer index to beginning
-                break;                  // just quit
+                break;                  // and just quit
             } else {
-                --x;
+                --x;                    // examine prior character
                 c = this.buffer.charCodeAt(x) & 0x7F;
-                if (IOCodes.ioCodeFilter[c] == IOCodes.CodeStop) {
+                if (IOCodes.ioCodeFilter[c] == IOCodes.ioCodeStop) {
                     break;
                 } else {
                     this.tapeSupplyBar.value = bufLength-x;
