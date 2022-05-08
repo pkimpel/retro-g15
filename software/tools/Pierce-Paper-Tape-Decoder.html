@@ -8,7 +8,7 @@
 
 <script>
 /***********************************************************************
-* retro-g15/software/tools Pierce-Photo-Tape-Decoder.html
+* retro-g15/software/tools Pierce-Paper-Tape-Decoder.html
 ************************************************************************
 * Copyright (c) 2021, Paul Kimpel.
 * Licensed under the MIT License,
@@ -19,7 +19,7 @@
 * software. See:
 *
 *   http://www.piercefuller.com/collect/bendix/
-*   http://members.iinet.net.au/~dgreen/Bendix/docs.html
+*   https://www.uraone.com/computers/bendixg15/
 *
 * The Pierce format has one 8-bit byte per tape frame with the following
 * format:
@@ -42,7 +42,7 @@
 *      03     T     tabulate
 *      04     S     stop
 *      05     /     reload (precess line 23 to line 19 and read next block)
-*      06     P     period (ignored on input, "." also accepted on input)
+*      06     .     period (ignored on input, "P" also accepted on input)
 *      07     ~     wait
 *   08-0F           (same as corresponding 00-07 codes)
 *   10-19   0-9     decimal digits
@@ -156,7 +156,7 @@ window.onload = function() {
                         line = "";
                         break;
                     case 6:     // period
-                        line += "P";
+                        line += ".";
                         break;
                     case 7:     // wait
                         line += "~";

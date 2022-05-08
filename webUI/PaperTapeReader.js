@@ -1,11 +1,11 @@
 /***********************************************************************
-* retro-g15/webUI PhotoTapeReader.js
+* retro-g15/webUI PaperTapeReader.js
 ************************************************************************
 * Copyright (c) 2022, Paul Kimpel.
 * Licensed under the MIT License, see
 *       http://www.opensource.org/licenses/mit-license.php
 ************************************************************************
-* Bendix G-15 photo (punched paper) tape reader.
+* Bendix G-15 paper (photo) tape reader.
 *
 * Defines the paper tape input device.
 *
@@ -14,16 +14,16 @@
 *   Original version, from retro-205 D205ConsoleInput.js.
 ***********************************************************************/
 
-export {PhotoTapeReader};
+export {PaperTapeReader};
 
 import * as Util from "../emulator/Util.js";
 import * as IOCodes from "../emulator/IOCodes.js";
-import * as PPRTapeImage from "./PPRTapeImage.js";
+import * as PPRTapeImage from "./resources/PPRTapeImage.js";
 
-class PhotoTapeReader {
+class PaperTapeReader {
 
     constructor(context) {
-        /* Initializes and wires up events for the Photo Tape reader.
+        /* Initializes and wires up events for the Paper Tape Reader.
         "context" is an object passing other objects and callback functions from
         the global script:
             $$() returns an object reference from its id value
@@ -141,15 +141,15 @@ class PhotoTapeReader {
 
     /**************************************/
     async read() {
-        /* Initiates the Photo Tape Reader to begin sending frame codes to
+        /* Initiates the Paper Tape Reader to begin sending frame codes to
         the Processor's I/O subsystem. Reads until a STOP code or the end of
         the tape buffer is encountered */
         let bufLength = this.bufLength; // current buffer length
         let c = 0;                      // current character code
         let code = 0;                   // current G-15 code
         let eob = false;                // end-of-block flag
-        let nextFrameStamp = performance.now() + // simulate startup time
-                PhotoTapeReader.framePeriod*PhotoTapeReader.startStopFrames ;
+        let nextFrameStamp = performance.now() +
+                PaperTapeReader.startStopTime;          // simulate startup time
         let precessionComplete = Promise.resolve();
         let x = this.bufIndex;          // current buffer index
 
@@ -160,7 +160,7 @@ class PhotoTapeReader {
         do {
             this.tapeSupplyBar.value = bufLength-x;
             await this.timer.delayUntil(nextFrameStamp);
-            nextFrameStamp += PhotoTapeReader.framePeriod;
+            nextFrameStamp += PaperTapeReader.framePeriod;
 
             if (x >= bufLength) {       // end of buffer -- send stop code
                 code = IOCodes.ioCodeStop;
@@ -184,7 +184,7 @@ class PhotoTapeReader {
         } while (true);
 
         this.$$("PRCaption").classList.remove("active");
-        await this.timer.set(PhotoTapeReader.framePeriod*PhotoTapeReader.startStopFrames); // stop time
+        await this.timer.set(PaperTapeReader.startStopTime);    // simulate stop time
         this.busy = false;
         this.bufIndex = x;
     }
@@ -209,8 +209,8 @@ class PhotoTapeReader {
         pointing to the beginning of the buffer */
         let bufLength = this.bufLength; // current buffer length
         let c = 0;                      // current character code
-        let nextFrameStamp = performance.now() + // simulate startup time
-                PhotoTapeReader.framePeriod*PhotoTapeReader.startStopFrames ;
+        let nextFrameStamp = performance.now() +
+                PaperTapeReader.startStopTime;          // simulate startup time
         let x = this.bufIndex;          // point to current buffer position
 
         this.busy = true;
@@ -228,7 +228,7 @@ class PhotoTapeReader {
                 } else {
                     this.tapeSupplyBar.value = bufLength-x;
                     await this.timer.delayUntil(nextFrameStamp);
-                    nextFrameStamp += PhotoTapeReader.framePeriod;
+                    nextFrameStamp += PaperTapeReader.framePeriod;
                     if (this.canceled) {
                         this.canceled = false;
                         break; // out of do loop
@@ -239,7 +239,7 @@ class PhotoTapeReader {
 
         this.$$("PRBlockNr").textContent = --this.blockNr;
         this.$$("PRCaption").classList.remove("active");
-        await this.timer.set(PhotoTapeReader.framePeriod*PhotoTapeReader.startStopFrames); // stop time
+        await this.timer.set(PaperTapeReader.startStopTime);    // simulate stop time
         this.busy = false;
         this.bufIndex = x;
     }
@@ -276,6 +276,7 @@ class PhotoTapeReader {
 
 // Static properties
 
-PhotoTapeReader.speed = 250;                                    // frames/sec
-PhotoTapeReader.startStopFrames = 35;                           // 3.5 inches of tape
-PhotoTapeReader.framePeriod = 1000/PhotoTapeReader.speed;       // ms/frame
+PaperTapeReader.speed = 250;                                    // frames/sec
+PaperTapeReader.startStopFrames = 35;                           // 3.5 inches of tape
+PaperTapeReader.framePeriod = 1000/PaperTapeReader.speed;       // ms/frame
+PaperTapeReader.startStopTime = PaperTapeReader.framePeriod*PaperTapeReader.startStopFrames; // ms

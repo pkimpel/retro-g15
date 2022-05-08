@@ -1,11 +1,11 @@
 /***********************************************************************
-* retro-g15/webUI PhotoTapePunch.js
+* retro-g15/webUI PaperTapePunch.js
 ************************************************************************
 * Copyright (c) 2022, Paul Kimpel.
 * Licensed under the MIT License, see
 *       http://www.opensource.org/licenses/mit-license.php
 ************************************************************************
-* Bendix G-15 photo (paper) tape punch.
+* Bendix G-15 paper (photo) tape punch.
 *
 * Defines the paper tape output device.
 *
@@ -14,16 +14,16 @@
 *   Original version, from retro-205 D205ConsoleInput.js.
 ***********************************************************************/
 
-export {PhotoTapePunch};
+export {PaperTapePunch};
 
 import * as Util from "../emulator/Util.js";
 import * as IOCodes from "../emulator/IOCodes.js";
 import {openPopup} from "./PopupUtil.js";
 
-class PhotoTapePunch {
+class PaperTapePunch {
 
     constructor(context) {
-        /* Initializes and wires up events for the Photo Tape punch.
+        /* Initializes and wires up events for the Paper Tape punch.
         "context" is an object passing other objects and callback functions from
         the global script:
             $$() returns an object reference from its id value
@@ -67,7 +67,7 @@ class PhotoTapePunch {
         /* Copies the text contents of the "paper" area of the device, opens a new
         temporary window, and pastes that text into the window so it can be copied
         or saved by the user */
-        var title = "retro-g15 Photo Tape Punch Output";
+        var title = "retro-g15 Paper Tape Punch Output";
 
         openPopup(this.window, "./FramePaper.html", "",
                 "scrollbars,resizable,width=500,height=500",
@@ -110,9 +110,9 @@ class PhotoTapePunch {
         which sent codes to the device at a rate of one every two drum cycles,
         about 17.2 characters per second */
         const viewMax = 90;             // characters retained in the tape view
-        let char = PhotoTapePunch.tapeCodes[code];
+        let char = PaperTapePunch.tapeCodes[code];
 
-        if (this.bufLength < PhotoTapePunch.bufferLimit) {
+        if (this.bufLength < PaperTapePunch.bufferLimit) {
             this.buffer += char;
             ++this.bufLength;
             switch (code) {
@@ -150,7 +150,7 @@ class PhotoTapePunch {
 
 // Static properties
 
-PhotoTapePunch.bufferLimit = 0x40000;   // maximum output that will be buffered (about 4 hours worth)
-PhotoTapePunch.tapeCodes = [
-    " ", "-", "C", "T", "S", "/", ".", "~", " ", "-", "C", "T", "S", "/", "P", "~",
+PaperTapePunch.bufferLimit = 0x40000;   // maximum output that will be buffered (about 4 hours worth)
+PaperTapePunch.tapeCodes = [
+    " ", "-", "C", "T", "S", "/", ".", "~", " ", "-", "C", "T", "S", "/", ".", "~",
     "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "u", "v", "w", "x", "y", "z"];

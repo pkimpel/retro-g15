@@ -29,8 +29,8 @@ export const ioCmdPunchLeader = 0b00010;        // fast punch tape leader
 export const ioCmdFastPunch =   0b00011;        // fast punch line 19
 export const ioCmdMTSearchRev = 0b00100;        // magnetic tape search reverse
 export const ioCmdMTSearchFwd = 0b00101;        // magnetic tape search forward
-export const ioCmdPhotoRev1 =   0b00110;        // photo tape reader reverse, phase 1
-export const ioCmdPhotoRev2 =   0b00111;        // photo tape reader reverse, phase 2
+export const ioCmdPTRev1 =      0b00110;        // paper tape reader reverse, phase 1
+export const ioCmdPTRev2 =      0b00111;        // paper tape reader reverse, phase 2
 export const ioCmdTypeAR =      0b01000;        // type AR, optionally punch
 export const ioCmdType19 =      0b01001;        // type line 19, optionally punch
 export const ioCmdPunch19 =     0b01010;        // punch line 19
@@ -38,7 +38,7 @@ export const ioCmdCardPunch19 = 0b01011;        // card punch line 19
 export const ioCmdTypeIn =      0b01100;        // type in from keyboard
 export const ioCmdMTRead =      0b01101;        // magnetic tape read
 export const ioCmdCardRead =    0b01110;        // card read
-export const ioCmdPhotoRead =   0b01111;        // photo tape read
+export const ioCmdPTRead =      0b01111;        // paper tape read
 export const ioCmdReady =       0b10000;        // set I/O ready status
 
 // Filter ASCII character values to I/O frame code values.

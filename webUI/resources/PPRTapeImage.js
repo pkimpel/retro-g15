@@ -5,12 +5,12 @@
 * Licensed under the MIT License, see
 *       http://www.opensource.org/licenses/mit-license.php
 ************************************************************************
-* Image of a bootable Photo Reader tape for the G-15 emulator containing
+* Image of a bootable paper tape for the G-15 emulator containing
 * the Number Track, PPR Loader, and PPR itself. This is used as a
 * convenience to pre-load PPR into the reader at initialization time.
 * Note that this is just one long backtick-quoted string. The embedded
 * newlines will be ignored by the reader. Thanks to David Green for this
-* image (http://members.iinet.net.au/~dgreen/).
+* image (https://www.uraone.com/computers/bendixg15/).
 ************************************************************************
 * 2022-03-18  P.Kimpel
 *   Original version.

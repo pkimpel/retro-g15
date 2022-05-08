@@ -16,8 +16,8 @@ import {ControlPanel} from "./ControlPanel.js";
 import {DiagPanel} from "./DiagPanel.js";
 import {Processor} from "../emulator/Processor.js";
 
-import {PhotoTapeReader} from "./PhotoTapeReader.js";
-import {PhotoTapePunch} from "./PhotoTapePunch.js";
+import {PaperTapeReader} from "./PaperTapeReader.js";
+import {PaperTapePunch} from "./PaperTapePunch.js";
 import {Typewriter} from "./Typewriter.js";
 
 let globalLoad = (ev) => {
@@ -103,12 +103,12 @@ let globalLoad = (ev) => {
         context.processor = new Processor(context);
         context.controlPanel = new ControlPanel(context);
         context.devices = {
-            "photoTapeReader":          new PhotoTapeReader(context),
-            "photoTapePunch":           new PhotoTapePunch(context),
+            "paperTapeReader":          new PaperTapeReader(context),
+            "paperTapePunch":           new PaperTapePunch(context),
             "typewriter":               new Typewriter(context)
         }
 
-        context.devices.photoTapeReader.preload();      // preload the PPR image
+        context.devices.paperTapeReader.preload();      // preload the PPR image
         context.processor.powerUp();
     }
 

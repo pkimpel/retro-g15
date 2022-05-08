@@ -153,7 +153,7 @@ class Processor {
         // Log current processor state to the console
 
         console.log("<TRACE%3d>  @%2d:%3d L=%3d %s T=%3d BP=%d N=%3d C=%d S=%2d D=%2d %s",
-                this.devices.photoTapeReader.blockNr,
+                this.devices.paperTapeReader.blockNr,
                 this.cmdLine, this.cmdLoc.value, this.drum.L.value, (this.DI.value ? "DEF" : "IMM"),
                 this.T.value, this.BP.value, this.N.value, this.C.value, this.S.value, this.D.value,
                 (this.C1.value ? "DP" : ""));
@@ -1464,8 +1464,8 @@ class Processor {
         case -0x41: case -0x61:         // A - Type out AR
             this.typeAR();
             break;
-        case -0x42: case -0x62:         // B - Back up photo tape one block
-            await this.reversePhotoTapePhase1();
+        case -0x42: case -0x62:         // B - Back up paper tape one block
+            await this.reversePaperTapePhase1();
             break;
         case -0x43: case -0x63:         // C - Select command line
             this.setCommandLine(0);
@@ -1486,13 +1486,13 @@ class Processor {
             this.drum.write(0, this.drum.CM.value ^ Util.wordMask);
             this.drum.write(1, this.drum.read(regAR));
             break;
-        case -0x50: case -0x70:         // P - Start photo reader
+        case -0x50: case -0x70:         // P - Start paper tape reader
             this.stop();
             this.drum.waitUntil(0);
             this.drum.throttle();
             this.N.value = 0;
             this.setCommandLine(7);
-            await this.readPhotoTape();
+            await this.readPaperTape();
             break;
         case -0x51: case -0x71:         // Q - Permit type in
             if (this.OC.value == IOCodes.ioCmdReady) {
@@ -1616,13 +1616,13 @@ class Processor {
         const punchPeriod = Util.drumCycleTime*2;
 
         this.OC.value = IOCodes.ioCmdPunch19;
-        this.activeIODevice = this.devices.photoTapePunch;
+        this.activeIODevice = this.devices.paperTapePunch;
 
         this.drum.ioStartTiming();
         let outTime = this.drum.ioTime + punchPeriod;
 
         // Output an initial SPACE code (a quirk of the Slow-Out logic)
-        await this.devices.photoTapePunch.write(IOCodes.ioCodeSpace);
+        await this.devices.paperTapePunch.write(IOCodes.ioCodeSpace);
         await this.ioTimer.delayUntil(outTime);
         outTime += punchPeriod;
 
@@ -1651,7 +1651,7 @@ class Processor {
                 if (this.OC.value != IOCodes.ioCmdPunch19) {
                     punching = false;   // I/O canceled
                 } else {
-                    this.devices.photoTapePunch.write(code);    // no await
+                    this.devices.paperTapePunch.write(code);    // no await
                     await this.ioTimer.delayUntil(outTime);
                     outTime += punchPeriod;
                     fmt = await this.drum.ioPrecessMZToCode(3); // get next 3-bit format code
@@ -1743,7 +1743,7 @@ class Processor {
                 } else {
                     this.devices.typewriter.write(code);        // no await
                     if (this.punchSwitch == 1) {
-                        this.devices.photoTapePunch.write(code);
+                        this.devices.paperTapePunch.write(code);
                     }
 
                     await this.ioTimer.delayUntil(outTime);
@@ -1830,7 +1830,7 @@ class Processor {
                 } else {
                     this.devices.typewriter.write(code);        // no await
                     if (this.punchSwitch == 1) {
-                        this.devices.photoTapePunch.write(code);
+                        this.devices.paperTapePunch.write(code);
                     }
 
                     await this.ioTimer.delayUntil(outTime);
@@ -1846,14 +1846,14 @@ class Processor {
     }
 
     /**************************************/
-    async readPhotoTape() {
-        /* Reads one block from the Photo Tape Reader to line 19 via line 23 */
+    async readPaperTape() {
+        /* Reads one block from the Paper Tape Reader to line 19 via line 23 */
 
-        this.OC.value = IOCodes.ioCmdPhotoRead;
-        this.activeIODevice = this.devices.photoTapeReader;
+        this.OC.value = IOCodes.ioCmdPTRead;
+        this.activeIODevice = this.devices.paperTapeReader;
         this.ioPromise = Promise.resolve();
-        await this.devices.photoTapeReader.read();
-        if (this.OC.value == IOCodes.ioCmdPhotoRead) {  // check for cancel
+        await this.devices.paperTapeReader.read();
+        if (this.OC.value == IOCodes.ioCmdPTRead) {     // check for cancel
             this.finishIO();
         }
     }
@@ -1869,34 +1869,34 @@ class Processor {
     }
 
     /**************************************/
-    async reversePhotoTapePhase1() {
-        /* Performs Phase 1 of photo tape search reverse, then performs Phase 2.
+    async reversePaperTapePhase1() {
+        /* Performs Phase 1 of paper tape search reverse, then performs Phase 2.
         Phase 1 reverses tape to the prior stop code, which is at the end of
         the prior block. Phase 2 reverses to the next stop code, which is the
         end of the block before that. It then reads forward to the next stop
         code, which will leave the tape positioned to read what originally was
         the prior block */
 
-        this.OC.value = IOCodes.ioCmdPhotoRev1;
-        await this.devices.photoTapeReader.reverseBlock();
-        if (this.OC.value == IOCodes.ioCmdPhotoRev1) {  // check for cancel
-            await this.reversePhotoTapePhase2();
+        this.OC.value = IOCodes.ioCmdPTRev1;
+        await this.devices.paperTapeReader.reverseBlock();
+        if (this.OC.value == IOCodes.ioCmdPTRev1) {     // check for cancel
+            await this.reversePaperTapePhase2();
         }
     }
 
     /**************************************/
-    async reversePhotoTapePhase2() {
-        /* Performs Phase 2 of photo tape search reverse. The result is to leave
+    async reversePaperTapePhase2() {
+        /* Performs Phase 2 of paper tape search reverse. The result is to leave
         the tape positioned to read the beginning of the current block. This is
         normally called with the reader positioned just before the stop code
         for that block. Note that the forward read will at least partially
         overwrite lines 23 and 19 */
 
-        this.OC.value = IOCodes.ioCmdPhotoRev2;
-        await this.devices.photoTapeReader.reverseBlock();
-        if (this.OC.value == IOCodes.ioCmdPhotoRev2) {  // check for cancel
-            await this.devices.photoTapeReader.read();
-            if (this.OC.value == IOCodes.ioCmdPhotoRev2) {      // check again for cancel
+        this.OC.value = IOCodes.ioCmdPTRev2;
+        await this.devices.paperTapeReader.reverseBlock();
+        if (this.OC.value == IOCodes.ioCmdPTRev2) {     // check for cancel
+            await this.devices.paperTapeReader.read();
+            if (this.OC.value == IOCodes.ioCmdPTRev2) { // check again for cancel
                 this.finishIO();
             }
         }
@@ -1973,12 +1973,12 @@ class Processor {
             this.cancelIO();
             break;
 
-        case IOCodes.ioCmdPhotoRev1:    // 0110 photo tape reverse, phase 1
-            this.reversePhotoTapePhase1();
+        case IOCodes.ioCmdPTRev1:       // 0110 paper tape reverse, phase 1
+            this.reversePaperTapePhase1();
             break;
 
-        case IOCodes.ioCmdPhotoRev2:    // 0111 photo tape reverse, phase 2
-            this.reversePhotoTapePhase2();
+        case IOCodes.ioCmdPTRev2:       // 0111 paper tape reverse, phase 2
+            this.reversePaperTapePhase2();
             break;
 
         case IOCodes.ioCmdTypeAR:       // 1000 type AR
@@ -2012,8 +2012,8 @@ class Processor {
             this.cancelIO();
             break;
 
-        case IOCodes.ioCmdPhotoRead:    // 1111 photo tape read
-            this.readPhotoTape();
+        case IOCodes.ioCmdPTRead:       // 1111 paper tape read
+            this.readPaperTape();
             break;
 
         default:
@@ -2529,7 +2529,7 @@ class Processor {
                 // ?? TBD
                 break;
             case 2:     // REWIND
-                this.devices.photoTapeReader.rewind();
+                this.devices.paperTapeReader.rewind();
                 break;
             }
         }
@@ -2569,7 +2569,7 @@ class Processor {
 
             // Load the Number Track, CN
             this.drum.startTiming();
-            await this.readPhotoTape();         // number track data to line 19
+            await this.readPaperTape();         // number track data to line 19
             this.drum.waitUntil(0);
             for (let x=0; x<Util.longLineSize; ++x) {
                 this.drum.writeCN(this.drum.read(19));
@@ -2579,7 +2579,7 @@ class Processor {
             // Load the next block from paper tape
             this.setCommandLine(7);             // execute code from line 23
             this.N.value = 0;
-            await this.readPhotoTape();         // read a bootstrap loader
+            await this.readPaperTape();         // read a bootstrap loader
         }
     }
 
