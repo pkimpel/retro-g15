@@ -567,16 +567,18 @@ class Drum {
         let keepMask = Util.wordMask >> bits;
         let code = 0;
         let empty = true;
+        let newWord = 0;
         let word = 0;
 
         this.ioWaitUntil(0);
         for (let x=0; x<Util.longLineSize; ++x) {
             word = this.ioRead19() & Util.wordMask;
-            if (word) {
+            newWord = ((word & keepMask) << bits) | code;
+            if (newWord) {
                 empty = false;
             }
 
-            this.ioWrite19(((word & keepMask) << bits) | code);
+            this.ioWrite19(newWord);
             code = word >> keepBits;
             this.ioWaitFor(1);
             if (x % 16 == 0) {          // 4.30ms

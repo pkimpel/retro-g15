@@ -99,6 +99,7 @@ class Processor {
 
         // I/O Subsystem
         this.activeIODevice = null;                     // current I/O device object
+        this.duplicateIO = false;                       // second I/O of same type initiated while first in progress
         this.ioBitCount = 0;                            // current input/output bit count
         this.ioTimer = new Util.Timer();                // general timer for I/O operations
         this.ioPromise = Promise.resolve();             // general Promise for I/O operations
@@ -164,7 +165,7 @@ class Processor {
         /* Posts a violation of standard-command usage */
 
         this.VV.value = 1;
-        console.warn("<VIOLATION> @2%d:%3d L=%3d %s T=%3d BP=%d N=%3d C=%d S=%2d D=%2d %s : %s",
+        console.warn("<VIOLATION> @%2d:%3d L=%3d %s T=%3d BP=%d N=%3d C=%d S=%2d D=%2d %s : %s",
                 this.cmdLine, this.cmdLoc.value, this.drum.L.value, (this.DI.value ? "DEF" : "IMM"),
                 this.T.value, this.BP.value, this.N.value, this.C.value, this.S.value, this.D.value,
                 (this.C1.value ? "DP" : ""), msg);
@@ -1606,7 +1607,7 @@ class Processor {
     async punchLine19() {
         /* Punches the contents of line 19, starting with the four high-order
         bits of of word 107, and precessing the line with each character until
-        the line is all zeroes */
+        the line is all zeroes. One character is output every two word times */
         let code = 0;                   // output character code
         let fmt = 0;                    // format code
         let line19Empty = false;        // line 19 is now empty
@@ -1628,7 +1629,7 @@ class Processor {
 
         // Start a MZ reload cycle.
         do {
-            fmt = await this.drum.ioPrecessLongLineToMZ(2, 3);  // get initial format code
+            fmt = await this.drum.ioPrecessLongLineToMZ(2, 3);  // get initial 3-bit format code
 
             // The character cycle.
             do {
@@ -1654,7 +1655,15 @@ class Processor {
                     this.devices.paperTapePunch.write(code);    // no await
                     await this.ioTimer.delayUntil(outTime);
                     outTime += punchPeriod;
-                    fmt = await this.drum.ioPrecessMZToCode(3); // get next 3-bit format code
+
+                    // The following is specifically intended to aid in punching
+                    // blank leader. It tries to simulate what happens when a second
+                    // Punch Line 19 is executed while a prior one is still in progress.
+                    if (this.duplicateIO) {
+                        fmt = await this.drum.ioPrecessLongLineToMZ(2, 3);      // get initial 3-bit format code
+                    } else {
+                        fmt = await this.drum.ioPrecessMZToCode(3);             // get next 3-bit format code
+                    }
                 }
             } while (code != IOCodes.ioCodeReload && punching);
         } while (punching);
@@ -1762,7 +1771,7 @@ class Processor {
     async typeLine19() {
         /* Types the contents of line 19, starting with the four high-order
         bits of word 107, and precessing the line with each character until
-        the line is all zeroes */
+        the line is all zeroes. One character is output every four word times */
         let code = 0;                   // output character code
         let fmt = 0;                    // format code
         let line19Empty = false;        // line 19 is now all zeroes
@@ -1926,17 +1935,25 @@ class Processor {
         this.OS.value = 0;
         this.ioBitCount = 0;
         this.activeIODevice = null;
+        this.duplicateIO = false;
     }
 
     /**************************************/
     initiateIO(sCode) {
         /* Initiates the I/O operation specified by sCode */
 
+        // If an I/O is already in progress and this is neither a cancel request
+        // nor the same I/O code, cancel the I/O.
         if (this.OC.value != IOCodes.ioCmdReady && sCode != 0) {
-            // If an I/O is already in progress and this is not a cancel request, cancel the I/O.
-            this.violation(`D=31 S=${sCode}: initiateIO with I/O active, OC=${this.OC.value}`);
-            sCode |= this.OC.value;     // S is always OR-ed into OC, not transferred
-            this.cancelIO();            // cancel the in-progress I/O -- not what the G-15 did, though
+            if (this.OC.value == sCode) {
+                this.duplicateIO = true;
+                this.waitUntilT();      // same I/O as the one in progress, so
+                return;                 // just ignore the request
+            } else {
+                this.violation(`D=31 S=${sCode}: initiateIO with I/O active, OC=${this.OC.value}`);
+                sCode |= this.OC.value; // S is always OR-ed into OC, not copied
+                this.cancelIO();        // cancel the in-progress I/O -- not what the G-15 did, though
+            }
         }
 
         if (this.C1.value) {
@@ -2301,7 +2318,7 @@ class Processor {
         // this adjustment does not occur when a command is executed from
         // location 107, so N and (usually) T in the command will behave as if
         // they are 20 word-times too low. The following code adjusts T and N
-        // so that they will behave as the hardware would have.
+        // so that (hopefully) they will behave as the hardware would have.
 
         if (loc == 107) {
             this.violation("Execute command from L=107");
@@ -2356,7 +2373,7 @@ class Processor {
         case 23:
             this.transferNormal();      // dispense with the low-hanging fruit
 
-            /********** DEBUG -- Halt if we start executing zero words *********
+            /********** DEBUG -- Halt if we start executing zero words at location 0 *********
             if (this.tracing && this.cmdLoc.value == 0 && this.N.value == 0 &&
                     this.DI.value == 0 && this.S.value == 0 && this.D.value == 0 &&
                     this.C.value == 0) {
@@ -2591,7 +2608,7 @@ class Processor {
             this.CH.value = 1;                          // set HALT FF
             this.panel = this.context.controlPanel;     // ControlPanel object
             this.devices = this.context.devices;        // I/O device objects
-            //this.loadMemory();                          // DEBUG ONLY
+            //this.loadMemory();                        // >>> DEBUG ONLY <<<
         }
     }
 
@@ -2606,7 +2623,9 @@ class Processor {
 
     /**************************************/
     loadMemory() {
-        /* Loads debugging code into the drum memory */
+        /* Loads debugging code into the initial drum memory image. The routine
+        should be enabled in this.powerUp() only temporarily for demo and
+        debugging purposes */
 
         let store = (lineNr, loc, word) => {
             if (lineNr < 20) {
@@ -2641,6 +2660,35 @@ class Processor {
             store(lineNr, loc, ((word & 0xFFFFFFF) << 1) | sign);
         };
 
+
+        /***** The 4-word memory-clear wunder-kode described by Jim Horning in his blog *****/
+
+        // First, fill the drum with non-zero values for testing
+        this.drum.AR.value = 0x1234567;
+        this.drum.ID[0].value = 0x2345678;
+        this.drum.ID[1].value = 0x3456789;
+        this.drum.MQ[0].value = 0x4567890;
+        this.drum.MQ[1].value = 0x5678901;
+        this.drum.PN[0].value = 0x6789012;
+        this.drum.PN[1].value = 0x7890123;
+        this.FO.value = 1;                              // set the overflow FF
+        this.IP.value = 1;                              // set the DP sign FF
+        for (let m=0; m<24; ++m) {
+            for (let loc=107; loc>=0; --loc) {
+                int(m, loc, (m << 16) + loc);
+            }
+        }
+
+        // And now for the main event...
+
+        //  M     L  DI    T    N  C   S   D  C1  BP
+        asm(23,   0,  0,   2, 105, 0, 29, 28);          // ZERO: clear AR (accumulator)
+        asm(23,   1,  0,   4,   3, 2, 23, 23);          // SWAP: precess line 23 via AR starting at L=106 thru L=3 (after first time will be L=3 thru L=3)
+        asm(23,   2,  0,   4,   2, 0, 27, 29);          // CLEAR: smear zeroes to current line
+        asm(23,   3,  0,   6,   2, 0, 26, 31);          // INCR: shift ID/MQ by 3 bits (6 word-times), incrementing AR by 3
+
+        /***************************************
+        // Multiplication/Division test
         int(0, 84, 0b101000);                           // division denominator
         int(0, 86, 0b011001);                           // division numerator
 
@@ -2656,10 +2704,9 @@ class Processor {
         asm(0,  7, 1,  86,   9, 2,  0, 26,  1);         // TVA numerator/dividend to PN
 
         asm(0,  9, 0, 116,  99, 1, 25, 31,  1);         // divide PN/ID > MQ
-
         asm(0, 99, 0, 100,   0, 0, 16, 31);             // halt, then go to 0
 
-        /***************************************
+        // Very early emulator debugging
         int(0, 90, 0);
         int(0, 91, 1);
         int(0, 92, 2);
