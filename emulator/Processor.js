@@ -1861,8 +1861,9 @@ class Processor {
         this.OC.value = IOCodes.ioCmdPTRead;
         this.activeIODevice = this.devices.paperTapeReader;
         this.ioPromise = Promise.resolve();
-        await this.devices.paperTapeReader.read();
-        if (this.OC.value == IOCodes.ioCmdPTRead) {     // check for cancel
+        if (await this.devices.paperTapeReader.read()) {
+            return;                     // no tape or buffer overrun -- leave I/O hanging
+        } else if (this.OC.value == IOCodes.ioCmdPTRead) {      // check for cancel
             this.finishIO();
         }
     }
@@ -1887,8 +1888,9 @@ class Processor {
         the prior block */
 
         this.OC.value = IOCodes.ioCmdPTRev1;
-        await this.devices.paperTapeReader.reverseBlock();
-        if (this.OC.value == IOCodes.ioCmdPTRev1) {     // check for cancel
+        if (await this.devices.paperTapeReader.reverseBlock()) {
+            return;                     // no tape or buffer overrun -- leave I/O hanging
+        } else if (this.OC.value == IOCodes.ioCmdPTRev1) {      // check for cancel
             await this.reversePaperTapePhase2();
         }
     }
@@ -1902,10 +1904,12 @@ class Processor {
         overwrite lines 23 and 19 */
 
         this.OC.value = IOCodes.ioCmdPTRev2;
-        await this.devices.paperTapeReader.reverseBlock();
-        if (this.OC.value == IOCodes.ioCmdPTRev2) {     // check for cancel
-            await this.devices.paperTapeReader.read();
-            if (this.OC.value == IOCodes.ioCmdPTRev2) { // check again for cancel
+        if (await this.devices.paperTapeReader.reverseBlock()) {
+            return;                     // no tape or buffer overrun -- leave I/O hanging
+        } else if (this.OC.value == IOCodes.ioCmdPTRev2) {      // check for cancel
+            if (await this.devices.paperTapeReader.read()) {
+                return;                 // no tape or buffer overrun -- leave I/O hanging
+            } else if (this.OC.value == IOCodes.ioCmdPTRev2) {  // check again for cancel
                 this.finishIO();
             }
         }
@@ -2586,7 +2590,7 @@ class Processor {
 
             // Load the Number Track, CN
             this.drum.startTiming();
-            await this.readPaperTape();         // number track data to line 19
+            await this.readPaperTape();         // number track data to line 19, ignore any hang
             this.drum.waitUntil(0);
             for (let x=0; x<Util.longLineSize; ++x) {
                 this.drum.writeCN(this.drum.read(19));
@@ -2596,7 +2600,7 @@ class Processor {
             // Load the next block from paper tape
             this.setCommandLine(7);             // execute code from line 23
             this.N.value = 0;
-            await this.readPaperTape();         // read a bootstrap loader
+            await this.readPaperTape();         // read a bootstrap loader, ignore any hang
         }
     }
 

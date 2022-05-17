@@ -97,7 +97,8 @@ class PaperTapePunch {
     cancel() {
         /* Cancels the I/O currently in process */
 
-        if (this.ready) {
+        if (this.busy) {
+            this.busy = false;
             this.canceled = true;       // currently affects nothing
         }
     }

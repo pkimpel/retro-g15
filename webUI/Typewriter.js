@@ -72,7 +72,8 @@ class Typewriter {
         to interrupt, so this routine does nothing useful. It exists only to
         satisfy the Processor's cancelation interface */
 
-        if (this.ready) {
+        if (this.busy) {
+            this.busy = false;
             this.canceled = true;       // currently affects nothing
         }
     }
@@ -88,9 +89,14 @@ class Typewriter {
         the keyboard, Enable switch command codes, and Escape (for toggling the
         Enable switch) */
         let code = ev.key.charCodeAt(0) & 0x7F;
+        let key = ev.key;
         let p = this.processor;         // local copy of Processor reference
 
-        switch (ev.key) {
+        if (ev.ctrlKey || ev.altKey || ev.metaKey) {
+            return;                     // ignore this keystroke, allow default action
+        }
+
+        switch (key) {
         case "-": case "/":
         case "0": case "1": case "2": case "3": case "4":
         case "5": case "6": case "7": case "8": case "9":
@@ -98,7 +104,7 @@ class Typewriter {
         case "U": case "V": case "W": case "X": case "Y": case "Z":
         case "u": case "v": case "w": case "x": case "y": case "z":
             ev.preventDefault();
-            this.printChar(ev.key);
+            this.printChar(key);
             p.receiveKeyboardCode(IOCodes.ioCodeFilter[code]);
             break;
         case "A": case "a":
@@ -112,7 +118,7 @@ class Typewriter {
         case "R": case "r":
         case "T": case "t":
             ev.preventDefault();
-            this.printChar(ev.key);
+            this.printChar(key);
             p.receiveKeyboardCode(-code);
             break;
         case "Enter":
@@ -131,6 +137,20 @@ class Typewriter {
                 p.enableSwitchChange(1);
                 this.$$("EnableSwitchOff").checked = false;
                 this.$$("EnableSwitchOn").checked = true;
+            }
+            break;
+        case "Backspace":
+            ev.preventDefault();
+            break;
+        default:
+            switch (ev.location) {
+            case KeyboardEvent.DOM_KEY_LOCATION_STANDARD:
+            case KeyboardEvent.DOM_KEY_LOCATION_NUMPAD:
+                if (key.length == 1) {
+                    ev.preventDefault();
+                    this.printChar(key);
+                }
+                break;
             }
             break;
         }
