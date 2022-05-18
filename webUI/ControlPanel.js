@@ -17,6 +17,7 @@ export {ControlPanel};
 import * as IOCodes from "../emulator/IOCodes.js";
 import * as Util from "../emulator/Util.js";
 import * as Version from "../emulator/Version.js";
+
 import {ColoredLamp} from "./ColoredLamp.js";
 import {NeonLamp} from "./NeonLamp.js";
 import {PanelRegister} from "./PanelRegister.js";
@@ -147,32 +148,6 @@ class ControlPanel {
                 "ViolationSwitch", "./resources/ToggleDown.png", "./resources/ToggleUp.png");
 
         $$("G15Version").textContent = Version.g15Version;
-        if (processor.tracing) {
-            $$("G15Version").classList.add("active");
-        }
-
-        // Events
-
-        $$("G15Version").addEventListener("dblclick", this.boundToggleTracing, false);
-
-        $$("PowerOffBtn").addEventListener("click", context.systemShutDown, false);
-        $$("ResetBtn").addEventListener("click", this.boundSystemReset, false);
-        this.violationSwitch.addEventListener("click", this.boundControlSwitchChange, false);
-
-        if (!this.intervalToken) {
-            this.intervalToken = setInterval(this.boundUpdatePanel, ControlPanel.displayRefreshPeriod);
-        }
-    }
-
-    /**************************************/
-    enablePanel() {
-        /* Enables events for the Control Panel controls that should not be
-        until the system has been reset and initialized */
-
-        this.$$("EnableSwitchSet").addEventListener("click", this.boundControlSwitchChange, false);
-        this.$$("PunchSwitchSet").addEventListener("click", this.boundControlSwitchChange, false);
-        this.$$("ComputeSwitchSet").addEventListener("click", this.boundControlSwitchChange, false);
-        this.$$("ViolationResetBtn").addEventListener("click", this.boundControlSwitchChange, false);
     }
 
     /**************************************/
@@ -213,6 +188,11 @@ class ControlPanel {
         this.lampTest.set(p.CQ.glow);
         this.lampAS.set(p.AS.glow);
         this.violationLamp.set(p.VV.glow);
+
+        if (p.bellTiming) {
+            this.ringBell(p.bellTiming);
+            p.bellTiming = 0;
+        }
     }
 
     /**************************************/
@@ -277,32 +257,74 @@ class ControlPanel {
     }
 
     /**************************************/
-    async systemReset(ev) {
-        /* Event handler for the RESET button */
+    enablePanel() {
+        /* Enables events and periodic refresh for the Control */
+        let p = this.context.processor;
 
-        this.dcPowerLamp.set(1);
-        await this.context.processor.systemReset();
-        this.readyLamp.set(1);
-        this.enablePanel();
-        this.$$("ResetBtn").disabled = true;
+        this.$$("EnableSwitchSet").addEventListener("click", this.boundControlSwitchChange, false);
+        this.$$("PunchSwitchSet").addEventListener("click", this.boundControlSwitchChange, false);
+        this.$$("ComputeSwitchSet").addEventListener("click", this.boundControlSwitchChange, false);
+        this.$$("G15Version").addEventListener("dblclick", this.boundToggleTracing, false);
+        this.$$("PowerOffBtn").addEventListener("click", this.context.systemShutDown, false);
+        this.$$("ResetBtn").addEventListener("click", this.boundSystemReset, false);
+        this.$$("ViolationResetBtn").addEventListener("click", this.boundControlSwitchChange, false);
+        this.violationSwitch.addEventListener("click", this.boundControlSwitchChange, false);
+        if (p.tracing) {
+            this.$$("G15Version").classList.add("active");
+        } else {
+            this.$$("G15Version").classList.remove("active");
+        }
+
+        this.updatePanel();
+        this.$$("FrontPanel").style.visibility = "visible";
+        if (!this.intervalToken) {
+            this.intervalToken = setInterval(this.boundUpdatePanel, ControlPanel.displayRefreshPeriod);
+        }
     }
 
     /**************************************/
-    shutDown() {
-        /* Closes the panel, unwires its events, and deallocates its resources */
+    disablePanel() {
+        /* Disables events and periodic refresh for the Control Panel */
+
+        this.dcPowerLamp.set(0);
+        this.readyLamp.set(0);
+        this.violationSwitch.set(0)
+        this.$$("EnableSwitchOn").checked = false;
+        this.$$("EnableSwitchOff").checked = true;
+        this.$$("PunchSwitchOn").checked = false;
+        this.$$("PunchSwitchRewind").checked = false;
+        this.$$("PunchSwitchOff").checked = true;
+        this.$$("ComputeSwitchGo").checked = false;
+        this.$$("ComputeSwitchBP").checked = false;
+        this.$$("ComputeSwitchOff").checked = true;
 
         this.$$("EnableSwitchSet").removeEventListener("click", this.boundControlSwitchChange, false);
         this.$$("PunchSwitchSet").removeEventListener("click", this.boundControlSwitchChange, false);
         this.$$("ComputeSwitchSet").removeEventListener("click", this.boundControlSwitchChange, false);
         this.$$("G15Version").removeEventListener("dblclick", this.boundToggleTracing, false);
         this.$$("PowerOffBtn").removeEventListener("click", this.context.systemShutDown, false);
-        this.$$("ResetBtn").removeEventListener("click", this.context.boundSystemReset, false);
+        this.$$("ResetBtn").removeEventListener("click", this.boundSystemReset, false);
         this.$$("ViolationResetBtn").removeEventListener("click", this.boundControlSwitchChange, false);
         this.violationSwitch.removeEventListener("click", this.boundControlSwitchChange, false);
 
+        this.$$("FrontPanel").style.visibility = "hidden";
         if (this.intervalToken) {
             clearInterval(this.intervalToken);
+            this.intervalToken = 0;
         }
+    }
+
+    /**************************************/
+    async systemReset(ev) {
+        /* Event handler for the RESET button */
+        let timer = new Util.Timer();
+
+        await timer.set(1500);          // wait for the DC power supplies...
+        this.dcPowerLamp.set(1);
+        await this.context.processor.systemReset();
+        this.readyLamp.set(1);
+        this.enablePanel();
+        this.$$("ResetBtn").disabled = true;
     }
 
 } // class ControlPanel

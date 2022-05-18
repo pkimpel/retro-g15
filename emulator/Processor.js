@@ -91,7 +91,8 @@ class Processor {
         this.pnEvenSumZero = false;                     // true if PN even-word addition == 0
         this.pnSign = 0;                                // sign bit from PN even word
 
-        // UI switch state
+        // UI state
+        this.bellTiming = 0;                            // word-times the bell should be rung (sensed by ControlPanel)
         this.computeSwitch = 0;                         // 0=OFF, 1=GO, 2=BP
         this.enableSwitch = 0;                          // 0=normal, 1=enable typewriter keyboard
         this.punchSwitch = 0;                           // 0=off, 1=copy to paper-tape punch
@@ -2108,7 +2109,8 @@ class Processor {
                 wordTimes += Util.longLineSize
             }
 
-            this.panel.ringBell(wordTimes);
+            this.bellTiming = wordTimes;        // sensed and reset by ControlPanel
+        }
             switch (this.C.value ) {
             case 1:     // ring bell and test control panel PUNCH switch
                 if (this.punchSwitch == 1) {
@@ -2122,7 +2124,6 @@ class Processor {
                 // INPUT REGISTER not implemented (no violation)
                 break;
             }
-        }
             this.waitUntilT();
             break;
 
@@ -2610,7 +2611,6 @@ class Processor {
 
         if (!this.poweredOn) {
             this.CH.value = 1;                          // set HALT FF
-            this.panel = this.context.controlPanel;     // ControlPanel object
             this.devices = this.context.devices;        // I/O device objects
             //this.loadMemory();                        // >>> DEBUG ONLY <<<
         }

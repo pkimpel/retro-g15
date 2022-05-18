@@ -12,6 +12,7 @@
 ***********************************************************************/
 
 import * as Version from "../emulator/Version.js";
+
 import {ControlPanel} from "./ControlPanel.js";
 import {DiagPanel} from "./DiagPanel.js";
 import {Processor} from "../emulator/Processor.js";
@@ -89,19 +90,25 @@ let globalLoad = (ev) => {
     }
 
     /**************************************/
+    function beforeUnload(ev) {
+        var msg = "Closing this window will terminate the emulator";
+
+        ev.preventDefault();
+        ev.returnValue = msg;
+        return msg;
+    }
+
+    /**************************************/
     function systemStartup(ev) {
         /* Establishes the system components */
 
-        ev.target.disabled = true;
         $$("StartUpBtn").disabled = true;
         //$$("ConfigureBtn").disabled = true;
 
         window.addEventListener("beforeunload", beforeUnload);
-        $$("FrontPanel").style.display = "block";       // must be done before panel is built
         $$("G15Logo").addEventListener("dblclick", openDiagPanel, false);
 
         context.processor = new Processor(context);
-        context.controlPanel = new ControlPanel(context);
         context.devices = {
             "paperTapeReader":          new PaperTapeReader(context),
             "paperTapePunch":           new PaperTapePunch(context),
@@ -110,6 +117,7 @@ let globalLoad = (ev) => {
 
         context.devices.paperTapeReader.preload();      // preload the PPR image
         context.processor.powerUp();
+        context.controlPanel.enablePanel();
     }
 
     /**************************************/
@@ -133,29 +141,18 @@ let globalLoad = (ev) => {
         }
 
         closeDiagPanel();
-        context.controlPanel.shutDown();
-        context.controlPanel = null;
+        context.controlPanel.disablePanel();
 
         processor.powerDown();
         context.devices = null;
         context.processor = null;
 
         $$("G15Logo").removeEventListener("dblclick", openDiagPanel, false);
-        $$("FrontPanel").style.display = "none";
         $$("StartUpBtn").disabled = false;
         $$("StartUpBtn").focus();
         window.removeEventListener("beforeunload", beforeUnload);
         //$$("ConfigureBtn").disabled = false;
         //config.flush();
-    }
-
-    /**************************************/
-    function beforeUnload(ev) {
-        var msg = "Closing this window will terminate the emulator";
-
-        ev.preventDefault();
-        ev.returnValue = msg;
-        return msg;
     }
 
     /**************************************/
@@ -184,12 +181,13 @@ let globalLoad = (ev) => {
         }
     }
 
-    /***** window.onload() outer block *****/
+    /***** globalLoad() outer block *****/
 
     window.removeEventListener("load", globalLoad, false);
     $$("StartUpBtn").disabled = true;
     $$("EmulatorVersion").textContent = Version.g15Version;
     if (checkBrowser()) {
+        context.controlPanel = new ControlPanel(context);
         $$("StartUpBtn").disabled = false;
         $$("StartUpBtn").addEventListener("click", systemStartup, false);
         $$("StartUpBtn").focus();
