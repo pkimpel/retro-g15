@@ -38,7 +38,6 @@ class Typewriter {
         this.printerEOP = this.$$("EndOfPaper");
         this.tabStop = [6,11,16,21,26,31,36,41,46,51,56,61,66,71,76,81,86,
                         91,96,101,106,111,116,121,126,131];
-        this.setPaperEmpty();
 
         this.boundPanelKeydown = this.panelKeydown.bind(this);
         this.boundPanelKeyup = this.panelKeyup.bind(this);
@@ -74,7 +73,7 @@ class Typewriter {
 
         if (this.busy) {
             this.busy = false;
-            this.canceled = true;       // currently affects nothing
+            //this.canceled = true;     // currently affects nothing
         }
     }
 

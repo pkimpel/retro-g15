@@ -53,12 +53,13 @@ class PaperTapeReader {
         this.busy = false;              // an I/O is in progress
         this.canceled = false;          // current I/O canceled
 
-        this.blockNr = 0;
+        this.blockNr = 0;               // current tape image block number
         this.buffer = "";               // reader input buffer (paper-tape reel)
         this.bufLength = 0;             // current input buffer length (characters)
         this.bufIndex = 0;              // 0-relative offset to next character to be read
 
         this.makeBusy(false);
+        this.setBlockNr(0);
     }
 
     /**************************************/
@@ -70,7 +71,7 @@ class PaperTapeReader {
         this.buffer = "";                   // discard the input buffer
         this.bufLength = 0;
         this.bufIndex = 0;
-        this.$$("PRBlockNr").textContent = this.blockNr = 0;
+        this.setBlockNr(0);
         this.$$("PRFileSelector").value = null; // reset the control so the same file can be reloaded
     }
 
@@ -132,7 +133,6 @@ class PaperTapeReader {
         }
     }
 
-
     /**************************************/
     makeBusy(busy) {
         /* Makes the reader busy (I/O in progress) or not busy (idle) */
@@ -146,12 +146,20 @@ class PaperTapeReader {
     }
 
     /**************************************/
+    setBlockNr(blockNr) {
+        /* Updates this.blockNr and the PRBlockNr annunciator */
+
+       this.blockNr = blockNr;
+       this.$$("PRBlockNr").textContent = blockNr;
+    }
+
+    /**************************************/
     cancel() {
         /* Cancels the I/O currently in process */
 
         if (this.busy) {
-            this.canceled = true;
             this.makeBusy(false);
+            this.canceled = true;
         }
     }
 
@@ -170,8 +178,9 @@ class PaperTapeReader {
         let precessionComplete = Promise.resolve();
         let x = this.bufIndex;          // current buffer index
 
+        this.canceled = false;
         this.makeBusy(true);
-        this.$$("PRBlockNr").textContent = ++this.blockNr;
+        this.setBlockNr(this.blockNr+1);
 
         do {
             this.tapeSupplyBar.value = bufLength-x;
@@ -179,6 +188,7 @@ class PaperTapeReader {
             nextFrameStamp += PaperTapeReader.framePeriod;
 
             if (x >= bufLength) {       // end of buffer
+                this.bufIndex = x;
                 return true;            // just quit and leave the I/O hanging
             } else {
                 c = this.buffer.charCodeAt(x) & 0x7F;
@@ -225,21 +235,23 @@ class PaperTapeReader {
         pointing to the beginning of the buffer. Returns true if an attempt is made
         to reverse past the beginning of the buffer, leaving the I/O hanging */
         let bufLength = this.bufLength; // current buffer length
-        let c = 0;                      // current character code
+        let code = 0;                   // translated frame code
         let nextFrameStamp = performance.now() +
                 PaperTapeReader.startStopTime;          // simulate startup time
         let x = this.bufIndex;          // point to current buffer position
 
+        this.canceled = false;
         this.makeBusy(true);
 
         do {
             if (x <= 0) {
-                x = 0;                  // reset the buffer index to beginning
+                this.bufIndex = 0;      // reset the buffer index to beginning
+                this.setBlockNr(0);
                 return true;            // and just quit, leaving the I/O hanging
             } else {
                 --x;                    // examine prior character
-                c = this.buffer.charCodeAt(x) & 0x7F;
-                if (IOCodes.ioCodeFilter[c] == IOCodes.ioCodeStop) {
+                code = IOCodes.ioCodeFilter[this.buffer.charCodeAt(x) & 0x7F];
+                if (code == IOCodes.ioCodeStop) {
                     break;
                 } else {
                     this.tapeSupplyBar.value = bufLength-x;
@@ -254,9 +266,10 @@ class PaperTapeReader {
         } while (true);
 
         this.bufIndex = x;
-        this.$$("PRBlockNr").textContent = --this.blockNr;
         this.makeBusy(false);
         await this.timer.set(PaperTapeReader.startStopTime);    // simulate stop time
+        this.setBlockNr(this.blockNr-1);
+
         return false;
     }
 
@@ -271,7 +284,8 @@ class PaperTapeReader {
         }
 
         this.bufIndex = 0;
-        this.$$("PRBlockNr").textContent = this.blockNr = 0;
+        this.setBlockNr(0);
+        this.makeBusy(false);
     }
 
     /**************************************/

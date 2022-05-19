@@ -1870,16 +1870,6 @@ class Processor {
     }
 
     /**************************************/
-    async enableTypeIn() {
-        /* Enables input for one block from the Typewriter keyboard to line 19
-        via line 23. finishIO() is handled by receiveKeyboardCode() */
-
-        this.OC.value = IOCodes.ioCmdTypeIn;
-        this.activeIODevice = this.devices.typewriter;
-        this.ioPromise = Promise.resolve();
-    }
-
-    /**************************************/
     async reversePaperTapePhase1() {
         /* Performs Phase 1 of paper tape search reverse, then performs Phase 2.
         Phase 1 reverses tape to the prior stop code, which is at the end of
@@ -1889,6 +1879,7 @@ class Processor {
         the prior block */
 
         this.OC.value = IOCodes.ioCmdPTRev1;
+        this.activeIODevice = this.devices.paperTapeReader;
         if (await this.devices.paperTapeReader.reverseBlock()) {
             return;                     // no tape or buffer overrun -- leave I/O hanging
         } else if (this.OC.value == IOCodes.ioCmdPTRev1) {      // check for cancel
@@ -1905,6 +1896,7 @@ class Processor {
         overwrite lines 23 and 19 */
 
         this.OC.value = IOCodes.ioCmdPTRev2;
+        this.activeIODevice = this.devices.paperTapeReader;
         if (await this.devices.paperTapeReader.reverseBlock()) {
             return;                     // no tape or buffer overrun -- leave I/O hanging
         } else if (this.OC.value == IOCodes.ioCmdPTRev2) {      // check for cancel
@@ -1914,6 +1906,16 @@ class Processor {
                 this.finishIO();
             }
         }
+    }
+
+    /**************************************/
+    async enableTypeIn() {
+        /* Enables input for one block from the Typewriter keyboard to line 19
+        via line 23. finishIO() is handled by receiveKeyboardCode() */
+
+        this.OC.value = IOCodes.ioCmdTypeIn;
+        this.activeIODevice = this.devices.typewriter;
+        this.ioPromise = Promise.resolve();
     }
 
     /**************************************/
@@ -2591,11 +2593,12 @@ class Processor {
 
             // Load the Number Track, CN
             this.drum.startTiming();
-            await this.readPaperTape();         // number track data to line 19, ignore any hang
-            this.drum.waitUntil(0);
-            for (let x=0; x<Util.longLineSize; ++x) {
-                this.drum.writeCN(this.drum.read(19));
-                this.drum.waitFor(1);
+            if (!await this.readPaperTape()) {
+                this.drum.waitUntil(0);         // number track data to line 19
+                for (let x=0; x<Util.longLineSize; ++x) {
+                    this.drum.writeCN(this.drum.read(19));
+                    this.drum.waitFor(1);
+                }
             }
 
             // Load the next block from paper tape

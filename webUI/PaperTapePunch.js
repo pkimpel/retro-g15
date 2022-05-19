@@ -99,7 +99,7 @@ class PaperTapePunch {
 
         if (this.busy) {
             this.busy = false;
-            this.canceled = true;       // currently affects nothing
+            //this.canceled = true;     // currently affects nothing
         }
     }
 
