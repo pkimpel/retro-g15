@@ -220,7 +220,8 @@ class Typewriter {
                     `${line.substring(0, len-1)}${char}${Typewriter.cursorChar}`;
             ++this.printerCol;
         } else {                        // right margin overflow -- overprint last col
-             this.paper.lastChild.nodeValue = line.substring(0, len-1) + "\u2588";      // full block
+             this.paper.lastChild.nodeValue = line.substring(0, Typewriter.maxCols-1) +
+                    "\u2588" + Typewriter.cursorChar;
         }
     }
 
@@ -263,9 +264,9 @@ class Typewriter {
             break;
         default:
             /***** TEMP to provide automatic newline on line overflow - TEMP TEMP TEMP TEMP *****/
-            if (this.printerCol >= Typewriter.maxCols) {
-                this.printNewLine();
-            }
+            //if (this.printerCol >= Typewriter.maxCols) {
+            //    this.printNewLine();
+            //}
             /****** end TEMP *****/
 
             this.printChar(Typewriter.printCodes[code]);

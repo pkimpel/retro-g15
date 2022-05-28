@@ -11,4 +11,4 @@
 *   Original version.
 ***********************************************************************/
 
-export const g15Version =       "0.04c";
+export const g15Version =       "1.00";

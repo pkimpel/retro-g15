@@ -142,9 +142,9 @@ class ControlPanel {
         this.readyLamp = new ColoredLamp(powerPanel, null, null,
                 "ReadyLamp", "greenLamp", "greenLit");
 
-        this.violationLamp = new ColoredLamp(powerPanel, null, null,
+        this.violationLamp = new ColoredLamp($$("ViolationControls"), null, null,
                 "ViolationLamp", "orangeLamp", "orangeLit");
-        this.violationSwitch = new ToggleSwitch(powerPanel, null, null,
+        this.violationSwitch = new ToggleSwitch($$("ViolationControls"), null, null,
                 "ViolationSwitch", "./resources/ToggleDown.png", "./resources/ToggleUp.png");
 
         $$("G15Version").textContent = Version.g15Version;

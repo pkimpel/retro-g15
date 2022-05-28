@@ -20,7 +20,6 @@
 <meta name="Author" content="Paul Kimpel">
 <meta http-equiv="Content-Script-Type" content="text/javascript">
 <meta http-equiv="Content-Style-Type" content="text/css">
-<meta name="viewport" content="width=device-width, initial-scale=1">
 <link id=defaultStyleSheet rel=stylesheet type="text/css" href="Common.css">
 <link id=homeStyleSheet rel=stylesheet type="text/css" href="G15.css">
 
@@ -112,33 +111,6 @@
                  title="Double-click to toggle tracing">?.?</div>
         </div>
 
-        <div id=TypewriterSwitchPanel>
-            <label id=EnableSwitchCaption for=EnableSwitchOff>ENABLE</label>
-            <div id=EnableSwitchSet>
-                <label for=EnableSwitchOn>ON</label>
-                <input id=EnableSwitchOn name=EnableSwitch type=radio value=1>
-                <input id=EnableSwitchOff name=EnableSwitch type=radio value=0 checked>
-            </div>
-
-            <label id=PunchSwitchCaption for=PunchSwitchOff>PAPER TAPE</label>
-            <div id=PunchSwitchSet>
-                <label for=PunchSwitchOn>PUNCH</label>
-                <input id=PunchSwitchOn name=PunchSwitch type=radio value=1>
-                <input id=PunchSwitchOff name=PunchSwitch type=radio value=0 checked>
-                <input id=PunchSwitchRewind name=PunchSwitch type=radio value=2>
-                <label for=PunchSwitchRewind>REWIND</label>
-            </div>
-
-            <label id=ComputeSwitchCaption for=ComputeSwitchOff>COMPUTE</label>
-            <div id=ComputeSwitchSet>
-                <label for=ComputeSwitchBP>BP</label>
-                <input id=ComputeSwitchBP name=ComputeSwitch type=radio value=2>
-                <input id=ComputeSwitchOff name=ComputeSwitch type=radio value=0 checked>
-                <input id=ComputeSwitchGo name=ComputeSwitch type=radio value=1>
-                <label for=ComputeSwitchGo>GO</label>
-            </div>
-        </div>
-
         <div id=PowerPanel>
             <div id=PowerOffBtn class=redButton1 title="Click to shut down the emulator">&nbsp;</div>
             <div id=PowerOffBtnCaption class=caption>OFF</div>
@@ -150,15 +122,44 @@
             <div id=ResetBtn class=greenButton1 title="Click to start the emulator">&nbsp;</div>
             <div id=ResetBtnCaption class=caption>RESET</div>
 
-            <div id=ViolationResetBtn class=redButton3>&nbsp;</div>
-            <div id=ViolationResetBtnCaption class=caption>CLEAR</div>
-            <div id=ViolationLampCaption class=caption>CODE VIOLATION</div>
-            <div id=ViolationSwitchCaption class=caption>STOP</div>
+            <div id=ViolationControls>
+                <div id=ViolationResetBtn class=redButton3>&nbsp;</div>
+                <div id=ViolationResetBtnCaption class=caption>CLEAR</div>
+                <div id=ViolationLampCaption class=caption>CODE VIOLATION</div>
+                <div id=ViolationSwitchCaption class=caption>STOP</div>
+            </div>
 
 
             <img id=G15Logo src="./resources/G-15-logo-3B413D.jpg" alt="Bendix G-15 logo">
         </div>
 
+    </div>
+
+    <div id=TypewriterSwitchPanel>
+        <label id=EnableSwitchCaption for=EnableSwitchOff>ENABLE</label>
+        <div id=EnableSwitchSet>
+            <label for=EnableSwitchOn>ON</label>
+            <input id=EnableSwitchOn name=EnableSwitch type=radio value=1>
+            <input id=EnableSwitchOff name=EnableSwitch type=radio value=0 checked>
+        </div>
+
+        <label id=PunchSwitchCaption for=PunchSwitchOff>PAPER TAPE</label>
+        <div id=PunchSwitchSet>
+            <label for=PunchSwitchOn>PUNCH</label>
+            <input id=PunchSwitchOn name=PunchSwitch type=radio value=1>
+            <input id=PunchSwitchOff name=PunchSwitch type=radio value=0 checked>
+            <input id=PunchSwitchRewind name=PunchSwitch type=radio value=2>
+            <label for=PunchSwitchRewind>REWIND</label>
+        </div>
+
+        <label id=ComputeSwitchCaption for=ComputeSwitchOff>COMPUTE</label>
+        <div id=ComputeSwitchSet>
+            <label for=ComputeSwitchBP>BP</label>
+            <input id=ComputeSwitchBP name=ComputeSwitch type=radio value=2>
+            <input id=ComputeSwitchOff name=ComputeSwitch type=radio value=0 checked>
+            <input id=ComputeSwitchGo name=ComputeSwitch type=radio value=1>
+            <label for=ComputeSwitchGo>GO</label>
+        </div>
     </div>
 
     <div id=TypewriterOutput>

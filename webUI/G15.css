@@ -86,14 +86,14 @@ H1 {
     height:             calc(100% - 8px);
     display:            block;
     visibility:         hidden;
-    background-color:   #67AAB2;        /* sort of Teal */
+    background-color:   #67AAB2;        /* sort of teal/turquoise */
     color:              white;
     border-radius:      16px}
 
 #ControlPanelFrame {
     position:           absolute;
     top:                12px;
-    height:             490px;
+    height:             434px;
     width:              600px;
     left:               50%;
     transform:          translate(-50%, 0);
@@ -260,13 +260,15 @@ H1 {
 
 #TypewriterSwitchPanel {
     position:           absolute;
-    top:                360px;
-    left:               24px;
-    right:              24px;
+    top:                458px;
+    left:               50%;
+    width:              552px;
+    transform:          translate(-50%, 0);
     height:             40px;
+    background-color:   #777;
+    border:             4px solid #38413D;
     border-radius:      8px;
-    box-shadow:         inset 4px 4px 4px #666;
-    background-color:   #67AAB2}
+    box-shadow:         4px 4px 4px #666}
 
 #EnableSwitchCaption {
     position:           absolute;
@@ -308,7 +310,7 @@ H1 {
     left:               24px;
     right:              24px;
     height:             64px;
-    bottom:             16px}
+    bottom:             12px}
 
 #PowerOffBtn {
     left:               0;
@@ -346,37 +348,42 @@ H1 {
     bottom:             0;
     width:              34px}
 
+#ViolationControls {
+    visibility:         hidden;
+    right:              136px;
+    bottom:             0}
+
 #ViolationResetBtn {
     position:           absolute;
     bottom:             21px;
-    right:              212px;
+    right:              76px;
     box-shadow:         4px 4px 4px #222}
 #ViolationResetBtnCaption {
     position:           absolute;
-    right:              212px;
+    right:              76px;
     bottom:             0;
     width:              32px}
 
 #ViolationLampCaption {
     position:           absolute;
     bottom:             50px;
-    right:              136px;
+    right:              0px;
     width:              120px}
 #ViolationLamp {
     position:           absolute;
     bottom:             21px;
-    right:              180px;
+    right:              44px;
     box-shadow:         4px 4px 4px #222}
 
 #ViolationSwitch {
     position:           absolute;
     bottom:             18px;
-    right:              152px;
+    right:              16px;
     width:              24px}
 #ViolationSwitchCaption {
     position:           absolute;
     bottom:             0;
-    right:              148px;
+    right:              12px;
     width:              32px}
 
 #G15Logo {
@@ -392,20 +399,22 @@ H1 {
     position:           absolute;
     top:                514px;
     bottom:             16px;
-    left:               50%;
-    width:              min-content;
-    transform:          translate(-50%, 0);
-    border:             1px solid gray;
-    box-shadow:         8px 8px 8px #666}
+    left:               8px;
+    right:              8px}
 
 #TypewriterPaper {
-    position:           relative;
+    position:           absolute;
     height:             100%;
-    width:              90ch;
+    width:              calc(100% - 8px);
+    min-width:          600px;                  /* same as ControlPanelFrame */
+    max-width:          calc(133ch + 20px);     /* allow for scroll bar */
+    left:               50%;
+    transform:          translate(-50%, 0);
     white-space:        pre;
     overflow:           auto;
     padding:            4px;
     color:              black;
     background-color:   #FFE;
+    border:             1px solid gray;
     font-size:          12px;
     font-family:        Courier New, Courier, Consolas, monospace}
