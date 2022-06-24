@@ -1,4 +1,4 @@
-The Bendix G-15 was a mid-1950s, binary, vacuum-tube, drum-memory computer system. The system was designed by Harry Huskey for Bendix during 1952-1953, while at Wayne State University in Detroit, Michigan. It was first available to customers as the G-15A in 1956. The better-known G-15D was released in 1957. Some systems may have been running as late as the early 1970s.
+The Bendix G-15 was a mid-1950s, binary, vacuum-tube, drum-memory computer system. The system was designed by Harry Huskey for Bendix during 1952-1953, while at Wayne State University in Detroit, Michigan. It was first available to customers as the G-15A in 1956. The better-known G-15D was released in 1957.
 
 Huskey had worked on Alan Turing's ACE computer and its prototype, the Pilot Ace, at the National Physical Laboratory in England during 1946-1947. The design of the G-15 was heavily influenced by the Pilot ACE, especially in its bit-serial operation, source-to-destination command structure, and its implementation of memory and registers as recirculating delay lines. The delay lines were implemented using the rotating magnetic drum rather than the mercury-filled tubes of the Pilot ACE.
 
@@ -14,7 +14,7 @@ Over 400 systems were built, with about 300 installed in the United States, maki
 
 Bendix corporate headquarters were in Detroit, but the G-15 was manufactured and supported by the Bendix Computer Division in Los Angeles, California. Bendix sold its Computer Division to Control Data Corporation in 1963, but CDC supported the G-15 for only a couple of years after that. Some machines may still have been running as late as the early 1970s.
 
-The main goals of this project are creation of a web browser-based emulator for the G-15D variant of the system and recovery of a much software for the system as we are able to find.
+The main goals of this project are creation of a web browser-based emulator for the G-15D variant of the system and recovery of as much software for the system as we are able to find.
 
 The contents of this project are licensed under the [MIT License](http://www.opensource.org/licenses/mit-license.php).
 

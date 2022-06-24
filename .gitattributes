@@ -3,25 +3,21 @@
 
 # Explicitly declare text files you want to always be normalized and converted
 # to native line endings on checkout.
-*.appcache text
 *.bat   text
 *.card  text
 *.cmd   text
 *.css   text
-*.easy  text
 *.html  text
 *.js    text
 *.lst   text
 *.md    text
-*.measy text
-*.pt    text
+*.pti   text
 *.shell text
 *.svg   text
 *.tape  text
 *.txt   text
 *.vbs   text
 *.wsf   text
-*.*_m   text
 
 .gitignore
 .gitattributes
@@ -30,11 +26,13 @@
 *.doc   binary
 *.docx  binary
 *.gif   binary
+*.gz    binary
 *.jpg   binary
 *.jpeg  binary
 *.mp3   binary
 *.pdf   binary
 *.png   binary
+*.pt    binary
 *.ttf   binary
 *.wav   binary
 *.woff  binary

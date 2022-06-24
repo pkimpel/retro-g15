@@ -1,18 +1,18 @@
 <!DOCTYPE html>
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-<title>G-15 Photo Tape Disassembler</title>
+<title>G-15 Paper Tape Disassembler</title>
 <!--
 /***********************************************************************
-* retro-g15/software/tools Photo-Tape-Disassembler.html
+* retro-g15/software/tools Paper-Tape-Disassembler.html
 ************************************************************************
 * Copyright (c) 2022, Paul Kimpel.
 * Licensed under the MIT License, see
 *       http://www.opensource.org/licenses/mit-license.php
 ************************************************************************
-* Disassembler for Bendix G-15 photo (paper) tape images.
+* Disassembler for Bendix G-15 paper tape images.
 *
-* Input is a text file in David Green's paper-tape image format
+* Input is a text file in David Green's paper-tape image format.
 *
 * The disasssembler is written in Javascript embedded within an HTML
 * web page. To use, load the assembler into a browser, e.g., from
@@ -109,7 +109,7 @@ LABEL {
     </div>
     -->
 
-    Disassembler for Bendix G-15 Photo Tapes
+    Disassembler for Bendix G-15 Paper Tape Images
 </div>
 
 <div id=OptionsDiv>
@@ -581,10 +581,10 @@ window.addEventListener("load", function() {
                     dest = "MAG SEARCH FWD " + c + ":" + op;
                     break;
                 case 6:
-                    dest = "PHOTO TAPE REV1:" + op;
+                    dest = "PAPER TAPE REV1:" + op;
                     break;
                 case 7:
-                    dest = "PHOTO TAPE REV2:" + op;
+                    dest = "PAPER TAPE REV2:" + op;
                     break;
                 case 8:
                     dest = "TYPE AR:" + op;
@@ -608,7 +608,7 @@ window.addEventListener("load", function() {
                     dest = "CARD READ:" + op;
                     break;
                 case 15:
-                    dest = "PHOTO TAPE READ:" + op;
+                    dest = "PAPER TAPE READ:" + op;
                     break;
                 case 16:
                     dest = "HALT:" + op;
@@ -805,7 +805,7 @@ window.addEventListener("load", function() {
     /**************************************/
     function readBlock(line23, line19) {
         /* Reads one block of codes from the tape, returning the binary words
-        of the block in the "line19" parameter. This simulates the way the photo
+        of the block in the "line19" parameter. This simulates the way the paper
         tape reader precessed codes into line 23, from line 23 to line MZ, and
         from line MZ to line 19. MZ was used only as a fast buffer to solve
         timing contraints, so it is eliminated here and words precess from 23
@@ -867,7 +867,7 @@ window.addEventListener("load", function() {
         let stamp = new Date();
 
         clearPanel();
-        printLine("Disassembler for Bendix G-15 Photo Tapes -- " +
+        printLine("Disassembler for Bendix G-15 Paper Tape Images -- " +
                 stamp.getFullYear().toString() + "-" +
                 padLeft(stamp.getMonth()+1, 2, "0") + "-" +
                 padLeft(stamp.getDate(), 2, "0") + " " +

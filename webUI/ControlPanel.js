@@ -40,14 +40,15 @@ class ControlPanel {
         const panelCenter = panel.clientWidth / 2;
 
         this.context = context;
-        this.intervalToken = 0;         // interval timer cancel token
         this.boundControlSwitchChange = this.controlSwitchChange.bind(this);
         this.boundUpdatePanel = this.updatePanel.bind(this);
         this.boundSystemReset = this.systemReset.bind(this);
         this.boundToggleTracing = this.toggleTracing.bind(this);
 
-        this.systemBell = $$("SystemBell");
+        this.intervalToken = 0;         // interval timer cancel token
         this.lastBellTime = 0;
+        this.panelEnabled = false;
+        this.systemBell = $$("SystemBell");
 
         // Paper tape panel
         $$("PTView").textContent = "";
@@ -276,6 +277,7 @@ class ControlPanel {
         }
 
         this.updatePanel();
+        this.panelEnabled = true;
         this.$$("FrontPanel").style.visibility = "visible";
         if (!this.intervalToken) {
             this.intervalToken = setInterval(this.boundUpdatePanel, ControlPanel.displayRefreshPeriod);
@@ -307,6 +309,7 @@ class ControlPanel {
         this.$$("ViolationResetBtn").removeEventListener("click", this.boundControlSwitchChange, false);
         this.violationSwitch.removeEventListener("click", this.boundControlSwitchChange, false);
 
+        this.panelEnabled = false;
         this.$$("FrontPanel").style.visibility = "hidden";
         if (this.intervalToken) {
             clearInterval(this.intervalToken);
@@ -319,12 +322,17 @@ class ControlPanel {
         /* Event handler for the RESET button */
         let timer = new Util.Timer();
 
-        await timer.set(1500);          // wait for the DC power supplies...
-        this.dcPowerLamp.set(1);
-        await this.context.processor.systemReset();
-        this.readyLamp.set(1);
-        this.enablePanel();
-        this.$$("ResetBtn").disabled = true;
+        if (this.context.processor.CH.value) {  // system halted
+            this.readyLamp.set(0);
+            this.dcPowerLamp.set(0);
+            await timer.set(1500);          // wait for the DC power supplies...
+            this.dcPowerLamp.set(1);
+            await this.context.processor.systemReset();
+            this.readyLamp.set(1);
+            if (!this.panelEnabled) {
+                this.enablePanel();
+            }
+        }
     }
 
 } // class ControlPanel
