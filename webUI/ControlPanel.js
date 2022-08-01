@@ -172,6 +172,7 @@ class ControlPanel {
     updatePanel() {
         /* Updates the panel registers and flip-flops from processor state */
         let p = this.context.processor; // local copy of Processor reference
+        let drum = p.drum;
 
         p.updateLampGlow(0);
         this.regCmdLine.updateLampGlow(p.CD.glow);
@@ -189,6 +190,11 @@ class ControlPanel {
         this.lampTest.set(p.CQ.glow);
         this.lampAS.set(p.AS.glow);
         this.violationLamp.set(p.VV.glow);
+
+        this.$$("ProcDelta").textContent = drum.delayDeltaAvg.toFixed(2);
+        this.$$("ProcSlack").textContent = ((drum.procSlack/drum.eTime*100) || 0).toFixed(2);
+        this.$$("ProcRun").textContent = drum.procRunAvg.toFixed(2);
+        this.$$("CmdCount").textContent = p.cmdCount;
 
         if (p.bellTiming) {
             this.ringBell(p.bellTiming);

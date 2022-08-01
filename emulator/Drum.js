@@ -10,7 +10,7 @@
 * Drum supports two timing mechanisms, the main one for the Processor,
 * and an auxilliary one for the I/O subsystem. I/O timing is initialized
 * to the main timing at the start of an I/O, but operates asynchronously
-* during the I/O. This allows the emulator to sumulate, to a degree, the
+* during the I/O. This allows the emulator to simulate, to a degree, the
 * asynchronous nature of G-15 I/O.
 ************************************************************************
 * 2021-12-08  P.Kimpel
@@ -49,6 +49,13 @@ class Drum {
         this.eTimeSliceEnd = 0;         // current timeslice end emulation time, ms
         this.L = new Register(7, this, false);  // current drum rotational position: word-time 0-107
         this.drumTimer = new Util.Timer();
+
+        // Main system performance stats
+        this.delayDeltaAvg = 0;         // average difference between requested and actual throttle() delays, ms
+        this.procSlack = 0;             // total processor throttling delay, ms
+        this.procSlackAvg = 0;          // average slack time per time slice, ms
+        this.procRunAvg = 0;            // average elapsed time per time slice, ms
+        this.procRunLastStamp = 0;      // timestamp of last start/throttle-end, ms
 
         // I/O subsystem timing variables
         this.ioTime = 0;                // current I/O emulation time, ms
@@ -140,13 +147,40 @@ class Drum {
         the end of its time slice or the difference between real time (as
         reported by performance.now()) and emulation time is less than
         Util.minTimeout */
+        let delayStamp = performance.now();
+        let delayRequested = 0;
+        let pledge = null;
 
-        if (this.eTime < this.eTimeSliceEnd) {
-            return Promise.resolve(null);       // i.e., don't wait at all
-        } else {
-            this.eTimeSliceEnd += Drum.minDelayTime;
-            return this.drumTimer.delayUntil(this.eTime);
+        let updateStats = () => {
+            // Compute the exponential average throttling delay deviation.
+            this.procRunLastStamp = performance.now();
+            let delayActual = this.procRunLastStamp - delayStamp;
+            this.delayDeltaAvg = (delayActual - delayRequested)*Drum.delayAlpha +
+                                 this.delayDeltaAvg*Drum.delayAlpha1;
+
+            // Compute the exponential weighted average scheduling delay deviation.
+            this.procSlack += delayActual;
+            this.procSlackAvg = delayActual*Drum.slackAlpha +
+                                this.procSlackAvg*Drum.slackAlpha1;
+        };
+
+        // Accumulate the average timeslice length.
+        if (this.procRunLastStamp > 0) {
+            this.procRunAvg = (delayStamp - this.procRunLastStamp)*Drum.procRunAlpha +
+                               this.procRunAvg*Drum.procRunAlpha1;
         }
+
+        // Do the throttling delay.
+        if (this.eTime < this.eTimeSliceEnd) {
+            pledge = Promise.resolve(null);       // i.e., don't wait at all
+        } else {
+            delayRequested = this.eTime - delayStamp;
+            this.eTimeSliceEnd += Drum.minDelayTime;
+            pledge = this.drumTimer.set(delayRequested);
+        }
+
+        pledge.then(updateStats);
+        return pledge;
     }
 
     /**************************************/
@@ -620,3 +654,9 @@ class Drum {
 // Static class properties
 
 Drum.minDelayTime = 4;                  // minimum time to accumulate throttling delay, >= 4ms
+Drum.delayAlpha = 0.000001;             // decay factor for exponential weighted average delay
+Drum.delayAlpha1 = 1.0 - Drum.delayAlpha;
+Drum.procRunAlpha = 0.000001;           // decay factor for exponential weighted average timeslice length
+Drum.procRunAlpha1 = 1.0 - Drum.procRunAlpha;
+Drum.slackAlpha = 0.000001;             // decay factor for exponential weighted average slack
+Drum.slackAlpha1 = 1.0 - Drum.slackAlpha;

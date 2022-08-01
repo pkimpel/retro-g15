@@ -348,8 +348,15 @@ H1 {
     bottom:             0;
     width:              34px}
 
+#ProcessorStats {
+    position:           absolute;
+    right:              136px;
+    bottom:             0;
+    font-size:          smaller}
+
 #ViolationControls {
-    visibility:         hidden;
+    position:           absolute;
+    display:            none;           /* for now */
     right:              136px;
     bottom:             0}
 

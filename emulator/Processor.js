@@ -74,6 +74,7 @@ class Processor {
         this.cmdLoc = new Register(7, this.drum, false);// current command word-time
 
         // General emulator state
+        this.cmdCount = 0;                              // number of commands executed
         this.cmdLine = 0;                               // current actual command line (see CDXlate)
         this.deferredBP = false;                        // breakpoint deferred due to return exit cmd
         this.overflowed = false;                        // true if last addition overflowed (DEBUG)
@@ -2353,6 +2354,7 @@ class Processor {
     transfer() {
         /* Executes the command currently loaded into the command register (CM) */
 
+        ++this.cmdCount;
         switch (this.D.value) {
         case  0:        // 108-word drum lines
         case  1:
@@ -2590,6 +2592,10 @@ class Processor {
             this.CG.value = 0;          // reset Next-From-AR FF
             this.CQ.value = 0;          // reset TEST FF
             this.OC.value = IOCodes.ioCmdReady;
+            this.commandCount = 0;
+            this.drum.procSlack = 0;
+            this.drum.procSlackAvg = this.procRunAvg = 0;
+            this.drum.delayDeltaAvg = 0;
 
             // Load the Number Track, CN
             this.drum.startTiming();
