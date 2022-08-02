@@ -12,6 +12,7 @@
 ***********************************************************************/
 
 import * as Version from "../emulator/Version.js";
+import * as Util from "../emulator/Util.js";
 
 import {ControlPanel} from "./ControlPanel.js";
 import {DiagPanel} from "./DiagPanel.js";
@@ -100,7 +101,8 @@ let globalLoad = (ev) => {
 
     /**************************************/
     function systemStartup(ev) {
-        /* Establishes the system components */
+        /* Establishes the system components and adjusts peripheral speeds based
+        on drum RPM */
 
         $$("StartUpBtn").disabled = true;
         //$$("ConfigureBtn").disabled = true;
@@ -115,6 +117,9 @@ let globalLoad = (ev) => {
             "typewriter":               new Typewriter(context)
         }
 
+        let timingFactor = Util.drumRPM/Util.defaultRPM;
+        let readerSpeed = Math.min(PaperTapeReader.defaultSpeed*timingFactor, 2000);
+        context.devices.paperTapeReader.setSpeed(readerSpeed)
         context.devices.paperTapeReader.preload();      // preload the PPR image
         context.processor.powerUp();
         context.controlPanel.enablePanel();
@@ -156,6 +161,28 @@ let globalLoad = (ev) => {
     }
 
     /**************************************/
+    function parseQueryString() {
+        /* Parses the query string for the request, looking for known key/value
+        pairs. If found, applies them to the current configuration options */
+        let url = new URL(window.location);
+
+        for (let pair of url.searchParams) {
+            let key = (pair[0] || "").trim().toUpperCase();
+            let val = (pair[1] || "").trim().toUpperCase();
+
+            switch (key) {
+            case "RPM":
+                val = parseInt(val, 10);
+                if (val && val > Util.defaultRPM) {
+                    Util.setTiming(val);
+                }
+                break;
+            } // switch key
+        }
+
+    }
+
+    /**************************************/
     function checkBrowser() {
         /* Checks whether this browser can support the necessary stuff */
         let missing = "";
@@ -187,6 +214,7 @@ let globalLoad = (ev) => {
     $$("StartUpBtn").disabled = true;
     $$("EmulatorVersion").textContent = Version.g15Version;
     if (checkBrowser()) {
+        parseQueryString();
         context.controlPanel = new ControlPanel(context);
         $$("StartUpBtn").disabled = false;
         $$("StartUpBtn").addEventListener("click", systemStartup, false);
@@ -197,6 +225,6 @@ let globalLoad = (ev) => {
         //$$("StatusMsg").textContent = "??";
         //clearStatusMsg(30);
     }
-} // globalLoad
+}; // globalLoad
 
 window.addEventListener("load", globalLoad, false);

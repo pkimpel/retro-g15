@@ -37,6 +37,10 @@ class PaperTapeReader {
         this.boundRewindButtonClick = this.rewindButtonClick.bind(this);
         this.boundUnloadButtonClick = this.unloadButtonClick.bind(this);
 
+        this.framePeriod = 0;                           // reader speed, ms/frame
+        this.startStopTime = 0;                         // reader start/stop time, ms
+        this.setSpeed(PaperTapeReader.defaultSpeed);    // frames/sec
+
         this.clear();
 
         $$("PRFileSelector").addEventListener("change", this.boundFileSelectorChange);
@@ -60,6 +64,15 @@ class PaperTapeReader {
 
         this.makeBusy(false);
         this.setBlockNr(0);
+    }
+
+    /**************************************/
+    setSpeed(framesPerSec) {
+        /* Configures the reader for a specified speed in frames/sec */
+
+        this.speed = framesPerSec;
+        this.framePeriod = 1000/this.speed;                                     // ms/frame
+        this.startStopTime = this.framePeriod*PaperTapeReader.startStopFrames;  // ms
     }
 
     /**************************************/
@@ -173,8 +186,7 @@ class PaperTapeReader {
         let c = 0;                      // current character code
         let code = 0;                   // current G-15 code
         let eob = false;                // end-of-block flag
-        let nextFrameStamp = performance.now() +
-                PaperTapeReader.startStopTime;          // simulate startup time
+        let nextFrameStamp = performance.now() + this.startStopTime;    // simulate startup time
         let precessionComplete = Promise.resolve();
         let x = this.bufIndex;          // current buffer index
 
@@ -185,7 +197,7 @@ class PaperTapeReader {
         do {
             this.tapeSupplyBar.value = bufLength-x;
             await this.timer.delayUntil(nextFrameStamp);
-            nextFrameStamp += PaperTapeReader.framePeriod;
+            nextFrameStamp += this.framePeriod;
 
             if (x >= bufLength) {       // end of buffer
                 this.bufIndex = x;
@@ -211,7 +223,7 @@ class PaperTapeReader {
 
         this.bufIndex = x;
         this.makeBusy(false);
-        await this.timer.set(PaperTapeReader.startStopTime);    // simulate stop time
+        await this.timer.set(this.startStopTime);       // simulate stop time
         return false;
     }
 
@@ -236,8 +248,7 @@ class PaperTapeReader {
         to reverse past the beginning of the buffer, leaving the I/O hanging */
         let bufLength = this.bufLength; // current buffer length
         let code = 0;                   // translated frame code
-        let nextFrameStamp = performance.now() +
-                PaperTapeReader.startStopTime;          // simulate startup time
+        let nextFrameStamp = performance.now() + this.startStopTime;    // simulate startup time
         let x = this.bufIndex;          // point to current buffer position
 
         this.canceled = false;
@@ -256,7 +267,7 @@ class PaperTapeReader {
                 } else {
                     this.tapeSupplyBar.value = bufLength-x;
                     await this.timer.delayUntil(nextFrameStamp);
-                    nextFrameStamp += PaperTapeReader.framePeriod;
+                    nextFrameStamp += this.framePeriod;
                     if (this.canceled) {
                         this.canceled = false;
                         break; // out of do loop
@@ -267,7 +278,7 @@ class PaperTapeReader {
 
         this.bufIndex = x;
         this.makeBusy(false);
-        await this.timer.set(PaperTapeReader.startStopTime);    // simulate stop time
+        await this.timer.set(this.startStopTime);       // simulate stop time
         this.setBlockNr(this.blockNr-1);
 
         return false;
@@ -303,7 +314,5 @@ class PaperTapeReader {
 
 // Static properties
 
-PaperTapeReader.speed = 250;                                    // frames/sec
-PaperTapeReader.startStopFrames = 35;                           // 3.5 inches of tape
-PaperTapeReader.framePeriod = 1000/PaperTapeReader.speed;       // ms/frame
-PaperTapeReader.startStopTime = PaperTapeReader.framePeriod*PaperTapeReader.startStopFrames; // ms
+PaperTapeReader.defaultSpeed = 250;     // frames/sec
+PaperTapeReader.startStopFrames = 35;   // 3.5 inches of tape

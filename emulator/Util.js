@@ -16,17 +16,18 @@ export const wordMagBits = 28;                  // magnitude bits in a G-15 word
 export const wordBytes = 4;                     // bytes per G-15 word (32 bits holding 29 bits)
 export const longLineSize = 108;                // words per long drum line
 export const fastLineSize = 4;                  // words per fast drum line
+export const minTimeout = 4;                    // browsers will do setTimeout for at least 4ms
 
 export const wordMask = 0x1FFFFFFF;             // 29 bits
 export const absWordMask = 0x1FFFFFFE;          // all but the sign bit
 export const wordSignMask = 0x01;               // sign bit mask
 export const two28 = 0x10000000;                // 2**28 for complementing word magnitude values
 
-export const wordTime = 60000/1800/124;         // one word time on the drum [1800 RPM, 124 words/rev], ms
-export const bitTime = wordTime/wordBits;       // one bit time on the drum, ms
-export const drumCycleTime = wordTime*longLineSize;
-                                                // one drum cycle (108 words), ms
-export const minTimeout = 4;                    // browsers will do setTimeout for at least 4ms
+export const defaultRPM = 1800;                 // default drum revolution speed, rev/min
+export let drumRPM = defaultRPM;                // drum revolution speed, rev/minute
+export let wordTime = 0;                        // one word time on the drum [124 words/rev], ms
+export let bitTime = 0;                         // one bit time on the drum, ms
+export let drumCycleTime = 0;                   // one drum cycle (108 words), ms
 
 const hexRex = /[abcdefABCDEF]/g;               // standard hex characters
 const g15HexXlate = {
@@ -54,6 +55,19 @@ export function g15SignedHex(v) {
     /* Formats the value of "v" as signed G-15 hex */
 
     return g15Hex(v >> 1) + (v & 1 ? "-" : " ");
+}
+
+/**************************************/
+export function setTiming(newRPM=defaultRPM) {
+    /* Computes the drum timing factors from the specified drumRPM (default=1800) */
+
+    if (newRPM >= defaultRPM) {
+        drumRPM = newRPM;               // drum revolution speed, rev/minute
+        wordTime = 60000/drumRPM/124;   // one word time on the drum [124 words/rev], ms
+        bitTime = wordTime/wordBits;    // one bit time on the drum, ms
+        drumCycleTime = wordTime*longLineSize;
+                                        // one drum cycle (108 words), ms
+    }
 }
 
 
@@ -117,3 +131,9 @@ export class Timer {
         }
     }
 }
+
+/***********************************************************************
+*  Global Initialization Code                                          *
+***********************************************************************/
+
+setTiming(defaultRPM);

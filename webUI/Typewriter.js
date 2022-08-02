@@ -244,11 +244,11 @@ class Typewriter {
 
     /**************************************/
     write(code) {
-        /* Writes one character code to the punch. The physical typewriter device
-        (a standard Flexowriter tape punch unit) could output in excess of 8
-        characters per second, but the timing was controlled by the processor,
-        which sent codes to the device at a rate of one every four drum cycles,
-        about 8.6 characters per second */
+        /* Writes one character code to the typewriter. The physical typewriter
+        device (a standard Flexowriter tape punch unit) could output in excess
+        of 8 characters per second, but the timing was controlled by the
+        processor, which sent codes to the device at a rate of one every four
+        drum cycles, about 8.6 characters per second */
 
         switch (code) {
         case IOCodes.ioCodeCR:
