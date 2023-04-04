@@ -1,0 +1,14 @@
+Options -Indexes
+
+#Default index page
+DirectoryIndex index.html
+
+# One month for image files
+<filesMatch ".(jpg|jpeg|png|gif|ico)$">
+Header set Cache-Control "max-age=31536000, public"
+</filesMatch>
+
+# One minute for html, css, and js (for now)
+<filesMatch ".(html|htm|css|js)$">
+Header set Cache-Control "max-age=60, public"
+</filesMatch>

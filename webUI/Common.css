@@ -51,7 +51,8 @@ BODY.panelBody {
     position:           relative;
     font-size:          8pt;
     margin:             0;
-    padding:            0}
+    padding:            0;
+    cursor:             default}
 
 BODY.deviceBody {
     font-size:          7pt;
@@ -59,7 +60,8 @@ BODY.deviceBody {
     margin:             0;
     padding:            0;
     background-color:   #246;
-    color:              white}
+    color:              white;
+    cursor:             default}
 
 H1 {
     margin-top:         2em;
@@ -92,7 +94,7 @@ DIV.paper {
     margin-top:         0;
     margin-bottom:      0;
     font-size:          12px;
-    line-height:        120%}
+    line-height:        12pt}
 DIV.topOfForm {
     page-break-before:  always;
     margin-top:         1px;

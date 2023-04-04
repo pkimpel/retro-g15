@@ -88,7 +88,9 @@ H1 {
     visibility:         hidden;
     background-color:   #67AAB2;        /* sort of teal/turquoise */
     color:              white;
-    border-radius:      16px}
+    border-radius:      16px;
+    user-select:        none;
+    cursor:             default}
 
 #ControlPanelFrame {
     position:           absolute;

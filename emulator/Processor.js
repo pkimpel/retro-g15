@@ -2432,9 +2432,9 @@ class Processor {
         system timing, updating its L and eTime properties as calls on its
         waitFor() and waitUntil() methods are made. We await drum.throttle()
         after every instruction completes to determine if drum.eTime exceeds the
-        current slice time limit, in which case it delays until real time catches
-        up to emulation time. We continue to run until the a halt condition is
-        detected */
+        current slice time limit, in which case it delays until real time
+        catches up to emulation time. We continue to run until a halt condition
+        is detected */
 
         do {                            // run until halted
             if (this.RC.value) {        // enter READ COMMAND state

@@ -297,7 +297,8 @@ class Typewriter {
 
     /**************************************/
     unloadPaperClick(ev) {
-        /* Clears the internal tape buffer in response to the UNLOAD button */
+        /* Clears the internal scroll buffer in response to double-clicking
+        the pape area */
 
         if (this.ready && !this.busy) {
             this.copyPaper();
@@ -311,7 +312,7 @@ class Typewriter {
         /* Shuts down the device */
 
         this.$$("FrontPanel").removeEventListener("keydown", this.boundPanelKeydown, false);
-        this.$$("FrontPanel").removeEventListener("keyup", this.boundKeyup, false);
+        this.$$("FrontPanel").removeEventListener("keyup", this.boundPanelKeyup, false);
         this.paper.removeEventListener("dblclick", this.boundUnloadPaperClick);
     }
 }

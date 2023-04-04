@@ -130,7 +130,7 @@ let globalLoad = (ev) => {
         /* Powers down the Processor and shuts down all of the panels and I/O devices */
         let processor = context.processor;
 
-        while (processor.CH.value == 0 || processor.OC.value & 0b1111) {
+        if (processor.CH.value == 0 || processor.OC.value & 0b1111) {
             processor.stop();
             processor.cancelIO();
             setTimeout(systemShutDown, 1000);
@@ -210,7 +210,6 @@ let globalLoad = (ev) => {
 
     /***** globalLoad() outer block *****/
 
-    window.removeEventListener("load", globalLoad, false);
     $$("StartUpBtn").disabled = true;
     $$("EmulatorVersion").textContent = Version.g15Version;
     if (checkBrowser()) {
@@ -227,4 +226,4 @@ let globalLoad = (ev) => {
     }
 }; // globalLoad
 
-window.addEventListener("load", globalLoad, false);
+window.addEventListener("load", globalLoad, {once: true});

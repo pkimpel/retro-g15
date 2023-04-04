@@ -15,6 +15,7 @@
 export {Register}
 
 import * as Util from "./Util.js";
+
 import {BitField} from "./BitField.js";
 import {FlipFlop} from "./FlipFlop.js";
 
@@ -25,7 +26,8 @@ class Register {
         of "bits" bits. "clock" is a reference to the object that maintains the
         emulation clock, which must support the property "eTime". That property
         reports the current emulation time in milliseconds. Emulation time is
-        used to lamp glow decay and a time-weighted exponential average intensity.
+        used to compute lamp glow decay and a time-weighted exponential average
+        intensity.
 
         "invisible" should be true if the register does not have a visible
         presence in the UI -- this will inhibit computing average lamp glow values
@@ -50,7 +52,7 @@ class Register {
     }
 
     set value(value) {
-        return this.set(value);
+        this.set(value);
     }
 
     /**************************************/
@@ -90,11 +92,11 @@ class Register {
         the value member directly so that average lamp glow can be computed.
         Returns the new value */
 
-        this.intVal = value % (1 << this.bits);
         if (this.visible) {
            this.updateLampGlow(0);
         }
 
+        this.intVal = value % (1 << this.bits);
         return value;
     }
 
