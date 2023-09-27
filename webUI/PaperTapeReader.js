@@ -178,13 +178,15 @@ class PaperTapeReader {
 
     /**************************************/
     async read() {
-        /* Initiates the Paper Tape Reader to begin sending frame codes to
-        the Processor's I/O subsystem. Reads until a STOP code or the end of
-        the tape buffer is encountered. Returns true if an attempt is made
-        to read past the end of the buffer, leaving the I/O hanging */
+        /* Initiates the Paper Tape Reader to begin sending frame codes to the
+        Processor's I/O subsystem. Reads until a STOP code or the end of the tape
+        buffer is encountered. Simply bypasses any invalid tape image characters
+        and comments as if they did not exist. Returns true if an attempt is
+        made to read past the end of the buffer, leaving the I/O hanging */
         let bufLength = this.bufLength; // current buffer length
-        let c = 0;                      // current character code
-        let code = 0;                   // current G-15 code
+        let bypass = false;             // bypass comment text after "#"
+        let c = "";                     // current character
+        let code = 0;                   // current G-15 internal code
         let eob = false;                // end-of-block flag
         let nextFrameStamp = performance.now() + this.startStopTime;    // simulate startup time
         let precessionComplete = Promise.resolve();
@@ -196,30 +198,47 @@ class PaperTapeReader {
 
         do {
             this.tapeSupplyBar.value = bufLength-x;
-            await this.timer.delayUntil(nextFrameStamp);
-            nextFrameStamp += this.framePeriod;
-
             if (x >= bufLength) {       // end of buffer
                 this.bufIndex = x;
                 return true;            // just quit and leave the I/O hanging
             } else {
-                c = this.buffer.charCodeAt(x) & 0x7F;
-                code = IOCodes.ioCodeFilter[c];
+                c = this.buffer.charAt(x);
                 ++x;
-            }
+                switch (c) {
+                case "#":
+                    bypass = true;      // start bypassing comment text
+                    break;
+                case "\n":
+                case "\r":
+                    bypass = false;     // end bypassing comment text
+                    break;
+                }
 
-            eob = await precessionComplete;
-            if (eob || this.canceled) {
-                this.canceled = false;
-                break; // out of do loop
-            } else {
-                precessionComplete = this.processor.receiveInputCode(code);
-                if (code == IOCodes.ioCodeStop) {
-                    await precessionComplete;
-                    break; // out of do loop
+                if (!bypass) {
+                    code = IOCodes.ioCodeFilter[c.charCodeAt(0) & 0x7F];
+                    if (code < 0xFF) {  // not an ignored character
+                        // Wait for the next frame time.
+                        await this.timer.delayUntil(nextFrameStamp);
+                        nextFrameStamp += this.framePeriod;
+
+                        // Wait for any line 23 precession to complete.
+                        if (await precessionComplete) {
+                            eob = true;                 // some error detected by Processor -- quit
+                        } else if (this.canceled) {
+                            this.canceled = false;
+                            eob = true;                 // definitely canceled -- quit
+                        } else {
+                            // Send the tape code to the Processor.
+                            precessionComplete = this.processor.receiveInputCode(code);
+                            if (code == IOCodes.ioCodeStop) {
+                                await precessionComplete;
+                                eob = true;             // end of block -- quit
+                            }
+                        }
+                    }
                 }
             }
-        } while (true);
+        } while (!eob);
 
         this.bufIndex = x;
         this.makeBusy(false);

@@ -90,7 +90,8 @@
                 <div id=PRRewindBtn class=blackButton3></div>
                 <div id=PRUnloadCaption class=caption>UNLOAD</div>
                 <div id=PRUnloadBtn class=blackButton3></div>
-                <progress id=PRTapeSupplyBar 0 max=100 value=0 title="Tape Buffer Remaining"></progress>
+                <meter id=PRTapeSupplyBar min=0 max=100 value=0
+                       title="Tape Buffer Remaining"></meter>
                 <div id=PRBlockNrDiv>
                     Block #<span id=PRBlockNr>0</span>
                 </div>
@@ -111,7 +112,7 @@
         </div>
 
         <div id=PowerPanel>
-            <div id=PowerOffBtn class=redButton1 title="Click to shut down the emulator">&nbsp;</div>
+            <div id=PowerOffBtn class=redButton1 title="DOUBLE-click to shut down the emulator">&nbsp;</div>
             <div id=PowerOffBtnCaption class=caption>OFF</div>
 
             <div id=DCPowerLampCaption class=caption>DC</div>

@@ -195,13 +195,14 @@ H1 {
     top:                24px;
     left:               60px;
     width:              calc(100% - 144px);
-    height:             16px}
+    height:             16px;
+    border:             1px solid white}        /* kludge for Safari <meter> */
 
 #PRBlockNrDiv {
     position:           absolute;
-    top:                36px;
+    top:                38px;
     left:               calc(50% - 12px);
-    font-size:          x-small}
+    font-size:          10px}
 
 /* Control Panel lamps */
 

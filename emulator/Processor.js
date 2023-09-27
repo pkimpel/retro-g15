@@ -249,8 +249,13 @@ class Processor {
         // gates at T29 time and cause the adder to adjust the sign in the
         // next word time. The following has the equivalent effect. See the
         // Theory of Operations manual, page 34, paragraph C-10t.
-        if (bMag == 0 && bSign) {
-            bSign = 0;                  // do not allow -0 to reach the adder
+
+        // Do not allow -0 to reach the adder.
+        if (aSign && aMag == 0) {
+            aSign = 0;
+        }
+        if (bSign && bMag == 0) {
+            bSign = 0;
         }
 
         // Put the signs in their 2s-complement place and develop the raw sum.

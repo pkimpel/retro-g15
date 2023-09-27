@@ -43,7 +43,7 @@
 *      04     S     stop
 *      05     /     reload (precess line 23 to line 19 and read next block)
 *      06     .     period (ignored on input, "P" also accepted on input)
-*      07     ~     wait
+*      07     H     wait
 *   08-0F           (same as corresponding 00-07 codes)
 *   10-19   0-9     decimal digits
 *   1A-1F   u-z     hexadecimal digits (A-F, respectively)
@@ -55,7 +55,7 @@
 * page. Selecting a file automatically starts the conversion.
 *
 * This version outputs the converted data by opening a browser window for
-* each file and inserting the converted text into a <pre> element in
+* the file and inserting the converted text into a <pre> element in
 * that window. From there you can copy the text and paste into another
 * program that can save the data to a local filesystem.
 ************************************************************************
@@ -96,12 +96,11 @@ window.onload = function() {
     }
 
     function extractFile(data, fileNr, fileName) {
-        /* Extracts the 220 digits from the tape blob, converts the data
+        /* Extracts the digits from the tape blob, converts the data
            to ASCII, and writes it to a new window object within the browser.
            Returns true if no more files should be converted */
         let box = null;
         let frame = 0;
-        let hex = "";
         let len = data.byteLength;
         let line = "";
         let result = false;
@@ -159,7 +158,7 @@ window.onload = function() {
                         line += ".";
                         break;
                     case 7:     // wait
-                        line += "~";
+                        line += "H";
                         break;
                     }
                 }

@@ -266,7 +266,7 @@ class ControlPanel {
         this.$$("PunchSwitchSet").addEventListener("click", this.boundControlSwitchChange, false);
         this.$$("ComputeSwitchSet").addEventListener("click", this.boundControlSwitchChange, false);
         this.$$("G15Version").addEventListener("dblclick", this.boundToggleTracing, false);
-        this.$$("PowerOffBtn").addEventListener("click", this.context.systemShutDown, false);
+        this.$$("PowerOffBtn").addEventListener("dblclick", this.context.systemShutDown, false);
         this.$$("ResetBtn").addEventListener("click", this.boundSystemReset, false);
         this.$$("ViolationResetBtn").addEventListener("click", this.boundControlSwitchChange, false);
         this.violationSwitch.addEventListener("click", this.boundControlSwitchChange, false);
@@ -304,7 +304,7 @@ class ControlPanel {
         this.$$("PunchSwitchSet").removeEventListener("click", this.boundControlSwitchChange, false);
         this.$$("ComputeSwitchSet").removeEventListener("click", this.boundControlSwitchChange, false);
         this.$$("G15Version").removeEventListener("dblclick", this.boundToggleTracing, false);
-        this.$$("PowerOffBtn").removeEventListener("click", this.context.systemShutDown, false);
+        this.$$("PowerOffBtn").removeEventListener("dblclick", this.context.systemShutDown, false);
         this.$$("ResetBtn").removeEventListener("click", this.boundSystemReset, false);
         this.$$("ViolationResetBtn").removeEventListener("click", this.boundControlSwitchChange, false);
         this.violationSwitch.removeEventListener("click", this.boundControlSwitchChange, false);
