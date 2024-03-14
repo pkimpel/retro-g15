@@ -20,6 +20,8 @@ import {openPopup} from "./PopupUtil.js";
 
 class DiagPanel {
 
+    static displayRefreshPeriod = 50;   // ms
+
     /**************************************/
     constructor(context) {
         /* Constructs the G15 diagnostic panel controls and wires up their events.
@@ -109,9 +111,22 @@ class DiagPanel {
     /**************************************/
     updatePanel() {
         /* Updates the panel registers and flip-flops from processor state */
-        let p = this.context.processor; // local copy of Processor reference
-        let drum = p.drum;              // local copy of Drum reference
-        let now = performance.now();
+        const p = this.context.processor;       // local copy of Processor reference
+        const drum = p.drum;                    // local copy of Drum reference
+        const now = performance.now();
+
+        let rt = drum.runTime;
+        while (rt < 0) {
+            rt += now;
+        }
+
+        let wt = drum.wordTimeCount.toString();
+        for (let x=wt.length-3; x>0; x-=3) {
+            wt = `${wt.substring(0, x)},${wt.substring(x)}`;
+        }
+
+        this.runTime.textContent = (rt/1000).toFixed(2);
+        this.wordTimes.textContent = wt;
 
         this.drumLoc.updateFromRegister(drum.L);
         this.cmdLoc.updateFromRegister(p.cmdLoc);
@@ -163,6 +178,8 @@ class DiagPanel {
         this.doc = ev.target;
         this.window = this.doc.defaultView;
         this.panel = this.$$("DiagPanel");
+        this.runTime = this.$$("RunTime");
+        this.wordTimes = this.$$("WordTimes");
 
         this.drumLoc = new DiagRegister(this.$$("DrumLocBox"), 7, false, false, "DrumL_", "Drum L");
         this.cmdLoc = new DiagRegister(this.$$("CmdLocBox"), 7, false, false, "CmdL_", "Cmd L");
@@ -244,8 +261,3 @@ class DiagPanel {
     }
 
 } // class DiagPanel
-
-
-// Static class properties
-
-DiagPanel.displayRefreshPeriod = 50;    // ms

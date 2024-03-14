@@ -77,6 +77,8 @@ DIV.diagRegCaption {
     left:               calc(50% - 60px);
     width:              120px}
 
+#HeaderTable {
+    width:              100%}
 #Header {
     font-weight:        bold}
 

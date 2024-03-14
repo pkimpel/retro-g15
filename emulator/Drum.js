@@ -25,6 +25,8 @@ import {Register} from "./Register.js";
 
 class Drum {
 
+    static minDelayTime = 4;            // minimum time to accumulate throttling delay, >= 4ms
+
     constructor() {
         /* Constructor for the G-15 drum object, including the drum-based registers */
         let drumOffset = 0;
@@ -47,6 +49,8 @@ class Drum {
         // Main system timing variables
         this.eTime = 0;                 // current emulation time, ms
         this.eTimeSliceEnd = 0;         // current timeslice end emulation time, ms
+        this.runTime = 0;               // total accumulated run time, ms
+        this.wordTimeCount = 0;         // total accumulated word-times
         this.L = new Register(7, this, false);  // current drum rotational position: word-time 0-107
         this.drumTimer = new Util.Timer();
 
@@ -125,10 +129,25 @@ class Drum {
         to compensate for many browsers limiting the precision of
         performance.now() to one millisecond, which can make real time appear
         to go backwards */
+        const now = performance.now();
 
-        this.eTime = Math.max(performance.now(), this.eTime);
+        while (this.runTime >= 0) {
+            this.runTime -= now;
+        }
+
+        this.eTime = Math.max(this.eTime, now);
         this.eTimeSliceEnd = this.eTime + Drum.minDelayTime;
         this.L.value = Math.round(this.eTime/Util.wordTime) % Util.longLineSize;
+    }
+
+    /**************************************/
+    stopTiming() {
+        /* Stops the run timer */
+        const now = performance.now();
+
+        while (this.runTime < 0) {
+            this.runTime += performance.now();
+        }
     }
 
     /**************************************/
@@ -155,6 +174,7 @@ class Drum {
         of word-times, which must be non-negative. Increments the current drum
         location by that amount and advances the emulation clock accordingly */
 
+        this.wordTimeCount += wordTimes;
         this.L.value = (this.L.value + wordTimes) % Util.longLineSize;
         this.eTime += wordTimes*Util.wordTime;
     }
@@ -615,8 +635,3 @@ class Drum {
     }
 
 } // class Drum
-
-
-// Static class properties
-
-Drum.minDelayTime = 4;                  // minimum time to accumulate throttling delay, >= 4ms

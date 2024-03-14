@@ -33,6 +33,8 @@ const regAR = 28;                          // AR register drum line
 
 class Processor {
 
+    static CDXlate = [0, 1, 2, 3, 4, 5, 19, 23];        // translate CD register to drum line numbers
+
     constructor(context) {
         /* Constructor for the G-15 processor object. The "context" object
         supplies UI and I/O objects from the G-15 emulator global environment */
@@ -2441,6 +2443,7 @@ class Processor {
         catches up to emulation time. We continue to run until a halt condition
         is detected */
 
+        this.drum.startTiming();
         do {                            // run until halted
             if (this.RC.value) {        // enter READ COMMAND state
                 this.readCommand();
@@ -2473,6 +2476,7 @@ class Processor {
             }
         } while (!this.CH.value || !this.CZ.value);
 
+        this.drum.stopTiming();
         this.updateLampGlow(1);
     }
 
@@ -2483,7 +2487,6 @@ class Processor {
         if (this.poweredOn && this.CH.value) {
             this.CZ.value = 1;          // disable stepping
             this.CH.value = 0;          // reset HALT FF
-            this.drum.startTiming();
             this.run();                 // async -- returns immediately
         }
     }
@@ -2508,7 +2511,6 @@ class Processor {
 
         if (this.poweredOn && this.CH.value) {
             this.CZ.value = 0;          // enable stepping
-            this.drum.startTiming();
             this.run();                 // async -- returns immediately
         }
     }
@@ -2610,6 +2612,7 @@ class Processor {
             this.setCommandLine(7);             // execute code from line 23
             this.N.value = 0;
             await this.readPaperTape();         // read a bootstrap loader, ignore any hang
+            this.drum.stopTiming();
         }
     }
 
@@ -2754,8 +2757,3 @@ class Processor {
     }
 
 } // class Processor
-
-
-// Static class properties
-
-Processor.CDXlate = [0, 1, 2, 3, 4, 5, 19, 23];         // translate CD register to drum line numbers
