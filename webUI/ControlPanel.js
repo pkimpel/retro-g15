@@ -325,8 +325,10 @@ class ControlPanel {
         if (this.context.processor.CH.value) {  // system halted
             this.readyLamp.set(0);
             this.dcPowerLamp.set(0);
-            await timer.set(1500);          // wait for the DC power supplies...
+            this.$$("DCPowerLampFX").classList.add("powerUp");
+            await timer.set(5000);          // wait for the DC power supplies...
             this.dcPowerLamp.set(1);
+            this.$$("DCPowerLampFX").classList.remove("powerUp");
             await this.context.processor.systemReset();
             this.readyLamp.set(1);
             if (!this.panelEnabled) {

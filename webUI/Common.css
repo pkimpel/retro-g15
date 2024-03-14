@@ -305,7 +305,7 @@ BUTTON {
     padding-left:       0;
     padding-right:      0;
     border:             2px solid #DDD;
-    border-radius:      4px}
+    border-radius:      8px}
 
 BUTTON.large {
     font-family:        DejaVuSansWeb, sans-serif;

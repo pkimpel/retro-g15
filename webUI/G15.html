@@ -81,6 +81,12 @@
                 <input id=PTView type=text READONLY>
                 <div id=PTUnloadCaption class=caption>UNLOAD</div>
                 <div id=PTUnloadBtn class=blackButton3></div>
+                <div id=PTMenu>
+                    <button id=PTExtractBtn type=button>Extract</button>&nbsp;
+                    <button id=PTSaveBtn type=button>Save</button>&nbsp;
+                    <button id=PTClearBtn type=button>Clear</button>&nbsp;
+                    <button id=PTCloseBtn type=button>Close</button>
+                </div>
             </div>
 
             <div id=PaperTapeReader>
@@ -116,6 +122,7 @@
             <div id=PowerOffBtnCaption class=caption>OFF</div>
 
             <div id=DCPowerLampCaption class=caption>DC</div>
+            <div id=DCPowerLampFX class=redLamp></div>
 
             <div id=ReadyLampCaption class=caption>READY</div>
 
@@ -162,8 +169,20 @@
     </div>
 
     <div id=TypewriterOutput>
-        <div id=TypewriterPaper class=paper title="Double-click to copy all text">&nbsp;</div>
-        <div id=EndOfPaper>&nbsp;</div>
+        <div id=TypewriterPaperDiv>
+            <iframe id=TypewriterPaper src="./FramePaper.html">
+            </iframe>
+            <!-- div id=TypewriterPaper class=paper>&nbsp;</div -->
+            <img id=TypewriterMenuIcon src="./resources/icons8-menu-24.png"
+                 alt="Menu icon" title="Click to open menu">
+            <div id=TypewriterMenu>
+                <button id=TypewriterExtractBtn type=button>Extract</button>&nbsp;
+                <button id=TypewriterPrintBtn type=button>Print</button>&nbsp;
+                <button id=TypewriterSaveBtn type=button>Save</button>&nbsp;
+                <button id=TypewriterClearBtn type=button>Clear</button>&nbsp;
+                <button id=TypewriterCloseBtn type=button>Close</button>
+            </div>
+        </div>
     </div>
 </div>
 

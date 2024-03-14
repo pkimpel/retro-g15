@@ -22,6 +22,12 @@ import {openPopup} from "./PopupUtil.js";
 
 class PaperTapePunch {
 
+    static bufferLimit = 0x40000;       // maximum output that will be buffered (about 4 hours worth)
+    static viewMax = 60;                // characters retained in the tape view (originally 90)
+    static tapeCodes = [
+        " ", "-", "C", "T", "S", "/", ".", "~", " ", "-", "C", "T", "S", "/", ".", "~",
+        "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "u", "v", "w", "x", "y", "z"];
+
     constructor(context) {
         /* Initializes and wires up events for the Paper Tape punch.
         "context" is an object passing other objects and callback functions from
@@ -33,13 +39,14 @@ class PaperTapePunch {
         let $$ = this.$$ = context.$$;
         this.processor = context.processor;
         this.window = context.window;
+        this.doc = this.window.document;
         this.tapeView = $$("PTView");
-        this.boundUnloadButtonClick = this.unloadButtonClick.bind(this);
+        this.boundMenuClick = this.menuClick.bind(this);
 
         this.clear();
 
-        $$("PTUnloadBtn").addEventListener("click", this.boundUnloadButtonClick);
-        $$("PTUnloadCaption").addEventListener("click", this.boundUnloadButtonClick);
+        $$("PTUnloadBtn").addEventListener("click", this.boundMenuClick);
+        $$("PTUnloadCaption").addEventListener("click", this.boundMenuClick);
     }
 
     /**************************************/
@@ -63,7 +70,7 @@ class PaperTapePunch {
     }
 
     /**************************************/
-    punchCopyTape() {
+    extractTape() {
         /* Copies the text contents of the "paper" area of the device, opens a new
         temporary window, and pastes that text into the window so it can be copied
         or saved by the user */
@@ -71,25 +78,74 @@ class PaperTapePunch {
 
         openPopup(this.window, "./FramePaper.html", "",
                 "scrollbars,resizable,width=500,height=500",
-                this, function(ev) {
+                this, (ev) => {
             let doc = ev.target;
             let win = doc.defaultView;
 
             doc.title = title;
             win.moveTo((screen.availWidth-win.outerWidth)/2, (screen.availHeight-win.outerHeight)/2);
             doc.getElementById("Paper").textContent = this.buffer;
-            this.setPunchEmpty();
         });
     }
 
     /**************************************/
-    unloadButtonClick(ev) {
-        /* Clears the internal tape buffer in response to the UNLOAD button */
+    saveTape() {
+        /* Extracts the text of the punch output area, converts it to a
+        DataURL, and constructs a link to cause the URL to be "downloaded" and
+        stored on the local device */
+        let text = this.buffer;
 
-        if (this.ready && !this.busy) {
-            this.punchCopyTape();
-            ev.preventDefault();
-            ev.stopPropagation();
+        if (text[text.length-1] != "\n") {      // make sure there's a final new-line
+            text = text & "\n";
+        }
+
+        const url = `data:text/plain,${encodeURIComponent(text)}`;
+        const hiddenLink = this.doc.createElement("a");
+
+        hiddenLink.setAttribute("download", "retro-g15-Paper-Tape.txt");
+        hiddenLink.setAttribute("href", url);
+        hiddenLink.click();
+    }
+
+    /**************************************/
+    menuOpen() {
+        /* Opens the PT menu panel and wires up events */
+
+        this.$$("PTMenu").style.display = "block";
+        this.$$("PTMenu").addEventListener("click", this.boundMenuClick, false);
+    }
+
+    /**************************************/
+    menuClose() {
+        /* Closes the PT menu panel and disconnects events */
+
+        this.$$("PTMenu").removeEventListener("click", this.boundMenuClick, false);
+        this.$$("PTMenu").style.display = "none";
+    }
+
+    /**************************************/
+    menuClick(ev) {
+        /* Event handler for the UNLOAD button. Saves and/or clears the tape buffer */
+
+        switch (ev.target.id) {
+        case "PTUnloadBtn":
+        case "PTUnloadCaption":
+            this.menuOpen();
+            break;
+        case "PTExtractBtn":
+            this.extractTape();
+            break;
+        case "PTSaveBtn":
+            if (this.ready && !this.busy) {
+                this.saveTape();
+            }
+            break;
+        case "PTClearBtn":
+            this.setPunchEmpty();
+            //-no break -- clear always closes panel
+        case "PTCloseBtn":
+            this.menuClose();
+            break;
         }
     }
 
@@ -110,7 +166,6 @@ class PaperTapePunch {
         characters per second, but the timing was controlled by the processor,
         which sent codes to the device at a rate of one every two drum cycles,
         about 17.2 characters per second */
-        const viewMax = 90;             // characters retained in the tape view
         let char = PaperTapePunch.tapeCodes[code];
 
         if (this.bufLength < PaperTapePunch.bufferLimit) {
@@ -128,14 +183,14 @@ class PaperTapePunch {
             // Update the tape view control
             let view = this.tapeView.value; // current tape view contents
             let viewLength = view.length;   // current tape view length
-            if (viewLength < viewMax) {
+            if (viewLength < PaperTapePunch.viewMax) {
                 this.tapeView.value = view + char;
                 ++viewLength;
             } else {
-                this.tapeView.value = view.substring(viewLength-(viewMax-1)) + char;
+                this.tapeView.value = view.slice(1-PaperTapePunch.viewMax) + char;
             }
 
-            this.tapeView.setSelectionRange(viewLength-1, viewLength);
+            //this.tapeView.setSelectionRange(viewLength-1, viewLength);
         }
     }
 
@@ -143,15 +198,7 @@ class PaperTapePunch {
     shutDown() {
         /* Shuts down the device */
 
-        this.$$("PTUnloadBtn").removeEventListener("click", this.boundUnloadButtonClick);
-        this.$$("PTUnloadCaption").removeEventListener("click", this.boundUnloadButtonClick);
+        this.$$("PTUnloadBtn").removeEventListener("click", this.boundMenuClick);
+        this.$$("PTUnloadCaption").removeEventListener("click", this.boundMenuClick);
     }
-}
-
-
-// Static properties
-
-PaperTapePunch.bufferLimit = 0x40000;   // maximum output that will be buffered (about 4 hours worth)
-PaperTapePunch.tapeCodes = [
-    " ", "-", "C", "T", "S", "/", ".", "~", " ", "-", "C", "T", "S", "/", ".", "~",
-    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "u", "v", "w", "x", "y", "z"];
+} // class PaperTapePunch

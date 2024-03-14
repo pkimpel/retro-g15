@@ -128,7 +128,7 @@ let globalLoad = (ev) => {
     /**************************************/
     function systemShutDown() {
         /* Powers down the Processor and shuts down all of the panels and I/O devices */
-        let processor = context.processor;
+        const processor = context.processor;
 
         if (processor.CH.value == 0 || processor.OC.value & 0b1111) {
             processor.stop();
@@ -146,18 +146,26 @@ let globalLoad = (ev) => {
         }
 
         closeDiagPanel();
-        context.controlPanel.disablePanel();
-
-        processor.powerDown();
-        context.devices = null;
-        context.processor = null;
-
         $$("G15Logo").removeEventListener("dblclick", openDiagPanel, false);
         $$("StartUpBtn").disabled = false;
         $$("StartUpBtn").focus();
         window.removeEventListener("beforeunload", beforeUnload);
         //$$("ConfigureBtn").disabled = false;
         //config.flush();
+
+        if (processor.poweredOn) {
+            $$("DCPowerLamp").classList.remove("redLit");
+            $$("DCPowerLampFX").classList.add("powerDown");
+        }
+
+        setTimeout(() => {       // wait for the DC power supplies...
+            $$("DCPowerLampFX").classList.remove("powerDown");
+            context.controlPanel.disablePanel();
+
+            processor.powerDown();
+            context.devices = null;
+            context.processor = null;
+        }, processor.poweredOn ? 3000 : 1000);
     }
 
     /**************************************/

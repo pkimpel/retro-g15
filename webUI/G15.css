@@ -149,6 +149,26 @@ H1 {
     position:           absolute;
     top:                -2px;
     right:              0}
+#PTMenu {
+    position:           absolute;
+    display:            none;
+    top:                -2px;
+    right:              -2px;
+    width:              320px;
+    height:             40px;
+    z-index:            12;
+    text-align:         center;
+    background-color:   #FFC;
+    border:             1px solid #666;
+    box-shadow:         3px 3px 3px black}
+#PTMenu BUTTON {
+    position:           relative;
+    top:                50%;
+    height:             24px;
+    line-height:        100%;
+    background-color:   white;
+    border:             2px solid #666;
+    transform:          translate(0, -50%)}
 
 #PaperTapeReader {
     position:           absolute;
@@ -308,6 +328,27 @@ H1 {
 
 /* Power Panel controls */
 
+.powerUp {
+    animation-name:     powerUpAnimation;
+    animation-duration: 5s;
+    animation-timing-function: ease-in;
+    animation-direction:normal;
+    animation-fill-mode:forwards}
+
+.powerDown {
+    animation-name:     powerUpAnimation;
+    animation-duration: 3s;
+    animation-timing-function: ease-in;
+    animation-direction:reverse;
+    animation-fill-mode:forwards}
+
+@keyframes powerUpAnimation {
+    from {
+        opacity:        0}
+    to {
+        opacity:        1}
+    }
+
 #PowerPanel {
     position:           absolute;
     left:               24px;
@@ -324,10 +365,15 @@ H1 {
     bottom:             0;
     width:              34px}
 
-#DCPowerLamp {
+#DCPowerLamp,
+#DCPowerLampFX {
     left:               56px;
     bottom:             21px;
     box-shadow:         4px 4px 4px #222}
+#DCPowerLampFX {        /* used to animate the power up/down sequence */
+    opacity:            0;
+    z-index:            1;
+    background-image:   radial-gradient(circle, #F00, #E00, #900)}
 #DCPowerLampCaption {
     left:               52px;
     bottom:             0;
@@ -397,7 +443,7 @@ H1 {
     width:              112px;
     transform:          rotate(2deg)}
 
-/* Typewriter output */
+/* Typewriter output pane */
 
 #TypewriterOutput {
     position:           absolute;
@@ -405,11 +451,20 @@ H1 {
     bottom:             16px;
     left:               8px;
     right:              8px}
-
-#TypewriterPaper {
+#TypewriterPaperDiv {
     position:           absolute;
     height:             100%;
     width:              calc(100% - 8px);
+    min-width:          600px;                  /* same as ControlPanelFrame */
+    max-width:          calc(133ch + 20px);     /* allow for scroll bar */
+    left:               50%;
+    transform:          translate(-50%, 0);
+    font-size:          12px;
+    font-family:        Courier New, Courier, Consolas, monospace}
+#TypewriterPaper {
+    position:           absolute;
+    height:             100%;
+    width:              100%;
     min-width:          600px;                  /* same as ControlPanelFrame */
     max-width:          calc(133ch + 20px);     /* allow for scroll bar */
     left:               50%;
@@ -419,6 +474,29 @@ H1 {
     padding:            4px;
     color:              black;
     background-color:   #FFE;
-    border:             1px solid gray;
-    font-size:          12px;
-    font-family:        Courier New, Courier, Consolas, monospace}
+    border:             1px solid gray}
+#TypewriterMenuIcon {
+    position:           absolute;
+    top:                4px;
+    right:              20px;
+    z-index:            10}
+#TypewriterMenu {
+    position:           absolute;
+    display:            none;
+    top:                8px;
+    right:              4px;
+    width:              410px;
+    height:             40px;
+    z-index:            12;
+    text-align:         center;
+    background-color:   #FFC;
+    border:             1px solid #666;
+    box-shadow:         3px 3px 3px #999}
+#TypewriterMenu BUTTON {
+    position:           relative;
+    top:                50%;
+    height:             24px;
+    line-height:        100%;
+    background-color:   white;
+    border:             2px solid #666;
+    transform:          translate(0, -50%)}
