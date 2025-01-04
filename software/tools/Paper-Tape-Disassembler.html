@@ -149,13 +149,13 @@ window.addEventListener("load", function() {
     // Peripheral device data codes
     const ioDataMask =       0b10000;   // mask bit for data-valued I/O codes
     const ioCodeSpace =      0b00000;   // space/empty-frame code
-    const ioCodeMinus =      0b00001;   // minus sign
+    const ioCodeMinus =      0b00001;   // minus sign (-)
     const ioCodeCR =         0b00010;   // carriage-return
-    const ioCodeTab =        0b00011;   // tab
-    const ioCodeStop =       0b00100;   // block end/stop code
-    const ioCodeReload =     0b00101;   // buffer reload code (/)
-    const ioCodePeriod =     0b00100;   // period character code
-    const ioCodeWait =       0b00111;   // data-skip code
+    const ioCodeTab =        0b00011;   // tab (T)
+    const ioCodeStop =       0b00100;   // block end/stop code (S)
+    const ioCodeReload =     0b00101;   // buffer reload code (/, R)
+    const ioCodePeriod =     0b00110;   // period character code (.)
+    const ioCodeWait =       0b00111;   // data-skip code (H)
 
     const panel = $$("TextPanel");
 
@@ -173,8 +173,8 @@ window.addEventListener("load", function() {
     let startAddress = 0;               // starting execution address
 
     const printCodes = [
-        " ", "-", "\n", "\t", "$", "!", ".", "~", " ", "-", "\n", "\t", "$", "!", ".", "~",
-        "0", "1",  "2",  "3", "4", "5", "6", "7", "8", "9",  "u",  "v", "w", "x", "y", "z"];
+        " ", "-", "C", "T", "S", "/", ".", "H", " ", "-", "C", "T", "S", "/", ".", "H",
+        "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "u", "v", "w", "x", "y", "z"];
 
     // Filter ASCII character values to I/O frame code values.
     const ioCodeFilter = [
@@ -183,10 +183,10 @@ window.addEventListener("load", function() {
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,  // 10-1F
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01,0x06,0x05,  // 20-2F
             0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0x00,0x00,0x00,0x00,0x00,0x00,  // 30-3F
-            0x00,0x00,0x00,0x02,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,  // 40-4F
-            0x00,0x00,0x00,0x04,0x03,0x1A,0x1B,0x1C,0x1D,0x1E,0x1F,0x00,0x00,0x00,0x00,0x00,  // 50-5F
-            0x00,0x00,0x00,0x02,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,  // 60-6F
-            0x00,0x00,0x00,0x04,0x03,0x1A,0x1B,0x1C,0x1D,0x1E,0x1F,0x00,0x00,0x00,0x07,0x00]; // 70-7F
+            0x00,0x00,0x00,0x02,0x00,0x00,0x00,0x00,0x07,0x00,0x00,0x00,0x00,0x00,0x00,0x00,  // 40-4F
+            0x00,0x00,0x05,0x04,0x03,0x1A,0x1B,0x1C,0x1D,0x1E,0x1F,0x00,0x00,0x00,0x00,0x00,  // 50-5F
+            0x00,0x00,0x00,0x02,0x00,0x00,0x00,0x00,0x07,0x00,0x00,0x00,0x00,0x00,0x00,0x00,  // 60-6F
+            0x00,0x00,0x05,0x04,0x03,0x1A,0x1B,0x1C,0x1D,0x1E,0x1F,0x00,0x00,0x00,0x00,0x00]; // 70-7F
 
 
     /*******************************************************************
@@ -288,15 +288,31 @@ window.addEventListener("load", function() {
     /**************************************/
     function readCode() {
         /* Reads one character from the tape buffer, returns it as a G-15 data code */
+        let bypass = false;             // true if bypassing comment (#) text
 
-        if (tapeData.offset >= tapeData.length) {
-            tapeData.atEOF = true;
-            return ioCodeStop;
-        } else {
-            let code = ioCodeFilter[tapeData.buffer.charCodeAt(tapeData.offset) & 0x7F];
-            ++tapeData.offset;
-            return code;
-        }
+        do {
+            if (tapeData.offset >= tapeData.length) {
+                tapeData.atEOF = true;
+                return ioCodeStop;
+            }
+
+            if (bypass) {
+                switch (tapeData.buffer[tapeData.offset]) {
+                case "\r":
+                case "\n":
+                    bypass = false;
+                    break;
+                }
+                ++tapeData.offset;
+            } else if (tapeData.buffer[tapeData.offset] == "#") {
+                bypass = true;
+                ++tapeData.offset;
+            } else {
+                let code = ioCodeFilter[tapeData.buffer.charCodeAt(tapeData.offset) & 0x7F];
+                ++tapeData.offset;
+                return code;
+            }
+        } while (true);
     }
 
     /**************************************/
@@ -374,7 +390,7 @@ window.addEventListener("load", function() {
     *******************************************************************/
 
     /**************************************/
-    function disassembleBlock(block) {
+    function disassembleBlock(block, blockLen) {
         /* Disassembles one block of words */
         let ch = "";                    // command characteristic interpretation
         let head = "";                  // left-hand fields
@@ -387,8 +403,13 @@ window.addEventListener("load", function() {
         let seq = "";                   // flag indicating whether next command is at this or next word
         let tail = "";                  // right-hand fields
         let timing = 0;                 // transfer state timing
+        let tt = 0;                     // total command timing
         let value = 0;                  // magnitude of current word
         let word = 0;                   // current word being interpreted
+        let wrc = 0;                    // wait-for-read-command timing
+        let wtr = 0;                    // actual wait-for-transfer timing
+        let wtrd = 0;                   // destination wait-for-transfer timing
+        let wtrs = 0;                   // source wait-for-transfer timing
 
         let p = 0;                      // prefix -- 0=immediate, 1=deferred
         let t = 0;                      // T -- timing number
@@ -401,7 +422,7 @@ window.addEventListener("load", function() {
         let cs = 0;                     // "via AR" flip flop
         let nL = 0;                     // drum location after transfer state
 
-        for (let loc=0; loc<longLineSize; ++loc) {
+        for (let loc=0; loc<blockLen; ++loc) {
             word = block[loc];
             value = word >> 1;
             sign = word & 1;
@@ -480,6 +501,12 @@ window.addEventListener("load", function() {
 
             // Determine operand address and command timing.
             op = (p ? t : loc+1);
+            wtrd = (p ? t-loc-1 : 0);
+            if (p && wtrd <= 0) {
+                wtrd += longLineSize;
+            }
+
+            wtrs = wtrd;
             timing = (p ? dp+1 : t-loc-1);
             if (timing <= 0) {
                 timing += longLineSize;
@@ -492,32 +519,41 @@ window.addEventListener("load", function() {
                    src += op;
                 } else {
                    src += (op % 4);
+                   wtrs %= 4;
                 }
             } else if (s < 32) {
                 switch (s) {
                 case 24:
                     src = "MQ:" + (op % 2);
+                    wtrs %= 2;
                     break;
                 case 25:
                     src = "ID:" + (op % 2);
+                    wtrs %= 2;
                     break;
                 case 26:
                     src = "PN:" + (op % 2);
+                    wtrs %= 2;
                     break;
                 case 27:
                     src = "(20.21+20/.AR):" + op % 4;
+                    wtrs %= 4;
                     break;
                 case 28:
                     src = "AR";
+                    wtrs = 0;
                     break;
                 case 29:
                     src = "(20.IR):" + op % 4;
+                    wtrs %= 4;
                     break;
                 case 30:
                     src = "(20/.21):" + op % 4;
+                    wtrs %= 4;
                     break;
                 case 31:
                     src = "(20.21):" + op % 4;
+                    wtrs %= 4;
                     break;
                 default:
                     src = `<S=${s} Invalid>`;
@@ -532,29 +568,37 @@ window.addEventListener("load", function() {
                    dest += op.toString();
                 } else {
                    dest += (op % 4).toString();
+                   wtrd %= 4;
                 }
             } else if (d < 31) {
                 switch (d) {
                 case 24:
                     dest = "MQ:" + (op % 2);
+                    wtrd %= 2;
                     break;
                 case 25:
                     dest = "ID:" + (op % 2);
+                    wtrd %= 2;
                     break;
                 case 26:
                     dest = "PN:" + (op % 2);
+                    wtrd %= 2;
                     break;
                 case 27:
                     dest = "TEST:" + op;
+                    wtrd = 0;
                     break;
                 case 28:
                     dest = "AR";
+                    wtrd = 0;
                     break;
                 case 29:
                     dest = "AR+";
+                    wtrd = 0;
                     break;
                 case 30:
-                    dest = "PN+:" + op % 2;
+                    dest = "PN+:" + (op % 2);
+                    wtrd %= 2;
                     break;
                 default:
                     dest = `<D=${d} Invalid>`;
@@ -763,6 +807,12 @@ window.addEventListener("load", function() {
             }
 
             nL = (op + timing + longLineSize) % longLineSize;
+            wtr = Math.max(wtrd, wtrs);
+            wrc = (n - nL + longLineSize) % longLineSize;
+            tt = 1 + wtr + timing + wrc;
+            head += wtr.toString().padStart(5, " ") + wrc.toString().padStart(4, " ") +
+                    tt.toString().padStart(4, " ") +
+                    ((loc+1)%longLineSize == t ? "+" : " ") + " ";
             printLine(`${head}${tail}${(p ? "" : " #" + timing)}, nL=${nL}, N=${n}${seq}`);
         }
     }
@@ -811,7 +861,7 @@ window.addEventListener("load", function() {
         timing contraints, so it is eliminated here and words precess from 23
         directly into 19 in this implementation */
         let bitCount = 0;               // current block bit count
-        let bx = 0;                     // block word index
+        let blockLen = 0;               // current block word count
         let code = 0;                   // current data code from tape
         let sign = 0;                   // current sign bit
 
@@ -836,6 +886,7 @@ window.addEventListener("load", function() {
                 case ioCodeReload:      // reload
                     ioPrecess23To19(line23, line19);
                     bitCount = 0;
+                    blockLen += fastLineSize;
                     break;
                 case ioCodePeriod:      // period: ignored
                     break;
@@ -852,16 +903,19 @@ window.addEventListener("load", function() {
             if (autoReload && bitCount >= fastLineSize*wordBits) {
                 ioPrecess23To19(line23, line19);
                 bitCount = 0;
+                blockLen += fastLineSize;
             }
         } while (code != ioCodeStop);
 
         gobbleWhiteSpace();
+        return blockLen;
     }
 
     /**************************************/
     function disassembleTape() {
         /* Initializes or reinitializes the disassembler for a new tape file */
         let blockNr = 0;
+        let blockLen = 0;
         let line19 = new Array(longLineSize);   // line 19 buffer
         let line23 = new Array(fastLineSize);   // line 23 buffer
         let stamp = new Date();
@@ -886,13 +940,13 @@ window.addEventListener("load", function() {
 
         do {
             ++blockNr;
+            blockLen = readBlock(line23, line19);
             printLine("");
-            printLine(`Block # ${blockNr}:`);
+            printLine(`Block # ${blockNr}, ${blockLen} words:`);
             printLine("");
-            printLine(" Raw hex     ±hex    Decimal   Fractional i/d T   N C  S  D DP BP  L  Interpretation");
+            printLine(" Raw hex     ±hex    Decimal   Fractional i/d T   N C  S  D DP BP WTR WRC  TT     L  Interpretation");
             printLine("");
-            readBlock(line23, line19);
-            disassembleBlock(line19);
+            disassembleBlock(line19, blockLen);
         } while (!tapeData.atEOF);
 
         printLine("");

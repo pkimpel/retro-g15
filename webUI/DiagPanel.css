@@ -12,6 +12,9 @@
 ***********************************************************************/
 
 BODY {
+    width:              calc(100% - 24px);
+    margin:             0;
+    padding:            4px;
     background-color:   #FFC}
 
 DIV.diagCaption {

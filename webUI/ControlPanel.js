@@ -197,6 +197,26 @@ class ControlPanel {
     }
 
     /**************************************/
+    setComputeSwitch(state) {
+        /* Sets the state of the ComputeSwitch based on "state": 0=OFF, 1=GO, 2=BP.
+        This allows external panels (e.g., DiagPanel) to control the visible state
+        of the switch */
+
+        this.context.processor.computeSwitchChange(state);
+        switch (state) {
+            case 0:     // OFF
+                this.$$("ComputeSwitchOff").checked = true;
+                break;
+            case 1:     // GO
+                this.$$("ComputeSwitchGo").checked = true;
+                break;
+            case 2:     // BP
+                this.$$("ComputeSwitchBP").checked = true;
+                break;
+        }
+    }
+
+    /**************************************/
     controlSwitchChange(ev) {
         /* Event handler for the pane's switch controls */
         let p = this.context.processor; // local copy of Processor reference
@@ -218,13 +238,13 @@ class ControlPanel {
             p.punchSwitchChange(2);
             break;
         case "ComputeSwitchOff":
-            p.computeSwitchChange(0);
+            this.setComputeSwitch(0);
             break;
         case "ComputeSwitchGo":
-            p.computeSwitchChange(1);
+            this.setComputeSwitch(1);
             break;
         case "ComputeSwitchBP":
-            p.computeSwitchChange(2);
+            this.setComputeSwitch(2);
             break;
         case "ViolationResetBtn":
             p.violationReset();

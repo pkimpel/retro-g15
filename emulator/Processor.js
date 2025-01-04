@@ -634,7 +634,7 @@ class Processor {
                 case 25:    // ID
                 case 26:    // PN
                     if (!this.C1.value || this.drum.CE) {
-                        word &= Util.absWordMask;       // zero sign bit on even word for DP
+                        word &= Util.absWordMask;               // zero sign bit on even word for DP
                     }
                     break;
                 }
@@ -642,13 +642,15 @@ class Processor {
                     this.CQ.value = 1;
                 }
                 break;
+
             case 1: // AD ("add": complement negative numbers)
                 if (word) {
                     this.CQ.value = 1;
                 }
                 break;
+
             case 2: // TVA (transfer via AR) or AV (absolute value)
-                if (this.CS.value) {
+                if (this.CS.value) {            // transfer via AR
                     if (this.S.value >= 28) {
                         this.violation("TR TEST D=27: CH=2 S>=28");
                     }
@@ -661,19 +663,20 @@ class Processor {
                     case 25:    // ID
                     case 26:    // PN
                         if (!this.C1.value || this.drum.CE) {
-                            word &= Util.absWordMask;   // zero sign bit on even word for DP
+                            word &= Util.absWordMask;           // zero sign bit on even word for DP
                         }
                         break;
                     }
                     this.drum.write(regAR, word);
-                } else {
-                    if (word) {
+                } else {                        // absolute value
+                    if (word & Util.absWordMask) {
                         this.CQ.value = 1;
                     }
                 }
                 break;
-            case 3: // SU ("subtract": change sign)
-                if (this.CS.value) {
+
+            case 3: // AVA (add via AR) or SU ("subtract": change sign)
+                if (this.CS.value) {            // add via AR
                     if (this.S.value >= 28) {
                         this.violation("TR TEST D=27: CH=3 S>=28");
                     }
@@ -683,7 +686,7 @@ class Processor {
                     }
                     this.drum.write(regAR, this.complementDoubleOdd(word));
                 } else {
-                    if (word) {
+                    if (word ^1) {
                         this.CQ.value = 1;
                     }
                 }
@@ -960,6 +963,9 @@ class Processor {
             case 1: // AD
                 if (!this.C1.value || this.drum.CE) {           // SP operation or even word
                     a = this.complementSingle(word);
+                    if ((a & Util.absWordMask) == 0) {
+                        a = 0;
+                    }
                 } else {                // DP odd word
                     a = this.complementDoubleOdd(word);
                 }
@@ -991,7 +997,7 @@ class Processor {
 
     /**************************************/
     addToAR() {
-        /* Executes an addition from any source to the AR register (D=29).
+        /* Executes an addition from any source to the AR+ register (D=29).
         AR is assumed to be in complement form. Sets OVERFLOW if necessary */
 
         this.transferDriver(() => {

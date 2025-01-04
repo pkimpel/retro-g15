@@ -165,6 +165,7 @@ H1 {
     position:           relative;
     top:                50%;
     height:             24px;
+    font-size:          9pt;
     line-height:        100%;
     background-color:   white;
     border:             2px solid #666;
@@ -215,8 +216,7 @@ H1 {
     top:                24px;
     left:               60px;
     width:              calc(100% - 144px);
-    height:             16px;
-    border:             1px solid white}        /* kludge for Safari <meter> */
+    height:             16px}
 
 #PRBlockNrDiv {
     position:           absolute;
@@ -496,6 +496,7 @@ H1 {
     position:           relative;
     top:                50%;
     height:             24px;
+    font-size:          9pt;
     line-height:        100%;
     background-color:   white;
     border:             2px solid #666;

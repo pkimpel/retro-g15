@@ -56,6 +56,8 @@ class Typewriter {
 
         $$("FrontPanel").addEventListener("keydown", this.boundPanelKeydown, false);
         $$("FrontPanel").addEventListener("keyup", this.boundPanelKeyup, false);
+        this.paperDoc.addEventListener("keydown", this.boundPanelKeydown, false);
+        this.paperDoc.addEventListener("keyup", this.boundPanelKeyup, false);
         $$("TypewriterMenuIcon").addEventListener("click", this.boundMenuClick, false);
 
     }
@@ -211,7 +213,7 @@ class Typewriter {
         paper.appendChild(this.doc.createTextNode(Typewriter.cursorChar));
         ++this.printerLine;
         this.printerCol = 0;
-        this.paper.scrollTop = this.paper.scrollHeight; // scroll to end
+        paper.scrollIntoView(false);
     }
 
     /**************************************/
