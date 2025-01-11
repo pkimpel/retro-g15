@@ -38,6 +38,9 @@ class DiagPanel {
         this.boundUpdatePanel = this.updatePanel.bind(this);
         this.boundShutDown = this.shutDown.bind(this);
         this.boundDumpLine = this.dumpLine.bind(this);
+
+        this.boundSetAudioLines = this.setAudioLines.bind(this);
+
         this.boundProcStep = context.processor.step.bind(this.context.processor);
         this.boundProcBP = (ev) => {
             this.context.controlPanel.setComputeSwitch(2);
@@ -48,6 +51,7 @@ class DiagPanel {
        this.boundProcStop = (ev) => {
             this.context.controlPanel.setComputeSwitch(0);
         };
+
 
         // Create the panel window
         this.doc = null;
@@ -113,6 +117,12 @@ class DiagPanel {
         }
 
         this.$$(id).textContent = text;
+    }
+
+    /**************************************/
+    setAudioLines(){
+        let text = this.$$("AdudioLines").value.trim();
+        this.context.devices.sound.lines = text;
     }
 
     /**************************************/
@@ -236,6 +246,7 @@ class DiagPanel {
         this.$$("BPBtn").addEventListener("click", this.boundProcBP);
         this.$$("GoBtn").addEventListener("click", this.boundProcGo);
         this.$$("StopBtn").addEventListener("click", this.boundProcStop);
+        this.$$("AdudioLines").addEventListener("change", this.boundSetAudioLines);
         this.window.addEventListener("unload", this.boundShutDown);
 
         this.updatePanel();
