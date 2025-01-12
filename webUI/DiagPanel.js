@@ -241,7 +241,7 @@ class DiagPanel {
         this.$$("BPBtn").addEventListener("click", this.boundProcBP);
         this.$$("GoBtn").addEventListener("click", this.boundProcGo);
         this.$$("StopBtn").addEventListener("click", this.boundProcStop);
-        this.$$("AdudioLines").addEventListener("change", this.boundSetAudioLines);
+        this.$$("AdudioLines").addEventListener("keyup", this.boundSetAudioLines);
         this.window.addEventListener("unload", this.boundShutDown);
 
         this.updatePanel();
@@ -258,6 +258,7 @@ class DiagPanel {
         this.$$("StepBtn").removeEventListener("click", this.boundProcStep);
         this.$$("GoBtn").removeEventListener("click", this.boundProcGo);
         this.$$("StopBtn").removeEventListener("click", this.boundProcStop);
+        this.$$("AdudioLines").removeEventListener("keyup", this.boundSetAudioLines);
         if (this.intervalToken) {       // if the display auto-update is running
             this.window.clearInterval(this.intervalToken);  // kill it
             this.intervalToken = 0;
