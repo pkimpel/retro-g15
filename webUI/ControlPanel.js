@@ -341,15 +341,27 @@ class ControlPanel {
     async systemReset(ev) {
         /* Event handler for the RESET button */
         let timer = new Util.Timer();
+        let systemClick = this.$$("SystemClick");
 
-        if (this.context.processor.CH.value) {  // system halted
+        if (this.context.processor.CH.value) {          // system halted
+            this.$$("ResetBtn").removeEventListener("click", this.boundSystemReset, false);
             this.readyLamp.set(0);
             this.dcPowerLamp.set(0);
             this.$$("DCPowerLampFX").classList.add("powerUp");
-            await timer.set(5000);          // wait for the DC power supplies...
+
+            await timer.set(1500);                      // wait for the DC power supplies...
+            systemClick.volume = 1;
+            systemClick.currentTime = 0;
+            systemClick.play();
+            await timer.set(2000);
+            systemClick.currentTime = 0;
+            systemClick.play();
+            await timer.set(1500);
+
             this.dcPowerLamp.set(1);
             this.$$("DCPowerLampFX").classList.remove("powerUp");
             await this.context.processor.systemReset();
+            this.$$("ResetBtn").addEventListener("click", this.boundSystemReset, false);
             this.readyLamp.set(1);
             if (!this.panelEnabled) {
                 this.enablePanel();

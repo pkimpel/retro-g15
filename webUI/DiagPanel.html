@@ -49,6 +49,7 @@
     </div>
 
     <div id=CmdDiv>
+        <div id=CmdDisasmBox>&nbsp;</div>
         <div id=DIBox class=diagLampBox></div>
         <div id=TBox  class=diagRegister></div>
         <div id=BPBox class=diagLampBox></div>
@@ -93,11 +94,19 @@
               MZ: <span id=LineMZDump class=dumpText></span></div>
 </div>
 
+<div id=BPSetDiv>
+    Breakpoint at Line <input id=BPSetLine type=text size=3 maxLength=2>
+                Word <input id=BPSetWord type=text size=4 maxLength=3>
+    <div id=BPSetDisasm>&nbsp;</div>
+    <input id=BPSetCheck type=checkbox DISABLED value=1>
+    <label for=BPSetCheck class=bold>BP</label>
+</div>
+
 <div id=ButtonDiv>
     <button id=StepBtn type=button>Step</button>
     <button id=BPBtn type=button>BP</button>
-    <button id=GoBtn type=button>GO</button>
     <button id=StopBtn type=button>Stop</button>
+    <button id=GoBtn type=button>GO</button>
 </div>
 
 </body>

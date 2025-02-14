@@ -29,6 +29,8 @@ export let wordTime = 0;                        // one word time on the drum [12
 export let bitTime = 0;                         // one bit time on the drum, ms
 export let drumCycleTime = 0;                   // one drum cycle (108 words), ms
 
+export const hex = "0123456789uvwxyz";
+
 const hexRex = /[abcdefABCDEF]/g;               // standard hex characters
 const g15HexXlate = {
         "a": "u", "A": "u",

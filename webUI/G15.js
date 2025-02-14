@@ -154,12 +154,17 @@ let globalLoad = (ev) => {
         //config.flush();
 
         if (processor.poweredOn) {
+            const systemShutdown = $$("SystemShutdown");
+            systemShutdown.volume = 0.25;
+            systemShutdown.currentTime = 0;
+            systemShutdown.play();
             $$("DCPowerLamp").classList.remove("redLit");
             $$("DCPowerLampFX").classList.add("powerDown");
         }
 
         setTimeout(() => {       // wait for the DC power supplies...
             $$("DCPowerLampFX").classList.remove("powerDown");
+            $$("SystemShutdown").pause();
             context.controlPanel.disablePanel();
 
             processor.powerDown();

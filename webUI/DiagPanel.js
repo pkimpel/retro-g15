@@ -17,6 +17,7 @@ import * as Util from "../emulator/Util.js";
 import {DiagRegister} from "./DiagRegister.js";
 import {DiagLamp} from "./DiagLamp.js";
 import {openPopup} from "./PopupUtil.js";
+import {Processor} from "../emulator/Processor.js";
 
 class DiagPanel {
 
@@ -35,9 +36,12 @@ class DiagPanel {
 
         this.context = context;
         this.intervalToken = 0;         // interval timer cancel token
+        this.bpSetLoc = null;           // drum location of BPSet word
         this.boundUpdatePanel = this.updatePanel.bind(this);
+        this.boundFocusHandler = this.focusHandler.bind(this);
         this.boundShutDown = this.shutDown.bind(this);
         this.boundDumpLine = this.dumpLine.bind(this);
+        this.boundBPSetChange = this.bpSetChange.bind(this);
         this.boundProcStep = context.processor.step.bind(this.context.processor);
         this.boundProcBP = (ev) => {
             this.context.controlPanel.setComputeSwitch(2);
@@ -70,10 +74,28 @@ class DiagPanel {
     }
 
     /**************************************/
+    focusHandler(ev) {
+        /* Handles focus events for the entire BODY. Determines action to take
+        for specific elements */
+        const target = ev.target;
+
+        switch (target.id) {
+        case "LineNr":
+        case "BPSetLine":
+        case "BPSetWord":
+            setTimeout(() => {          // allow any click to be handled first
+                target.select();
+                ev.stopPropagation();
+            }, 100);
+            break;
+        }
+    }
+
+    /**************************************/
     dumpLine() {
         /* Dumps the currently-specified line to the LineDump <pre> in signed hex */
         let text = this.$$("LineNr").value.trim().toUpperCase();
-        let lineNr = (text == "MZ" ? 32 : parseInt(text) || 0);
+        let lineNr = (text == "MZ" ? 32 : parseInt(text, 10) || 0);
 
         switch (true) {
         case lineNr >= 0 && lineNr < 24:
@@ -116,6 +138,87 @@ class DiagPanel {
     }
 
     /**************************************/
+    formatCommandLoc(cd, loc) {
+        /* Formats a drum location from a CD register value and a word number */
+
+        return Processor.CDXlate[cd].toString().padStart(2, "\xA0") + "." +
+               (loc < 100 ? Math.floor(loc/10) : "u") + loc%10;
+
+    }
+
+    /**************************************/
+    disassembleCommand(cmd) {
+        /* Disassembles an instruction word, returning a string in a PPR-like format */
+        const hex = Util.hex;
+        const C1 = cmd & 0x01;                  // single/double mode
+        const D =  (cmd >> 1) & 0x1F;           // destination line
+        const S =  (cmd >> 6) & 0x1F;           // source line
+        const C =  (cmd >> 11) & 0x03;          // characteristic code
+        const N =  (cmd >> 13) & 0x7F;          // next command location
+        const BP = (cmd >> 20) & 0x01;          // breakpoint flag
+        const T =  (cmd >> 21) & 0x7F;          // operand timing number
+        const DI = (cmd >> 28) & 0x01;          // immediate/deferred execution bit
+
+        return (DI ? (D == 31 ? "w" : "\xA0") : (D == 31 ? "\xA0" : "u")) +
+               `.${hex[Math.floor(T/10)]}${hex[T%10]}.${hex[Math.floor(N/10)]}${hex[N%10]}` +
+               `.${C1*4 + C}.${S.toString().padStart(2, "0")}.${D.toString().padStart(2, "0")}` +
+               (BP ? "-" : "\xA0");
+    }
+
+    /**************************************/
+    bpSetChange(ev) {
+        /* Handler for click and change events in BPSetDiv. Disassembles the
+        designated drum word and toggles the word's BP bit */
+        const target = ev.target;
+
+        switch (ev.type) {
+        case "click":
+            switch (target.id) {
+            case "BPSetCheck":
+                if (this.bpSetLoc) {
+                    const line = this.context.processor.drum.line[this.bpSetLoc.line];
+                    line[this.bpSetLoc.word] = (line[this.bpSetLoc.word] & ~(1 << 20)) |
+                                               ((target.checked ? 1 : 0) << 20);
+                }
+                break;
+            }
+            break;
+        case "change":
+            switch (target.id) {
+            case "BPSetLine":
+            case "BPSetWord":
+                const lineBox = this.$$("BPSetLine");
+                const wordBox = this.$$("BPSetWord");
+                const bpCheck = this.$$("BPSetCheck");
+                let lineText = lineBox.value.trim();
+                let wordText = wordBox.value.trim().toLowerCase();
+                if (lineText.length == 0 || wordText.length == 0) {
+                    this.$$("BPSetDisasm").textContent = "\xA0";
+                    bpCheck.disabled = true;
+                    this.bpSetLoc = null;       // BP location not set
+                    return;
+                } else {
+                    let lineLoc = Math.min(Math.abs(parseInt(lineText, 10) || 0), 23);
+                    let wordLoc = 0;
+                    if (wordText.length == 2 && wordText.startsWith("u")) {
+                        wordLoc = Math.abs((parseInt(wordText.substring(1), 10) || 0)) + 100;
+                    } else {
+                        wordLoc = Math.abs(parseInt(wordText, 10) || 0);
+                    }
+
+                    wordLoc %= lineLoc < 20 ? Util.longLineSize : Util.fastLineSize;
+                    this.bpSetLoc = {line: lineLoc, word: wordLoc};
+                    lineBox.value = lineLoc;
+                    wordBox.value = wordLoc;
+                    bpCheck.disabled = false;
+                }
+                break;
+            }
+            break;
+        }
+    }
+
+    /**************************************/
     updatePanel() {
         /* Updates the panel registers and flip-flops from processor state */
         const p = this.context.processor;       // local copy of Processor reference
@@ -136,8 +239,8 @@ class DiagPanel {
         this.wordTimes.textContent = wt;
 
         this.drumLoc.updateFromRegister(drum.L);
-        this.cmdLoc.updateFromRegister(p.cmdLoc);
         this.CDReg.updateFromRegister(p.CD);
+        this.cmdLoc.updateFromRegister(p.cmdLoc);
         this.RCLamp.updateFromFlipFlop(p.RC);
         this.TRLamp.updateFromFlipFlop(p.TR);
         this.CHLamp.updateFromFlipFlop(p.CH);
@@ -146,6 +249,8 @@ class DiagPanel {
         this.CSLamp.updateFromFlipFlop(p.CS);
         this.FOLamp.updateFromFlipFlop(p.FO);
 
+        this.cmdDisasmBox.textContent =
+            `${this.formatCommandLoc(p.CD.value, p.cmdLoc.value)}:\xA0${this.disassembleCommand(p.cmdWord)}`;
         this.DILamp.updateFromFlipFlop(p.DI);
         this.TReg.updateFromRegister(p.T);
         this.BPLamp.updateFromFlipFlop(p.BP);
@@ -175,6 +280,12 @@ class DiagPanel {
             this.dumpFastLine(23);
             this.dumpFastLine(32);      // MZ
         }
+
+        if (this.bpSetLoc) {
+            const word = drum.line[this.bpSetLoc.line][this.bpSetLoc.word];
+            this.$$("BPSetDisasm").textContent = this.disassembleCommand(word);
+            this.$$("BPSetCheck").checked = (word >> 20) & 1;
+        }
     }
 
     /**************************************/
@@ -189,8 +300,8 @@ class DiagPanel {
         this.wordTimes = this.$$("WordTimes");
 
         this.drumLoc = new DiagRegister(this.$$("DrumLocBox"), 7, false, false, "DrumL_", "Drum L");
-        this.cmdLoc = new DiagRegister(this.$$("CmdLocBox"), 7, false, false, "CmdL_", "Cmd L");
         this.CDReg = new DiagRegister(this.$$("CDBox"), 3, false, false, "CDReg_", "CD");
+        this.cmdLoc = new DiagRegister(this.$$("CmdLocBox"), 7, false, false, "CmdL_", "Cmd L");
         this.RCLamp = new DiagLamp(this.$$("RCBox"), 4, 2, "RCLamp");
         this.RCLamp.setCaption("RC");
         this.TRLamp = new DiagLamp(this.$$("TRBox"), 4, 2, "TRLamp");
@@ -206,6 +317,7 @@ class DiagPanel {
         this.FOLamp = new DiagLamp(this.$$("FOBox"), 4, 2, "FOLamp");
         this.FOLamp.setCaption("FO");
 
+        this.cmdDisasmBox = this.$$("CmdDisasmBox");
         this.DILamp = new DiagLamp(this.$$("DIBox"), 4, 2, "IDLamp");
         this.DILamp.setCaption("I/D");
         this.TReg = new DiagRegister(this.$$("TBox"), 7, false, false, "TReg_", "T");
@@ -231,7 +343,13 @@ class DiagPanel {
         this.PN1Reg = new DiagRegister(this.$$("PN1Box"), Util.wordBits, true, false, "PN1Reg_", "PN:1");
         this.PN0Reg = new DiagRegister(this.$$("PN0Box"), Util.wordBits, true, true,  "PN0Reg_", "PN:0");
 
+        this.$$("LineNr").addEventListener("focus", this.boundFocusHandler);
         this.$$("LineNr").addEventListener("change", this.boundDumpLine);
+        this.$$("BPSetLine").addEventListener("focus", this.boundFocusHandler);
+        this.$$("BPSetLine").addEventListener("change", this.boundBPSetChange);
+        this.$$("BPSetWord").addEventListener("focus", this.boundFocusHandler);
+        this.$$("BPSetWord").addEventListener("change", this.boundBPSetChange);
+        this.$$("BPSetCheck").addEventListener("click", this.boundBPSetChange);
         this.$$("StepBtn").addEventListener("click", this.boundProcStep);
         this.$$("BPBtn").addEventListener("click", this.boundProcBP);
         this.$$("GoBtn").addEventListener("click", this.boundProcGo);
@@ -249,7 +367,16 @@ class DiagPanel {
         /* Closes the panel, unwires its events, and deallocates its resources */
 
         this.$$("LineNr").removeEventListener("change", this.boundDumpLine);
+
+        this.$$("LineNr").removeEventListener("focus", this.boundFocusHandler);
+        this.$$("LineNr").removeEventListener("change", this.boundDumpLine);
+        this.$$("BPSetLine").removeEventListener("focus", this.boundFocusHandler);
+        this.$$("BPSetLine").removeEventListener("change", this.boundBPSetChange);
+        this.$$("BPSetWord").removeEventListener("focus", this.boundFocusHandler);
+        this.$$("BPSetWord").removeEventListener("change", this.boundBPSetChange);
+        this.$$("BPSetCheck").removeEventListener("click", this.boundBPSetChange);
         this.$$("StepBtn").removeEventListener("click", this.boundProcStep);
+        this.$$("BPBtn").removeEventListener("click", this.boundProcBP);
         this.$$("GoBtn").removeEventListener("click", this.boundProcGo);
         this.$$("StopBtn").removeEventListener("click", this.boundProcStop);
         if (this.intervalToken) {       // if the display auto-update is running

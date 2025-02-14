@@ -77,6 +77,7 @@ class Processor {
 
         // General emulator state
         this.cmdLine = 0;                               // current actual command line (see CDXlate)
+        this.cmdWord = 0;                               // current command word
         this.deferredBP = false;                        // breakpoint deferred due to return exit cmd
         this.overflowed = false;                        // true if last addition overflowed (DEBUG)
         this.poweredOn = false;                         // powered up and ready to run
@@ -154,13 +155,32 @@ class Processor {
 
     /**************************************/
     traceState() {
-        // Log current processor state to the console
+        /* Log current processor state to the console using a PPR-like format */
+        const hex = Util.hex;
+        const T = this.T.value;
+        const N = this.N.value;
+        const D = this.D.value;
+        const loc = this.cmdLoc.value;
 
+        /**********
         console.log("<TRACE%3d>  @%2d:%3d L=%3d %s T=%3d BP=%d N=%3d C=%d S=%2d D=%2d %s",
                 this.devices.paperTapeReader.blockNr,
                 this.cmdLine, this.cmdLoc.value, this.drum.L.value, (this.DI.value ? "DEF" : "IMM"),
                 this.T.value, this.BP.value, this.N.value, this.C.value, this.S.value, this.D.value,
                 (this.C1.value ? "DP" : ""));
+        **********/
+                              // C  L   P  T  N  C  S  D BP
+        console.log("\n<TRACE%3d> %s.%s: %s.%s.%s.%s.%s.%s%s",
+                this.devices.paperTapeReader.blockNr,
+                this.cmdLine.toString().padStart(2, " "),                       // command line
+                hex[Math.floor(loc/10)] + hex[loc%10],                          // command word nr
+                this.DI.value ? (D == 31 ? "w" : " ") : (D == 31 ? " " : "u"),  // prefix
+                hex[Math.floor(T/10)] + hex[T%10],                              // T
+                hex[Math.floor(N/10)] + hex[N%10],                              // N
+                this.C1.value*4 + this.C.value,                                 // C
+                this.S.value.toString().padStart(2, "0"),                       // S
+                D.toString().padStart(2, "0"),                                  // D
+                this.BP.value ? "-" : " ");                                     // BP
     }
 
     /**************************************/
@@ -168,7 +188,7 @@ class Processor {
         /* Posts a violation of standard-command usage */
 
         this.VV.value = 1;
-        console.warn("<VIOLATION> @%2d:%3d L=%3d %s T=%3d BP=%d N=%3d C=%d S=%2d D=%2d %s : %s",
+        console.warn("\n<VIOLATION> @%2d:%3d L=%3d %s T=%3d BP=%d N=%3d C=%d S=%2d D=%2d %s : %s",
                 this.cmdLine, this.cmdLoc.value, this.drum.L.value, (this.DI.value ? "DEF" : "IMM"),
                 this.T.value, this.BP.value, this.N.value, this.C.value, this.S.value, this.D.value,
                 (this.C1.value ? "DP" : ""), msg);
@@ -236,21 +256,21 @@ class Processor {
     /**************************************/
     addSingle(a, b) {
         /* Adds two signed, single-precision words. Assumes negative numbers
-        have been converted to complement form. Sets the overflow indicator
+        have been converted to complement form. Sets this.overflowed true
         if the signs of the operands are the same and the sign of the sum
-        does not match). Returns the sum in G-15 complement form. Avoids
-        returning -0 */
+        does not match). Returns the sum in G-15 complement form.
+        Avoids returning -0 */
         let aSign = a & Util.wordSignMask;      // sign of a
-        let aMag = a >> 1;                      // 2s complement magnitude of a
+        let aMag =  a & Util.absWordMask;       // 2s complement magnitude of a
         let bSign = b & Util.wordSignMask;      // sign of b
-        let bMag = b >> 1;                      // 2s complement magniturde of b
+        let bMag =  b & Util.absWordMask;       // 2s complement magniturde of b
 
         // This is a little messy -- in G-15 arithmetic, adding a -0 would
         // interfere with determination of the result sign, so the G-15 had
         // a rather complicated test to detect -0 coming off the inverting
         // gates at T29 time and cause the adder to adjust the sign in the
         // next word time. The following has the equivalent effect. See the
-        // Theory of Operations manual, page 34, paragraph C-10t.
+        // Theory of Operation manual, page 34, paragraph C-10t.
 
         // Do not allow -0 to reach the adder.
         if (aSign && aMag == 0) {
@@ -260,20 +280,21 @@ class Processor {
             bSign = 0;
         }
 
-        // Put the signs in their 2s-complement place and develop the raw sum.
-        let sum = (aMag | (aSign << Util.wordMagBits)) + (bMag | (bSign << Util.wordMagBits));
-        let sumSign = (sum >> Util.wordMagBits) & 1;
+        // Develop the raw 2s-complement sum without the sign bits.
+        let sum = aMag + bMag;
+        let endCarry = (sum >> Util.wordBits) & 1;
+        let sumSign = aSign ^ bSign ^ endCarry;
+        sum &= Util.wordMask;           // discard any overflow bits in sum
+
+        // Check for arithmetic overflow (see drawing 27 in Theory of Operation).
+        this.overflowed = aSign == bSign && (endCarry ? (bSign == 0 || sum == 0) : (bSign != 0));
 
         // Put the raw sum back into G-15 complement format and inhibit -0.
-        sum = (sum << 1) & Util.wordMask;
         if (sum == 0) {
-            sumSign = 0;                // inhibit -0
+            return sum;                 // inhibit -0 by returning only the magnitude
+        } else {
+            return sum | sumSign;
         }
-
-        // Check for overflow.
-        this.overflowed = aSign == bSign && aSign != sumSign;
-
-        return sum | sumSign;
     }
 
     /**************************************/
@@ -303,8 +324,8 @@ class Processor {
     addDoubleOdd(a, b) {
         /* Adds the odd word "b" (representing the source word) of a double-
         precision pair to the odd word "a" (representing PN-odd). Assumes
-        negative numbers have been converted to complement form. Sets the
-        overflow indicator if the signs of the operands were the same and
+        negative numbers have been converted to complement form. Sets
+        this.overflowed true if the signs of the operands were the same and
         the sign of the sum does not match. Computes the result sign and
         returns the odd-word sum (which does not have a sign bit) with the
         result sign in this.pnSign. Avoids generating a -0 result */
@@ -314,24 +335,27 @@ class Processor {
         // a rather complicated test to detect -0 coming off the inverting
         // gates at T29 time and cause the adder to adjust the sign in the
         // next word time. The following has the equivalent effect. See the
-        // Theory of Operations manual, page 34, paragraph C-10t.
+        // Theory of Operation manual, page 34, paragraph C-10t.
         if (b == 0 && this.pnEvenAddendMag == 0 && this.pnAddendSign) {
             this.pnAddendSign = 0;      // do not allow -0 to reach the adder
         }
 
-        // Put the signs in their 2s-complement places and develop the raw odd-word sum.
-        let sum = (a | (this.pnAugendSign << Util.wordBits)) +
-                  (b | (this.pnAddendSign << Util.wordBits)) + this.pnAddCarry;
-        this.pnSign = (sum >> Util.wordBits) & 1;       // extract the 2s-complement sign
+
+        // Develop the raw odd-word sum without the sign bits.
+        let sum = a + b + this.pnAddCarry;
+        let endCarry = (sum >> Util.wordBits) & 1;
 
         // Put the raw sum back into G-15 complement format and inhibit -0.
         sum &= Util.wordMask;
         if (sum == 0 && this.pnEvenSumZero) {
             this.pnSign = 0;            // inhibit -0
+        } else {
+            this.pnSign = this.pnAugendSign ^ this.pnAddendSign ^ endCarry;
         }
 
-        // Check for overflow.
-        this.overflowed = this.pnAugendSign == this.pnAddendSign && this.pnAugendSign != this.pnSign;
+        // Check for arithmetic overflow (see drawing 27 in Theory of Operation).
+        this.overflowed = this.pnAugendSign == this.pnAddendSign &&
+                (endCarry ? (this.pnAddendSign == 0 || sum == 0) : (this.pnAddendSign != 0));
 
         // Return the odd-word sum with the result sign in this.pnSign.
         return sum;
@@ -1439,7 +1463,7 @@ class Processor {
                     break;
                 case IOCodes.ioCodeStop:        // end/stop
                     eob = true;
-                    // no break: Stop implies Reload
+                    // no break: Stop implies Reload (if not TypeIn)
                 case IOCodes.ioCodeReload:      // reload
                     await this.ioPromise;
                     await this.drum.ioCopy23ToMZ();
@@ -1551,9 +1575,10 @@ class Processor {
         if (this.enableSwitch) {                                // Control command
             await this.executeKeyboardCommand(code);
         } else if (this.OC.value == IOCodes.ioCmdTypeIn) {      // Input during TYPE IN
-            await this.receiveInputCode(code);
-            if (code == IOCodes.ioCodeStop && this.OC.value == IOCodes.ioCmdTypeIn) { // check for cancel
-                this.finishIO();
+            if (code == IOCodes.ioCodeStop && (this.OC.value & 0b0011) == 0) { // check for cancel
+                this.cancelIO();                                // no reload with STOP from Typewriter
+            } else {
+                await this.receiveInputCode(code);
             }
         }
     }
@@ -2317,6 +2342,7 @@ class Processor {
             cmd = this.drum.read(this.cmdLine);
         }
 
+        this.cmdWord = cmd;                     // store command word for UI use
         this.C1.value = cmd & 0x01;             // single/double mode
         this.D.value =  (cmd >> 1) & 0x1F;      // destination line
         this.S.value =  (cmd >> 6) & 0x1F;      // source line
@@ -2441,7 +2467,7 @@ class Processor {
     /**************************************/
     async run() {
         /* Main execution control loop for the processor. Attempts to throttle
-        performance to approximate that of a real G-15. The drum manages the
+        performance to approximately that of a real G-15. The drum manages the
         system timing, updating its L and eTime properties as calls on its
         waitFor() and waitUntil() methods are made. We await drum.throttle()
         after every instruction completes to determine if drum.eTime exceeds the
@@ -2592,7 +2618,7 @@ class Processor {
         the ControlPanel RESET button */
 
         if (this.tracing) {
-            console.log("<System Reset>");
+            console.log("\n<System Reset>");
         }
 
         this.poweredOn = true;
@@ -2700,9 +2726,9 @@ class Processor {
             }
         }
 
-        // And now for the main event...
+        // And now for the main event... the infamous 4-word memory clear routine (Paul's version).
 
-        //  M     L  DI    T    N  C   S   D  C1  BP
+        //  M     L  D/I   T    N  C   S   D  C1  BP
         asm(23,   0,  0,   2, 105, 0, 29, 28);          // ZERO: clear AR (accumulator)
         asm(23,   1,  0,   4,   3, 2, 23, 23);          // SWAP: precess line 23 via AR starting at L=106 thru L=3 (after first time will be L=3 thru L=3)
         asm(23,   2,  0,   4,   2, 0, 27, 29);          // CLEAR: smear zeroes to current line
