@@ -41,7 +41,7 @@ class PaperTapeReader {
         this.startStopTime = 0;                         // reader start/stop time, ms
         this.setSpeed(PaperTapeReader.defaultSpeed);    // frames/sec
 
-        this.clear();
+        this.clear();                                   // creates additional instance variables
 
         $$("PRFileSelector").addEventListener("change", this.boundFileSelectorChange);
         $$("PRRewindBtn").addEventListener("click", this.boundRewindButtonClick);
@@ -119,6 +119,7 @@ class PaperTapeReader {
 
             if (this.bufIndex >= this.bufLength) {
                 this.buffer = ev.target.result;
+                this.setBlockNr(0);
             } else {
                 switch (this.buffer.charAt(this.buffer.length-1)) {
                 case "\r":
@@ -254,6 +255,7 @@ class PaperTapeReader {
         this.buffer = PPRTapeImage.pprTapeImage;
         this.bufIndex = 0;
         this.bufLength = this.buffer.length;
+        this.setBlockNr(0);
         this.$$("PRTapeSupplyBar").value = this.bufLength;
         this.$$("PRTapeSupplyBar").max = this.bufLength;
         this.ready = true;
@@ -282,7 +284,7 @@ class PaperTapeReader {
                 --x;                    // examine prior character
                 code = IOCodes.ioCodeFilter[this.buffer.charCodeAt(x) & 0x7F];
                 if (code == IOCodes.ioCodeStop) {
-                    break;
+                    break;              // out of do loop
                 } else {
                     this.tapeSupplyBar.value = bufLength-x;
                     await this.timer.delayUntil(nextFrameStamp);
@@ -298,7 +300,7 @@ class PaperTapeReader {
         this.bufIndex = x;
         this.makeBusy(false);
         await this.timer.set(this.startStopTime);       // simulate stop time
-        this.setBlockNr(this.blockNr-1);
+        this.setBlockNr(x > 0 ? this.blockNr-1 : 0);
 
         return false;
     }

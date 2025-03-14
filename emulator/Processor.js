@@ -120,35 +120,20 @@ class Processor {
     *******************************************************************/
 
     /**************************************/
-    lineL(line, loc) {
-        /* Computes the line-relative location. Used for debugging only */
-
-        if (line < 20) {
-            return loc;
-        } else if (line < 24) {
-            return loc%4;
-        } else if (line < 27) {
-            return loc%2;
-        } else {
-            return loc;
-        }
-    }
-
-    /**************************************/
     traceRegisters() {
         /* Formats the registers to console.log */
         let loc = this.drum.L.value;
 
-        console.log("              REG L=%3d(%d): AR=%s, IP=%d, ID=%s %s, MQ=%s %s, PN=%s %s PN%s FO=%d%s",
-                loc, loc%2,
-                Util.g15SignedHex(this.drum.AR.value).padStart(8, " "),
+        console.log("              REG L=%s: AR=%s  IP=%d  ID=%s %s  MQ=%s %s  PN=%s %s  PN%s FO=%d%s",
+                Util.formatLineLoc(24, loc, false),
+                Util.g15SignedHex(this.drum.AR.value),
                 this.IP.value,
-                Util.g15Hex(this.drum.ID[1].value).padStart(8, " "),
-                Util.g15SignedHex(this.drum.ID[0].value).padStart(8, " "),
-                Util.g15Hex(this.drum.MQ[1].value).padStart(8, " "),
-                Util.g15SignedHex(this.drum.MQ[0].value).padStart(8, " "),
-                Util.g15Hex(this.drum.PN[1].value).padStart(8, " "),
-                Util.g15SignedHex(this.drum.PN[0].value).padStart(8, " "),
+                Util.g15Hex(this.drum.ID[1].value).padStart(8, "0"),
+                Util.g15SignedHex(this.drum.ID[0].value),
+                Util.g15Hex(this.drum.MQ[1].value).padStart(8, "0"),
+                Util.g15SignedHex(this.drum.MQ[0].value),
+                Util.g15Hex(this.drum.PN[1].value).padStart(8, "0"),
+                Util.g15SignedHex(this.drum.PN[0].value),
                 (this.pnSign ? "-" : "+"),
                 this.FO.value, (this.overflowed ? "*" : " "));
     }
@@ -156,21 +141,23 @@ class Processor {
     /**************************************/
     traceState() {
         /* Log current processor state to the console using a PPR-like format */
+        const loc = this.cmdLoc.value;
+        const drumLoc = this.CG.value ? "NCAR   " : Util.formatDrumLoc(this.cmdLine, loc, true);
+
+        /**********
         const hex = Util.hex;
         const T = this.T.value;
         const N = this.N.value;
         const D = this.D.value;
-        const loc = this.cmdLoc.value;
 
-        /**********
         console.log("<TRACE%3d>  @%2d:%3d L=%3d %s T=%3d BP=%d N=%3d C=%d S=%2d D=%2d %s",
                 this.devices.paperTapeReader.blockNr,
                 this.cmdLine, this.cmdLoc.value, this.drum.L.value, (this.DI.value ? "DEF" : "IMM"),
                 this.T.value, this.BP.value, this.N.value, this.C.value, this.S.value, this.D.value,
                 (this.C1.value ? "DP" : ""));
-        **********/
-                              // C  L   P  T  N  C  S  D BP
-        console.log("\n<TRACE%3d> %s.%s: %s.%s.%s.%s.%s.%s%s",
+
+                               // C  L   P  T  N  C  S  D BP
+        console.log("<TRACE%3d> %s.%s: %s.%s.%s.%s.%s.%s%s",
                 this.devices.paperTapeReader.blockNr,
                 this.cmdLine.toString().padStart(2, " "),                       // command line
                 hex[Math.floor(loc/10)] + hex[loc%10],                          // command word nr
@@ -181,6 +168,10 @@ class Processor {
                 this.S.value.toString().padStart(2, "0"),                       // S
                 D.toString().padStart(2, "0"),                                  // D
                 this.BP.value ? "-" : " ");                                     // BP
+        **********/
+
+        console.log(`<TRACE${this.devices.paperTapeReader.blockNr.toString().padStart(3, " ")}> ` +
+                    `${drumLoc}  ${Util.disassembleCommand(this.cmdWord)}`);
     }
 
     /**************************************/
@@ -188,10 +179,11 @@ class Processor {
         /* Posts a violation of standard-command usage */
 
         this.VV.value = 1;
-        console.warn("\n<VIOLATION> @%2d:%3d L=%3d %s T=%3d BP=%d N=%3d C=%d S=%2d D=%2d %s : %s",
-                this.cmdLine, this.cmdLoc.value, this.drum.L.value, (this.DI.value ? "DEF" : "IMM"),
-                this.T.value, this.BP.value, this.N.value, this.C.value, this.S.value, this.D.value,
-                (this.C1.value ? "DP" : ""), msg);
+        console.warn("<VIOLATION> @%s L=%s %s %s : %s",
+                Util.formatDrumLoc(this.cmdLine, this.cmdLoc.value, false),
+                Util.lineHex[this.drum.L.value],
+                (this.DI.value ? "Def" : "Imm"),
+                Util.disassembleCommand(this.cmdWord), msg);
         if (this.violationHaltSwitch) {
             this.stop();
         }
@@ -615,18 +607,17 @@ class Processor {
         if (this.tracing) {
             let loc = this.drum.L.value;
             if (this.CS.value) {
-                console.log("              VA: AR=%s > %2d:%3d, %2d:%3s=%s %d> AR=%s",
-                        Util.g15SignedHex(b).padStart(8, " "),
-                        this.D.value, this.lineL(this.D.value, loc),
-                        this.S.value, this.lineL(this.S.value, loc),
-                        Util.g15SignedHex(word).padStart(8, " "), this.C.value,
-                        Util.g15SignedHex(a).padStart(8, " "));
+                console.log("              VA: %s=%s %d> AR, AR=%s > %s, ",
+                        Util.formatDrumLoc(this.S.value, loc, true),
+                        Util.g15SignedHex(word), this.C.value,
+                        Util.g15SignedHex(b),
+                        Util.formatDrumLoc(this.D.value, loc, false));
             } else {
-                console.log("              TR: %2d:%3d=%s %d> %2d:%3d=%s",
-                        this.S.value, this.lineL(this.S.value, loc),
-                        Util.g15SignedHex(word).padStart(8, " "), this.C.value,
-                        this.D.value, this.lineL(this.D.value, loc),
-                        Util.g15SignedHex(b).padStart(8, " "));
+                console.log("              TR: %s=%s %d> %s=%s",
+                        Util.formatDrumLoc(this.S.value, loc, true),
+                        Util.g15SignedHex(word), this.C.value,
+                        Util.formatDrumLoc(this.D.value, loc, false),
+                        Util.g15SignedHex(b));
             }
         }
     }
@@ -749,10 +740,10 @@ class Processor {
                 this.drum.write(regPN, 0);     // clear this half of PN
                 if (this.tracing) {
                     let loc = this.drum.L.value;
-                    console.log("              ID: %2d:%3d=%s %d> ID:%d=%s IP=%d PN=0",
-                            this.S.value, this.lineL(this.S.value, loc),
-                            Util.g15SignedHex(word).padStart(8, " "), this.C.value,
-                            loc%2, Util.g15SignedHex(this.drum.read(regID)).padStart(8, " "),
+                    console.log("              ID: %s=%s %d> ID.%d=%s IP=%d PN=0",
+                            Util.formatDrumLoc(this.S.value, loc, true),
+                            Util.g15SignedHex(word), this.C.value,
+                            loc%2, Util.g15SignedHex(this.drum.read(regID)),
                             this.IP.value);
                 }
                 break;
@@ -805,10 +796,10 @@ class Processor {
                 this.drum.write(regPN, 0);     // clear this half of PN
                 if (this.tracing) {
                     let loc = this.drum.L.value;
-                    console.log("              ID: %2d:%3d=%s %d> ID:%d=%s IP=%d PN=0",
-                            this.S.value, this.lineL(this.S.value, loc),
-                            Util.g15SignedHex(word).padStart(8, " "), this.C.value,
-                            loc%2, Util.g15SignedHex(this.drum.read(regID)).padStart(8, " "),
+                    console.log("              ID: %s=%s %d> ID.%d=%s IP=%d PN=0",
+                            Util.formatDrumLoc(this.S.value, loc, true),
+                            Util.g15SignedHex(word), this.C.value,
+                            loc%2, Util.g15SignedHex(this.drum.read(regID)),
                             this.IP.value);
                 }
                 break;
@@ -872,10 +863,10 @@ class Processor {
                 if (this.tracing) {
                     let mnem = (dest == regMQ ? "MQ" : "PN");
                     let loc = this.drum.L.value;
-                    console.log("              %s: %2d:%3d=%s %d> %s:%d=%s IP=%d",
-                            mnem, this.S.value, this.lineL(this.S.value, loc),
-                            Util.g15SignedHex(word).padStart(8, " "), this.C.value,
-                            mnem, loc%2, Util.g15SignedHex(this.drum.read(dest)).padStart(8, " "),
+                    console.log("              %s: %s=%s %d> %s.%d=%s IP=%d",
+                            mnem, Util.formatDrumLoc(this.S.value, loc, true),
+                            Util.g15SignedHex(word), this.C.value,
+                            mnem, loc%2, Util.g15SignedHex(this.drum.read(dest)),
                             this.IP.value);
                 }
                 break;
@@ -901,11 +892,11 @@ class Processor {
                     if (this.tracing) {
                         let mnem = (dest == regMQ ? "MQ" : "PN");
                         let loc = this.drum.L.value;
-                        console.log("              %s: %2d:%3d=%s %d> AR=%s, AR > %s:%d=%s IP=%d",
-                                mnem, this.S.value, this.lineL(this.S.value, loc),
-                                Util.g15SignedHex(word).padStart(8, " "), this.C.value,
+                        console.log("              %s: %s=%s %d> AR, AR=%s > %s.%d=%s IP=%d",
+                                mnem, Util.formatDrumLoc(this.S.value, loc, true),
+                                Util.g15SignedHex(word), this.C.value,
                                 Util.g15SignedHex(this.drum.read(regAR)),
-                                mnem, loc%2, Util.g15SignedHex(this.drum.read(dest)).padStart(8, " "),
+                                mnem, loc%2, Util.g15SignedHex(this.drum.read(dest)),
                                 this.IP.value);
                     }
                     break;
@@ -922,10 +913,10 @@ class Processor {
                     if (this.tracing) {
                         let mnem = (dest == regMQ ? "MQ" : "PN");
                         let loc = this.drum.L.value;
-                        console.log("              %s: %2d:%3d=%s %d> %s:%d=%s IP=%d",
-                                mnem, this.S.value, this.lineL(this.S.value, loc),
-                                Util.g15SignedHex(word).padStart(8, " "), this.C.value,
-                                mnem, loc%2, Util.g15SignedHex(this.drum.read(dest)).padStart(8, " "),
+                        console.log("              %s: %s=%s %d> %s.%d=%s IP=%d",
+                                mnem, Util.formatDrumLoc(this.S.value, loc, true),
+                                Util.g15SignedHex(word), this.C.value,
+                                mnem, loc%2, Util.g15SignedHex(this.drum.read(dest)),
                                 this.IP.value);
                     }
                     break;
@@ -951,11 +942,11 @@ class Processor {
                     if (this.tracing) {
                         let mnem = (dest == regMQ ? "MQ" : "PN");
                         let loc = this.drum.L.value;
-                        console.log("              %s: %2d:%3d=%s %d> AR=%s, AR > %s:%d=%s IP=%d",
-                                mnem, this.S.value, this.lineL(this.S.value, loc),
-                                Util.g15SignedHex(word).padStart(8, " "), this.C.value,
+                        console.log("              %s: %s=%s %d> AR, AR=%s > %s.%d=%s IP=%d",
+                                mnem, Util.formatDrumLoc(this.S.value, loc, true),
+                                Util.g15SignedHex(word), this.C.value,
                                 Util.g15SignedHex(this.drum.read(regAR)),
-                                mnem, loc%2, Util.g15SignedHex(this.drum.read(dest)).padStart(8, " "),
+                                mnem, loc%2, Util.g15SignedHex(this.drum.read(dest)),
                                 this.IP.value);
                     }
                     break;
@@ -1011,10 +1002,10 @@ class Processor {
             this.drum.write(regAR, a);
             if (this.tracing) {
                 let loc = this.drum.L.value;
-                console.log("              AR: %2d:%3d=%s %d> AR=%s",
-                        this.S.value, this.lineL(this.S.value, loc),
-                        Util.g15SignedHex(word).padStart(8, " "), this.C.value,
-                        Util.g15SignedHex(a).padStart(8, " "));
+                console.log("              AR: %s=%s %d> AR=%s",
+                        Util.formatDrumLoc(this.S.value, loc, true),
+                        Util.g15SignedHex(word), this.C.value,
+                        Util.g15SignedHex(a));
             }
         });
     }
@@ -1068,12 +1059,12 @@ class Processor {
             this.drum.write(regAR, sum);
             if (this.tracing) {
                 let loc = this.drum.L.value;
-                console.log("              AR+ %2d:%3d=%s %d> %s + AR=%s : %s FO=%d%s",
-                        this.S.value, this.lineL(this.S.value, loc),
-                        Util.g15SignedHex(word).padStart(8, " "), this.C.value,
-                        Util.g15SignedHex(b).padStart(8, " "),
-                        Util.g15SignedHex(a).padStart(8, " "),
-                        Util.g15SignedHex(sum).padStart(8, " "),
+                console.log("              AR+ %s=%s %d> %s + AR=%s => %s FO=%d%s",
+                        Util.formatDrumLoc(this.S.value, loc, true),
+                        Util.g15SignedHex(word), this.C.value,
+                        Util.g15SignedHex(b),
+                        Util.g15SignedHex(a),
+                        Util.g15SignedHex(sum),
                         this.FO.value, (this.overflowed ? "*" : " "));
             }
         });
@@ -1238,24 +1229,26 @@ class Processor {
         let pnc = 0;                    // *** DEBUG ***
 
         let debugTraceEven = () => {
-            console.log("<Div> %3i %2i %8s%s %8s%s %8s%s %s%s    %2i %8s%s %2i",
-                    count, this.drum.L2,
-                    (id >>1).toString(16).padStart(8," "), (id  & Util.wordSignMask ? "-" : " "),
-                    (pnb>>1).toString(16).padStart(8," "), (pnb & Util.wordSignMask ? "-" : " "),
-                    (pna>>1).toString(16).padStart(8," "), (pna & Util.wordSignMask ? "-" : " "),
+            console.log("<Div> %s %d %s %s %s %s%s    %i %s  %i",
+                    count.toString().padStart(3, " "),
+                    this.drum.L2,
+                    Util.g15SignedHex(id),
+                    Util.g15SignedHex(pnb),
+                    Util.g15SignedHex(pna),
                     (rSign ? "-" : "+"), (this.pnSign ? "-" : "+"), qBit,
-                    (pn >>1).toString(16).padStart(8," "), (pn  & Util.wordSignMask ? "-" : " "),
+                    Util.g15SignedHex(pn),
                     pnc);
         };
 
         let debugTraceOdd = () => {
-            console.log("<Div> %3i %2i%9s %9s %9s  %s%s %2i %2i%9s  %2i",
-                    count, this.drum.L2,
-                    id .toString(16).padStart(9," "),
-                    pnb.toString(16).padStart(9," "),
-                    pna.toString(16).padStart(9," "),
+            console.log("<Div> %s %d %s %s %s  %s%s %i %d %s  %d",
+                    count.toString().padStart(3, " "),
+                    this.drum.L2,
+                    Util.g15SignedHex(id).padStart(9,"0"),
+                    Util.g15SignedHex(pnb).padStart(9,"0"),
+                    Util.g15SignedHex(pna).padStart(9,"0"),
                     (rSign ? "-" : "+"), (this.pnSign ? "-" : "+"), oFlow, qBit,
-                    pn .toString(16).padStart(9," "),
+                    Util.g15SignedHex(pn).padStart(9,"0"),
                     pnc);
             console.log(" ");
         };
@@ -2124,10 +2117,12 @@ class Processor {
 
         this.waitUntilT();
         if (this.tracing) {
-            let dL = loc.toString().padStart(3, " ");
-            let cm = Util.g15SignedHex(this.drum.CM.value).padStart(8, " ");
-            let nL = this.N.value;
-            console.log(`              RET L=${dL}: CM=${cm} T=${t} N=${n} MARK=${mark} => ${this.cmdLine}:${nL}`);
+            const dL = Util.lineHex[loc];
+            const cm = Util.g15SignedHex(this.drum.CM.value);
+            const nA = Util.lineHex[n];
+            const nL = this.N.value;
+            const tL = Util.lineHex[t];
+            console.log(`              RET L=${dL}: CM=${cm} T=${tL} N=${nA} MARK=${mark} => ${Util.formatDrumLoc(this.cmdLine, nL, true)}`);
         }
     }
 
@@ -2192,11 +2187,11 @@ class Processor {
                     (this.drum.CM.value & 0b1_1111111_1_1111111_00_00000_00000_1);
             this.drum.waitUntil(this.T.value + this.DI.value);  // ignore this.C1 (DP bit)
             if (this.tracing) {
-                let loc = this.drum.L.value.toString().padStart(3, " ");
-                let n = this.N.value + this.DI.value - 1;
-                let t = this.T.value;
-                let cm = Util.g15SignedHex(this.drum.CM.value).padStart(8, " ");
-                console.log(`              MRK L=${loc}: T=${t}, CM=${cm} => ${this.cmdLine}:${n}`);
+                let loc = Util.lineHex[this.drum.L.value];
+                let n = (this.N.value + this.DI.value - 1 + Util.longLineSize)%Util.longLineSize;
+                let t = Util.lineHex[this.T.value];
+                let cm = Util.g15SignedHex(this.drum.CM.value);
+                console.log(`              MRK L=${loc}: T=${t}, CM=${cm} => ${Util.formatDrumLoc(this.cmdLine, n, true)}`);
             }
             break;
 
@@ -2334,7 +2329,7 @@ class Processor {
 
         this.drum.waitUntil(loc);
         if (this.CG.value) {            // next command from AR
-            this.cmdLoc.value = 127;    // for display purposes only to signal "from AR"
+            this.cmdLoc.value = 128;    // for display purposes only to signal "from AR"
             cmd = this.drum.read(regAR);
             this.CG.value = 0;
         } else {                        // next command from one of the CD lines
@@ -2419,10 +2414,10 @@ class Processor {
         case 23:
             this.transferNormal();      // dispense with the low-hanging fruit
 
-            /********** DEBUG -- Halt if we start executing zero words at location 0 *********
-            if (this.tracing && this.cmdLoc.value == 0 && this.N.value == 0 &&
-                    this.DI.value == 0 && this.S.value == 0 && this.D.value == 0 &&
-                    this.C.value == 0) {
+            /********** DEBUG -- Halt if we start executing zero words at location 0 **********
+                        Special test for timing the 4-word memory-clear program.
+
+            if (this.cmdLoc.value == 0 && this.cmdWord == 0) {
                 this.stop();
                 //debugger;
             }
@@ -2618,7 +2613,7 @@ class Processor {
         the ControlPanel RESET button */
 
         if (this.tracing) {
-            console.log("\n<System Reset>");
+            console.log("<System Reset>");
         }
 
         this.poweredOn = true;

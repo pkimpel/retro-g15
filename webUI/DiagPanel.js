@@ -99,7 +99,7 @@ class DiagPanel {
 
         switch (true) {
         case lineNr >= 0 && lineNr < 24:
-        case lineNr == 32:
+        case lineNr == 32:              // MZ (hidden)
             let drum = this.context.processor.drum;
             let top = (lineNr < 20 ? Util.longLineSize : Util.fastLineSize);
             let inc = (lineNr < 20 ? 12 : Util.fastLineSize);
@@ -109,8 +109,7 @@ class DiagPanel {
                 text += x.toString().padStart(3, " ");
                 for (let y=0; y<inc; ++y) {
                     let word = drum.line[lineNr][x+y];
-                    text += " " + ((word & Util.wordSignMask) ? "-" : " ") +
-                                  Util.g15Hex(word >> 1).padStart(7, "0");
+                    text += ` ${(word & Util.wordSignMask) ? "-" : " "}${Util.g15Hex(word >> 1)}`;
                 }
 
                 text += "\n";
@@ -122,7 +121,7 @@ class DiagPanel {
 
     /**************************************/
     dumpFastLine(lineNr) {
-        /* Dumps the currently-specified fast (4-word) line to the to its text
+        /* Dumps the currently-specified fast (4-word) line to its text
         area in signed hex */
         let drum = this.context.processor.drum;
         let id = `Line${(lineNr == 32 ? "MZ" : lineNr.toString())}Dump`;
@@ -130,8 +129,7 @@ class DiagPanel {
 
         for (let x=0; x<Util.fastLineSize; ++x) {
             let word = drum.line[lineNr][x];
-            text += " " + ((word & Util.wordSignMask) ? "-" : " ") +
-                          Util.g15Hex(word >> 1).padStart(7, "0");
+            text += ` ${(word & Util.wordSignMask) ? "-" : " "}${Util.g15Hex(word >> 1)}`;
         }
 
         this.$$(id).textContent = text;
@@ -141,28 +139,15 @@ class DiagPanel {
     formatCommandLoc(cd, loc) {
         /* Formats a drum location from a CD register value and a word number */
 
-        return Processor.CDXlate[cd].toString().padStart(2, "\xA0") + "." +
-               (loc < 100 ? Math.floor(loc/10) : "u") + loc%10;
+        return `${Util.lineHex[Processor.CDXlate[cd]]}.${Util.lineHex[loc]}`;
 
     }
 
     /**************************************/
     disassembleCommand(cmd) {
         /* Disassembles an instruction word, returning a string in a PPR-like format */
-        const hex = Util.hex;
-        const C1 = cmd & 0x01;                  // single/double mode
-        const D =  (cmd >> 1) & 0x1F;           // destination line
-        const S =  (cmd >> 6) & 0x1F;           // source line
-        const C =  (cmd >> 11) & 0x03;          // characteristic code
-        const N =  (cmd >> 13) & 0x7F;          // next command location
-        const BP = (cmd >> 20) & 0x01;          // breakpoint flag
-        const T =  (cmd >> 21) & 0x7F;          // operand timing number
-        const DI = (cmd >> 28) & 0x01;          // immediate/deferred execution bit
 
-        return (DI ? (D == 31 ? "w" : "\xA0") : (D == 31 ? "\xA0" : "u")) +
-               `.${hex[Math.floor(T/10)]}${hex[T%10]}.${hex[Math.floor(N/10)]}${hex[N%10]}` +
-               `.${C1*4 + C}.${S.toString().padStart(2, "0")}.${D.toString().padStart(2, "0")}` +
-               (BP ? "-" : "\xA0");
+        return Util.disassembleCommand(cmd).replace(" ", "\xA0");
     }
 
     /**************************************/

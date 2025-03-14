@@ -241,7 +241,7 @@ DIV.diagRegCaption {
 #BPSetDisasm {
     display:            inline-block;
     width:              16ch;
-    text-align:         right;
+    text-align:         left;
     vertical-align:     middle;
     font-family:        Lucida Sans Typewriter, Consolas, Courier New, monospace;
     font-size:          10pt;

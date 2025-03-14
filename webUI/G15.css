@@ -277,6 +277,7 @@ H1 {
     font-size:          x-small;
     line-height:        100%}
 #G15Version.active {
+    font-weight:        bold;
     color:              yellow}
 
 /* Typewriter switch panel */
@@ -396,45 +397,6 @@ H1 {
     left:               190px;
     bottom:             0;
     width:              34px}
-
-#ViolationControls {
-    position:           absolute;
-    display:            none;           /* for now */
-    right:              136px;
-    bottom:             0}
-
-#ViolationResetBtn {
-    position:           absolute;
-    bottom:             21px;
-    right:              76px;
-    box-shadow:         4px 4px 4px #222}
-#ViolationResetBtnCaption {
-    position:           absolute;
-    right:              76px;
-    bottom:             0;
-    width:              32px}
-
-#ViolationLampCaption {
-    position:           absolute;
-    bottom:             50px;
-    right:              0px;
-    width:              120px}
-#ViolationLamp {
-    position:           absolute;
-    bottom:             21px;
-    right:              44px;
-    box-shadow:         4px 4px 4px #222}
-
-#ViolationSwitch {
-    position:           absolute;
-    bottom:             18px;
-    right:              16px;
-    width:              24px}
-#ViolationSwitchCaption {
-    position:           absolute;
-    bottom:             0;
-    right:              12px;
-    width:              32px}
 
 #G15Logo {
     position:           absolute;
