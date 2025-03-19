@@ -143,11 +143,6 @@ class ControlPanel {
         this.readyLamp = new ColoredLamp(powerPanel, null, null,
                 "ReadyLamp", "greenLamp", "greenLit");
 
-        this.violationLamp = new ColoredLamp($$("ViolationControls"), null, null,
-                "ViolationLamp", "orangeLamp", "orangeLit");
-        this.violationSwitch = new ToggleSwitch($$("ViolationControls"), null, null,
-                "ViolationSwitch", "./resources/ToggleDown.png", "./resources/ToggleUp.png");
-
         $$("G15Version").textContent = Version.g15Version;
     }
 
@@ -188,7 +183,6 @@ class ControlPanel {
         this.lampNCAR.set(p.CG.glow);
         this.lampTest.set(p.CQ.glow);
         this.lampAS.set(p.AS.glow);
-        this.violationLamp.set(p.VV.glow);
 
         if (p.bellTiming) {
             this.ringBell(p.bellTiming);
@@ -246,13 +240,6 @@ class ControlPanel {
         case "ComputeSwitchBP":
             this.setComputeSwitch(2);
             break;
-        case "ViolationResetBtn":
-            p.violationReset();
-            break;
-        case "ViolationSwitch":
-            this.violationSwitch.flip()
-            p.violationSwitchChange(this.violationSwitch.state);
-            break;
         }
     }
 
@@ -288,8 +275,7 @@ class ControlPanel {
         this.$$("G15Version").addEventListener("dblclick", this.boundToggleTracing, false);
         this.$$("PowerOffBtn").addEventListener("dblclick", this.context.systemShutDown, false);
         this.$$("ResetBtn").addEventListener("click", this.boundSystemReset, false);
-        this.$$("ViolationResetBtn").addEventListener("click", this.boundControlSwitchChange, false);
-        this.violationSwitch.addEventListener("click", this.boundControlSwitchChange, false);
+        this.$$("PRFileSelector").value = null;
         if (p.tracing) {
             this.$$("G15Version").classList.add("active");
         } else {
@@ -310,7 +296,6 @@ class ControlPanel {
 
         this.dcPowerLamp.set(0);
         this.readyLamp.set(0);
-        this.violationSwitch.set(0)
         this.$$("EnableSwitchOn").checked = false;
         this.$$("EnableSwitchOff").checked = true;
         this.$$("PunchSwitchOn").checked = false;
@@ -326,8 +311,7 @@ class ControlPanel {
         this.$$("G15Version").removeEventListener("dblclick", this.boundToggleTracing, false);
         this.$$("PowerOffBtn").removeEventListener("dblclick", this.context.systemShutDown, false);
         this.$$("ResetBtn").removeEventListener("click", this.boundSystemReset, false);
-        this.$$("ViolationResetBtn").removeEventListener("click", this.boundControlSwitchChange, false);
-        this.violationSwitch.removeEventListener("click", this.boundControlSwitchChange, false);
+        this.$$("PRFileSelector").value = null;
 
         this.panelEnabled = false;
         this.$$("FrontPanel").style.visibility = "hidden";

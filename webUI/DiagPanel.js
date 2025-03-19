@@ -165,6 +165,7 @@ class DiagPanel {
                     line[this.bpSetLoc.word] = (line[this.bpSetLoc.word] & ~(1 << 20)) |
                                                ((target.checked ? 1 : 0) << 20);
                 }
+                ev.stopPropagation();
                 break;
             }
             break;
@@ -197,6 +198,7 @@ class DiagPanel {
                     wordBox.value = wordLoc;
                     bpCheck.disabled = false;
                 }
+                ev.stopPropagation();
                 break;
             }
             break;

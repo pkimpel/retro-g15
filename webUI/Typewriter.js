@@ -114,6 +114,7 @@ class Typewriter {
         case "U": case "V": case "W": case "X": case "Y": case "Z":
         case "u": case "v": case "w": case "x": case "y": case "z":
             ev.preventDefault();
+            ev.stopPropagation();
             this.printChar(key);
             p.receiveKeyboardCode(IOCodes.ioCodeFilter[code]);
             break;
@@ -128,21 +129,25 @@ class Typewriter {
         case "R": case "r":
         case "T": case "t":
             ev.preventDefault();
+            ev.stopPropagation();
             this.printChar(key);
             p.receiveKeyboardCode(-code);
             break;
         case "Enter":
             ev.preventDefault();
+            ev.stopPropagation();
             this.printNewLine();
             p.receiveKeyboardCode(IOCodes.ioCodeCR);
             break;
         case "Tab":
             ev.preventDefault();
+            ev.stopPropagation();
             this.printTab();
             p.receiveKeyboardCode(IOCodes.ioCodeTab);
             break;
         case "Escape":
             ev.preventDefault();
+            ev.stopPropagation();
             if (!ev.repeating) {
                 p.enableSwitchChange(1);
                 this.$$("EnableSwitchOff").checked = false;
@@ -151,6 +156,7 @@ class Typewriter {
             break;
         case "Backspace":
             ev.preventDefault();
+            ev.stopPropagation();
             break;
         default:
             switch (ev.location) {
@@ -158,6 +164,7 @@ class Typewriter {
             case KeyboardEvent.DOM_KEY_LOCATION_NUMPAD:
                 if (key.length == 1) {
                     ev.preventDefault();
+                    ev.stopPropagation();
                     this.printChar(key);
                 }
                 break;
@@ -174,6 +181,7 @@ class Typewriter {
         switch (ev.key) {
         case "Escape":
             ev.preventDefault();
+            ev.stopPropagation();
             p.enableSwitchChange(0);
             this.$$("EnableSwitchOff").checked = true;
             this.$$("EnableSwitchOn").checked = false;
@@ -380,6 +388,8 @@ class Typewriter {
 
         this.$$("FrontPanel").removeEventListener("keydown", this.boundPanelKeydown, false);
         this.$$("FrontPanel").removeEventListener("keyup", this.boundPanelKeyup, false);
+        this.paperDoc.removeEventListener("keydown", this.boundPanelKeydown, false);
+        this.paperDoc.removeEventListener("keyup", this.boundPanelKeyup, false);
         this.$$("TypewriterMenuIcon").removeEventListener("click", this.boundMenuClick, false);
     }
 } // class Typewriter

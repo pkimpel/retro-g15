@@ -60,8 +60,7 @@ export function g15Hex(v) {
     convention. This is not a particularly efficient way to do this */
 
     return v.toString(16).replace(hexRex, (c) => {
-        const g = g15HexXlate[c];
-        return (g ? g : "?");
+        return g15HexXlate[c] ?? "?";
     }).padStart(7, "0");
 }
 
