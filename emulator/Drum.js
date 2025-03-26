@@ -146,13 +146,13 @@ class Drum {
         const now = performance.now();
 
         while (this.runTime < 0) {
-            this.runTime += performance.now();
+            this.runTime += now;
         }
     }
 
     /**************************************/
     throttle() {
-        /* Returns a promise that unconditionally resolves after a delay to
+        /* Returns a Promise that unconditionally resolves after a delay to
         allow browser real time to catch up with the emulation clock, this.eTime.
         Since most browsers will force a setTimeout() to wait for a minimum of
         4ms, this routine will not delay if emulation time has not yet reached
@@ -181,10 +181,14 @@ class Drum {
 
     /**************************************/
     waitUntil(loc) {
-        /* Simulates waiting for the drum to rotate to the specified word
-        location. Locations must be non-negative. Updates the drum location
-        and the emulation clock via waitFor() */
-        let words = (loc - this.L.value + Util.longLineSize) % Util.longLineSize;
+        /* Simulates waiting for the drum to rotate to the specified word-time.
+        Locations must be non-negative. Updates the drum location and the
+        emulation clock via waitFor() */
+        let words = loc - this.L.value;
+
+        if (words < 0) {
+            words += Util.longLineSize;
+        }
 
         if (words > 0) {
             this.waitFor(words);
@@ -355,7 +359,7 @@ class Drum {
 
     /**************************************/
     ioThrottle() {
-        /* Returns a promise that unconditionally resolves after a delay to
+        /* Returns a Promise that unconditionally resolves after a delay to
         allow browser real time to catch up with the I/O subsystem clock, this.ioTime.
         Since most browsers will force a setTimeout() to wait for a minimum of
         4ms, this routine will not delay if the difference between real time
@@ -378,8 +382,8 @@ class Drum {
     /**************************************/
     ioWaitUntil(loc) {
         /* Simulates waiting for the drum to rotate to the specified word
-        location. Locations must be non-negative. Updates the drum location
-        and the emulation clock via waitFor() */
+        location. Locations must be non-negative. Updates the I/O drum location
+        and clock via waitFor() */
         let words = (loc - this.ioL.value + Util.longLineSize) % Util.longLineSize;
 
         if (words > 0) {
@@ -391,7 +395,7 @@ class Drum {
     ioWaitUntil4(loc) {
         /* Simulates waiting for the drum to rotate to the specified word
         location on a 4-word line. Locations must be non-negative. Updates
-        the drum location and the emulation clock via waitFor() */
+        the I/O drum location and clock via waitFor() */
         let words = (loc - this.ioL.value + Util.longLineSize) % Util.fastLineSize;
 
         if (words > 0) {
@@ -463,7 +467,7 @@ class Drum {
         this.write(28, (word & keepMask) << bits);
         this.ioWaitFor(1);
 
-        // await this.ioThrottle();
+        // await this.ioThrottle(); -- too small a delay to wait
         return [code, false];
     }
 
@@ -580,9 +584,7 @@ class Drum {
         word numbers, inserting zero in the four low-order bits of word 0, and
         returning the original "bits" high order bits of word 107 and a Boolean
         indicating whether line 19 is now "empty" (all zeroes). This is
-        normally used to get the next data code for output. The sign bit in word
-        107 is sampled before precession of that word takes place, and the state
-        of that bit is also returned */
+        normally used to get the next data code for output */
         let keepBits = Util.wordBits - bits;
         let keepMask = Util.wordMask >> bits;
         let code = 0;
@@ -601,7 +603,7 @@ class Drum {
             this.ioWrite19(newWord);
             code = word >> keepBits;
             this.ioWaitFor(1);
-            if (x % 16 == 0) {          // 4.30ms
+            if (x % 22 == 0) {          // 5.91ms
                 await this.ioThrottle();
             }
         }

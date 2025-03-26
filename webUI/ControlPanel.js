@@ -36,7 +36,6 @@ class ControlPanel {
         */
         let $$ = this.$$ = context.$$;
         let panel = this.panel = $$("ControlPanel");
-        let processor = context.processor;
         const panelCenter = panel.clientWidth / 2;
 
         this.context = context;
@@ -44,6 +43,7 @@ class ControlPanel {
         this.boundUpdatePanel = this.updatePanel.bind(this);
         this.boundSystemReset = this.systemReset.bind(this);
         this.boundToggleTracing = this.toggleTracing.bind(this);
+        this.boundFastRewind = null;    // established by enablePanel()
 
         this.intervalToken = 0;         // interval timer cancel token
         this.lastBellTime = 0;
@@ -269,6 +269,8 @@ class ControlPanel {
         /* Enables events and periodic refresh for the Control */
         let p = this.context.processor;
 
+        this.boundFastRewind = p.devices.paperTapeReader.fastRewind.bind(
+                p.devices.paperTapeReader);
         this.$$("EnableSwitchSet").addEventListener("click", this.boundControlSwitchChange, false);
         this.$$("PunchSwitchSet").addEventListener("click", this.boundControlSwitchChange, false);
         this.$$("ComputeSwitchSet").addEventListener("click", this.boundControlSwitchChange, false);
@@ -276,6 +278,7 @@ class ControlPanel {
         this.$$("PowerOffBtn").addEventListener("dblclick", this.context.systemShutDown, false);
         this.$$("ResetBtn").addEventListener("click", this.boundSystemReset, false);
         this.$$("PRFileSelector").value = null;
+        this.$$("PRTapeSupplyBar").addEventListener("dblclick", this.boundFastRewind, false);
         if (p.tracing) {
             this.$$("G15Version").classList.add("active");
         } else {
@@ -312,6 +315,8 @@ class ControlPanel {
         this.$$("PowerOffBtn").removeEventListener("dblclick", this.context.systemShutDown, false);
         this.$$("ResetBtn").removeEventListener("click", this.boundSystemReset, false);
         this.$$("PRFileSelector").value = null;
+        this.$$("PRTapeSupplyBar").removeEventListener("dblclick", this.boundFastRewind, false);
+        this.boundFastRewind = null;
 
         this.panelEnabled = false;
         this.$$("FrontPanel").style.visibility = "hidden";

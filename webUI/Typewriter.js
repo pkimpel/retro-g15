@@ -83,9 +83,10 @@ class Typewriter {
         satisfy the Processor's cancelation interface */
 
         if (this.busy) {
-            this.busy = false;
-            //this.canceled = true;     // currently affects nothing
+            this.canceled = true;     // currently affects nothing
         }
+
+        this.busy = false;
     }
 
 

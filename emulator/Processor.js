@@ -90,8 +90,6 @@ class Processor {
         this.pnAddCarry = 0;                            // addition inter-word carry bit for PN
         this.pnAddendSign = 0;                          // sign of double-precision addend
         this.pnAugendSign = 0;                          // sign of double-precision augend (PN)
-        this.pnEvenAddendMag = 0;                       // magnitude of DP even addend word
-        this.pnEvenSumZero = false;                     // true if PN even-word addition == 0
         this.pnSign = 0;                                // sign bit from PN even word
 
         // UI state
@@ -102,7 +100,9 @@ class Processor {
 
         // I/O Subsystem
         this.activeIODevice = null;                     // current I/O device object
+        this.canceledIO = false;                        // current I/O has been canceled
         this.duplicateIO = false;                       // second I/O of same type initiated while first in progress
+        this.hungIO = false;                            // current I/O is intentionally hung, awaiting cancel
         this.ioBitCount = 0;                            // current input/output bit count
         this.ioTimer = new Util.Timer();                // general timer for I/O operations
         this.ioPromise = Promise.resolve();             // general Promise for I/O operations
@@ -123,18 +123,17 @@ class Processor {
         /* Formats the registers to console.log */
         let loc = this.drum.L.value;
 
-        console.log("%s: L=%s: AR=%s  IP=%d  ID=%s %s  MQ=%s %s  PN=%s %s  PN%s : FO=%d%s",
+        console.log("%s: L=%s: ID=%s %s  MQ=%s %s  PN=%s %s  PN%s  IP=%d  AR=%s : FO=%d%s",
                 (prefix ?? "REG").padStart(16, " "),
                 Util.formatLineLoc(24, loc, false),
-                Util.g15SignedHex(this.drum.AR.value),
-                this.IP.value,
                 Util.g15Hex(this.drum.ID[1].value).padStart(8, "0"),
                 Util.g15SignedHex(this.drum.ID[0].value),
                 Util.g15Hex(this.drum.MQ[1].value).padStart(8, "0"),
                 Util.g15SignedHex(this.drum.MQ[0].value),
                 Util.g15Hex(this.drum.PN[1].value).padStart(8, "0"),
                 Util.g15SignedHex(this.drum.PN[0].value),
-                (this.pnSign ? "-" : "+"),
+                (this.pnSign ? "-" : "+"), this.IP.value,
+                Util.g15SignedHex(this.drum.AR.value),
                 this.FO.value, (this.overflowed ? "*" : " "));
     }
 
@@ -239,7 +238,7 @@ class Processor {
     *******************************************************************/
 
     /**************************************/
-    addSingle(a, b) {
+    addSingle(a, b, suppressMinus0=0) {
         /* Adds two signed, single-precision words. Assumes negative numbers
         have been converted to complement form. Sets this.overflowed true
         if the signs of the operands are the same and the sign of the sum
@@ -250,36 +249,25 @@ class Processor {
         let bSign = b & Util.wordSignMask;      // sign of b
         let bMag =  b & Util.absWordMask;       // 2s complement magniturde of b
 
-        // This is a little messy -- in G-15 arithmetic, adding a -0 would
-        // interfere with determination of the result sign, so the G-15 had
-        // a rather complicated test to detect -0 coming off the inverting
-        // gates at T29 time and cause the adder to adjust the sign in the
-        // next word time. The following has the equivalent effect. See the
-        // Theory of Operation manual, page 34, paragraph C-10t.
-
-        // Do not allow -0 to reach the adder.
-        if (aSign && aMag == 0) {
-            aSign = 0;
-        }
-        if (bSign && bMag == 0) {
-            bSign = 0;
-        }
-
         // Develop the raw 2s-complement sum without the sign bits.
         let sum = aMag + bMag;
         let endCarry = (sum >> Util.wordBits) & 1;
-        let sumSign = aSign ^ bSign ^ endCarry;
-        sum &= Util.wordMask;           // discard any overflow bits in sum
+        sum &= Util.wordMask;                   // discard any overflow bits in sum
+        if (suppressMinus0) {
+            endCarry = 1-endCarry;              // compensate for -0 reaching the adder
+        }
 
         // Check for arithmetic overflow (see drawing 27 in Theory of Operation).
         this.overflowed = aSign == bSign && (endCarry ? (bSign == 0 || sum == 0) : (bSign != 0));
 
-        // Put the raw sum back into G-15 complement format and inhibit -0.
-        if (sum == 0) {
-            return sum;                 // inhibit -0 by returning only the magnitude
-        } else {
-            return sum | sumSign;
+        // ?? Not sure why this is necessary, but it is ??
+        if (endCarry && sum == 0 && this.overflowed) {
+            endCarry = 0;                       // prevent -0 on overflow
         }
+
+        // Put the raw sum back into G-15 complement format.
+        let sumSign = aSign ^ bSign ^ endCarry;
+        return sum | sumSign;
     }
 
     /**************************************/
@@ -292,7 +280,6 @@ class Processor {
 
         this.pnAugendSign = a & Util.wordSignMask;      // sign of DP augend (PN)
         this.pnAddendSign = b & Util.wordSignMask;      // sign of DP addend
-        this.pnEvenAddendMag = b & Util.absWordMask;    // magnitude of even addend word
 
         // Zero the original signs in the words and develop the even-word sum and carry.
         let sum = (a & Util.absWordMask) + (b & Util.absWordMask);
@@ -300,13 +287,12 @@ class Processor {
 
         // Return the even-word sum (sign bit will be 0).
         sum &= Util.wordMask;
-        this.pnEvenSumZero = (sum == 0);
 
         return sum;
     }
 
     /**************************************/
-    addDoubleOdd(a, b) {
+    addDoubleOdd(a, b, suppressMinus0=0) {
         /* Adds the odd word "b" (representing the source word) of a double-
         precision pair to the odd word "a" (representing PN-odd). Assumes
         negative numbers have been converted to complement form. Sets
@@ -315,33 +301,20 @@ class Processor {
         returns the odd-word sum (which does not have a sign bit) with the
         result sign in this.pnSign. Avoids generating a -0 result */
 
-        // This is a little messy -- in G-15 arithmetic, adding a -0 would
-        // interfere with determination of the result sign, so the G-15 had
-        // a rather complicated test to detect -0 coming off the inverting
-        // gates at T29 time and cause the adder to adjust the sign in the
-        // next word time. The following has the equivalent effect. See the
-        // Theory of Operation manual, page 34, paragraph C-10t.
-        if (b == 0 && this.pnEvenAddendMag == 0 && this.pnAddendSign) {
-            this.pnAddendSign = 0;      // do not allow -0 to reach the adder
-        }
-
         // Develop the raw odd-word sum without the sign bits.
         let sum = a + b + this.pnAddCarry;
         let endCarry = (sum >> Util.wordBits) & 1;
 
         // Put the raw sum back into G-15 complement format and inhibit -0.
         sum &= Util.wordMask;
-        if (sum == 0 && this.pnEvenSumZero) {
-            this.pnSign = 0;            // inhibit -0
-        } else {
-            this.pnSign = this.pnAugendSign ^ this.pnAddendSign ^ endCarry;
-        }
+        this.pnSign = this.pnAugendSign ^ this.pnAddendSign ^ (suppressMinus0 ? 1-endCarry : endCarry);
 
         // Check for arithmetic overflow (see drawing 27 in Theory of Operation).
         this.overflowed = this.pnAugendSign == this.pnAddendSign &&
                 (endCarry ? (this.pnAddendSign == 0 || sum == 0) : (this.pnAddendSign != 0));
 
         // Return the odd-word sum with the result sign in this.pnSign.
+        this.pnAddCarry = endCarry;
         return sum;
     }
 
@@ -355,6 +328,7 @@ class Processor {
         let sign = word & Util.wordSignMask;
         let mag = word >> 1;
 
+        this.suppressMinus0 = (sign == 1 && mag == 0);
         this.dpEvenSign = (this.drum.CE ? sign : 0);    // set to 0 on odd words
         if (sign) {
             mag = Util.two28 - mag;     // convert to 2-s complement if negative
@@ -371,6 +345,10 @@ class Processor {
         to hold any carry from complementing the even word of the pair.
         this.dpEvenSign is assumed to hold the sign from the even word of the
         pair. Any overflow from complementing the high-order word is discarded */
+
+        if (word) {
+            this.suppressMinus0 = false;        // since odd word != 0, can't be a -0
+        }
 
         if (this.dpEvenSign) {          // even word was negative
             return (Util.wordMask - word + this.dpCarry) & Util.wordMask;
@@ -499,8 +477,8 @@ class Processor {
                 let ar  = this.drum.read(regAR);
                 let val = (m20 & m21) | (~m20 & ar);
                 if (this.tracing) {
-                    console.log("                  S=27: 20&21|~20&AR: L=%s: M20=%s, M21=%s, AR=%s => %s",
-                            Util.formatDrumLoc(this.cmdLine, this.drum.L.value, true),
+                    console.log("                    S=27: 20&21|~20&AR: L=%s: M20=%s, M21=%s, AR=%s => %s",
+                            Util.formatDrumLoc(this.S.value, this.drum.L.value, true),
                             Util.g15SignedHex(m20), Util.g15SignedHex(m21),
                             Util.g15SignedHex(ar), Util.g15SignedHex(val));
                 }
@@ -518,8 +496,8 @@ class Processor {
                 let m21 = this.drum.read(21);
                 let val = ~m20 & m21;
                 if (this.tracing) {
-                    console.log("                  S=30: ~20&21: L=%s: M20=%s, M21=%s => %s",
-                            Util.formatDrumLoc(this.cmdLine, this.drum.L.value, true),
+                    console.log("                    S=30: ~20&21: L=%s: M20=%s, M21=%s => %s",
+                            Util.formatDrumLoc(this.S.value, this.drum.L.value, true),
                             Util.g15SignedHex(m20), Util.g15SignedHex(m21),
                             Util.g15SignedHex(val));
                 }
@@ -531,8 +509,8 @@ class Processor {
                 let m21 = this.drum.read(21);
                 let val = m20 & m21;
                 if (this.tracing) {
-                    console.log("                  S=31: 20&21: L=%s: M20=%s, M21=%s => %s",
-                            Util.formatDrumLoc(this.cmdLine, this.drum.L.value, true),
+                    console.log("                    S=31: 20&21: L=%s: M20=%s, M21=%s => %s",
+                            Util.formatDrumLoc(this.S.value, this.drum.L.value, true),
                             Util.g15SignedHex(m20), Util.g15SignedHex(m21),
                             Util.g15SignedHex(val));
                 }
@@ -946,7 +924,15 @@ class Processor {
     transferToAR() {
         /* Executes a transfer from any source to the AR register (D=28). Note
         that for D=28, "via AR" operations are not supported, and instead
-        characteristics 2 & 3 perform absolute value and negation, respectively */
+        characteristics 2 & 3 perform absolute value and negation, respectively.
+
+        This is a little messy -- in G-15 arithmetic, adding a -0 would
+        interfere with determination of the result sign, so the G-15 had a
+        rather complicated test to detect -0 coming off the inverting gates at
+        T29 time and cause the adder to adjust the sign in the next word time.
+        This only happens when transferring or adding to AR or PN, and only for
+        CH=1). The following has the equivalent effect. See the Theory of
+        Operation manual, page 34, paragraph C-10t */
 
         this.transferDriver(() => {
             let lb = 0;                         // late bus: dest value written to AR
@@ -959,22 +945,31 @@ class Processor {
 
             case 1: // AD
                 if (!this.C1.value || this.drum.CE) {           // SP operation or even word
-                    lb = this.complementSingle(word);
-                    if ((lb & Util.absWordMask) == 0) {         // suppress -0
+                    if ((word & Util.absWordMask) == 0) {               // suppress -0
                         lb = 0;
+                    } else {
+                        lb = this.complementSingle(word);
                     }
                 } else {                // DP odd word
-                    lb = this.complementDoubleOdd(word);
+                    if (word == 0 && this.suppressMinus0) {
+                        this.dpEvenSign = 0;                            //suppress -0
+                    } else {
+                        ib = this.complementDoubleOdd(word);
+                    }
                 }
                 break;
 
             case 2: // AV
-                lb = word & Util.absWordMask;
+                if (!this.C1.value || this.drum.CE) {           // SP operation or even word
+                    lb = word & Util.absWordMask;
+                } else {                // DP odd word
+                    lb = word;
+                }
                 break;
 
             case 3: // SU
                 if (!this.C1.value || this.drum.CE) {           // SP operation or even word
-                    lb = this.complementSingle(word ^ 1);                // change sign bit
+                    lb = this.complementSingle(word ^ 1);              // change sign bit
                 } else {                // DP odd word
                     lb = this.complementDoubleOdd(word);
                 }
@@ -991,7 +986,15 @@ class Processor {
     /**************************************/
     addToAR() {
         /* Executes an addition from any source to the AR+ register (D=29).
-        AR is assumed to be in complement form. Sets OVERFLOW if necessary */
+        AR is assumed to be in complement form. Sets OVERFLOW if necessary.
+
+        This is a little messy -- in G-15 arithmetic, adding a -0 would
+        interfere with determination of the result sign, so the G-15 had a
+        rather complicated test to detect -0 coming off the inverting gates at
+        T29 time and cause the adder to adjust the sign in the next word time.
+        This only happens when transferring or adding to AR or PN, and only for
+        CH=1). The following has the equivalent effect. See the Theory of
+        Operation manual, page 34, paragraph C-10t */
 
         this.transferDriver(() => {
             let a = this.drum.read(regAR);      // original value of AR (augend)
@@ -1002,14 +1005,17 @@ class Processor {
             switch (this.C.value) {
             case 0: // TR
                 ib = word;
+                lb = this.addSingle(a, ib);
                 break;
 
             case 1: // AD
                 if (!this.C1.value || this.drum.CE) {   // SP operation or even word
                     ib = this.complementSingle(word);
-                } else {                // DP odd word
+                } else {                                // DP odd word
                     ib = this.complementDoubleOdd(word);
                 }
+
+                lb = this.addSingle(a, ib, this.suppressMinus0);
                 break;
 
             case 2: // AV
@@ -1018,18 +1024,21 @@ class Processor {
                 } else {                // DP odd word
                     ib = this.complementDoubleOdd(word);
                 }
+
+                lb = this.addSingle(a, ib);
                 break;
 
             case 3: // SU
                 if (!this.C1.value || this.drum.CE) {   // SP operation or even word
-                    ib = this.complementSingle(word ^ 1);        // change sign bit
+                    ib = this.complementSingle(word ^ 1);       // change sign bit
                 } else {                // DP odd word
                     ib = this.complementDoubleOdd(word);
                 }
+
+                lb = this.addSingle(a, ib, this.suppressMinus0);
                 break;
             } // switch this.C
 
-            lb = this.addSingle(a, ib);
             if (this.overflowed) {
                 this.FO.value = 1;
             }
@@ -1067,12 +1076,19 @@ class Processor {
 
     /**************************************/
     addToPN() {
-        /* Executes an addition from any source to the PN register (D=30) */
+        /* Executes an addition from any source to the PN register (D=30).
+
+        This is a little messy -- in G-15 arithmetic, adding a -0 would
+        interfere with determination of the result sign, so the G-15 had a
+        rather complicated test to detect -0 coming off the inverting gates at
+        T29 time and cause the adder to adjust the sign in the next word time.
+        This only happens when transferring or adding to AR or PN, and only for
+        CH=1). The following has the equivalent effect. See the Theory of
+        Operation manual, page 34, paragraph C-10t */
+
         this.pnAddCarry = 0;            // carry bit from even word to odd word
         this.pnAddendSign = 0;          // raw sign result from even word addition
         this.pnAugendSign = 0;          // sign of augend (PN)
-        this.pnEvenAddendMag = 0;       // magnitude of even word
-        this.pnEvenSumZero = false;     // result of even-word addition is zero
         this.pnSign = 0;                // final sign to be applied to PN
 
         if (this.tracing) {
@@ -1107,13 +1123,15 @@ class Processor {
                     pw = this.addDoubleOdd(pw, word);
                     break;
                 case 1: // AD
-                    pw = this.addDoubleOdd(pw, this.complementDoubleOdd(word));
+                    word = this.complementDoubleOdd(word);      // may reset this.suppressMinus0
+                    pw = this.addDoubleOdd(pw, word, this.suppressMinus0);
                     break;
                 case 2: // AV           // since it's absolute value, no complementing is necessary
                     pw = this.addDoubleOdd(pw, word);
                     break;
                 case 3: // SU
-                    pw = this.addDoubleOdd(pw, this.complementDoubleOdd(word));
+                    word = this.complementDoubleOdd(word);      // may reset this.suppressMinus0
+                    pw = this.addDoubleOdd(pw, word, this.suppressMinus0);
                     break;
                 }
 
@@ -1151,8 +1169,6 @@ class Processor {
         this.pnAddCarry = 0;
         this.pnAddendSign = 0;
         this.pnAugendSign = 0;
-        this.pnEvenAddendMag = 0;
-        this.pnEvenSumZero = false;
         this.pnSign = 0;
 
         if (this.DI.value) {
@@ -1200,13 +1216,13 @@ class Processor {
         must be 1 and C1 (double-precision bit) is ignored. T for single-precision
         operands in PN and ID should normally be 57 and for double-precision 114,
         although other values can be useful. Sign of the quotient is maintained
-        in the IP flip-flop, not used here */
+        in the IP flip-flop, which is not used here. See Theory of Operation, p.55-59 */
         let count = this.T.value;       // shift+add iteration count times 2
         let id = 0;                     // current ID register word
         let pn = 0;                     // current PN register word
         let pnShiftCarry =              // inter-word carry for PN left shifts
                 this.drum.getPN0T29Bit();       // (initialize in case DIV starts on odd word)
-        let rSign = 0;                  // sign of remainder (controls add/sub on next cycle)
+        let rSign = 0;                  // sign of remainder (controls add/sub on next cycle, start by subtracting)
 
         let oFlow = 0;                  // *** DEBUG *** tracing overflow indicator
         let pna = 0;                    // *** DEBUG *** PN after addition
@@ -1216,19 +1232,21 @@ class Processor {
         let qBit = 0;                   // *** DEBUG *** current quotient bit
 
         let debugTraceEven = () => {
-            console.log("            <Div> %s  %s  %s  %s  %s %s%s     %s   %s %s   %s",
+            /**** DEBUG ONLY *******************
+            console.log("            <Div> %s  %s  %s  %s  %s %s          %s %s   %s",
                     count.toString().padStart(3, " "),
                     this.drum.L2.toString(),
                     Util.g15SignedHex(id),
                     Util.g15SignedHex(pnb),
                     Util.g15SignedHex(pna),
-                    (rSign ? "-" : "+"), (this.pnSign ? "-" : "+"),
-                    qBit.toString(),
+                    (rSign ? "-" : "+"),
                     Util.g15SignedHex(pn), pnc.toString(),
                     Util.g15SignedHex(mq));
+            ***********************************/
         };
 
         let debugTraceOdd = () => {
+            /**** DEBUG ONLY *******************
             console.log("            <Div> %s  %s %s  %s  %s  %s%s  %s  %s  %s  %s  %s",
                     count.toString().padStart(3, " "),
                     this.drum.L2.toString(),
@@ -1240,6 +1258,7 @@ class Processor {
                     Util.g15Hex(pn).padStart(8,"0"), pnc.toString(),
                     Util.g15Hex(mq).padStart(8,"0"));
             console.log(" ");
+            ***********************************/
         };
 
         // Initialize the register inter-word carries in case we start on an odd word.
@@ -1247,8 +1266,6 @@ class Processor {
         this.pnAddCarry = 0;
         this.pnAddendSign = 0;
         this.pnAugendSign = 0;
-        this.pnEvenAddendMag = 0;
-        this.pnEvenSumZero = false;
         this.pnSign = 0;
 
         if (this.DI.value) {
@@ -1261,10 +1278,12 @@ class Processor {
 
         if (this.tracing) {
             this.traceRegisters();
+            /**** DEBUG ONLY *******************
             console.log(" ");
             console.log("            <Div>   T L2       ID     PN-B4     PN-AA  P± OF  Q        PN  C        MQ");
                                  //        ttt  l  ddddddd-  bbbbbbb-  aaaaaaa- ss     q   ppppppp- c   qqqqqqq-
                                  //        ttt  l dddddddd  dddddddd  dddddddd  ss  f  q  pppppppp  c  qqqqqqqq
+            ***********************************/
         }
 
         // Since T is considered relative, do a modified transfer cycle.
@@ -1272,37 +1291,56 @@ class Processor {
             id = this.drum.read(regID);
             pn = this.drum.read(regPN);
             if (this.drum.CE) {         // even word
-                this.drum.setMQ0T2Bit(qBit);    // insert the current quotient bit into MQ:0 T2
+                // Insert the quotient bit from the last cycle into MQ:0 T2 and shift left one bit.
+                this.drum.setMQ0T2Bit(qBit);
                 this.shiftMQLeftEven();
-                id = (id & Util.absWordMask) | (1-rSign);       // + or - denominator
-                id = this.complementSingle(id);
-                pn = (pn & Util.absWordMask) | this.pnSign;
+                mq = this.drum.read(regMQ);     // *** DEBUG ***/
+
+                // Set the sign of the addend (ID) as reverse of the remainder from last cycle.
+                id = this.complementSingle((id & Util.absWordMask) | (1-rSign));
+
+                // Apply the addend to the remainder (PN) even word.
                 pnb = pn;                       // *** DEBUG ***
                 pn = this.addDoubleEven(pn, id);
                 pna = pn;                       // *** DEBUG ***
+
+                // Shift the new remainder even word left one bit.
                 pnShiftCarry = (pn >> (Util.wordBits-1)) & 1;
                 pnc = pnShiftCarry;
-                pn = ((pn & Util.absWordMask) << 1) & Util.wordMask;
+                pn = (pn << 1) & Util.wordMask;
+
                 if (this.tracing) {             // *** DEBUG ***
                     debugTraceEven();           // *** DEBUG ***
                 }                               // *** DEBUG ***
             } else {                    // odd word
+                // Shift MQ odd left one bit.
                 this.shiftMQLeftOdd();
+                mq = this.drum.read(regMQ);     // *** DEBUG ***/
+
+                // Complement the odd word of ID and add to the odd word of PN.
                 id = this.complementDoubleOdd(id);
                 pnb = pn;                       // *** DEBUG ***
                 pn = this.addDoubleOdd(pn, id);
-                rSign = this.pnSign;            // controls add/subtract of denominator in next cycle
                 pna = pn;                       // *** DEBUG ***
-                oFlow = this.FO.value;          // *** DEBUG ***
-                if (this.FO.value) {            // overflows can happen with negative remainders...
-                    this.FO.value = 0;          //     ...ignore them
+
+                // Remainder sign before shifting determines quotient bit and add/subtract for next cycle.
+                rSign = this.pnSign;
+
+                // Overflows can happen with negative remainders... ignore them.
+                oFlow = this.overflowed ? 1 : 0;// *** DEBUG ***
+                if (this.overflowed) {
+                    this.overflowed = false;
                 }
 
-                pnc = (pn >> (Util.wordBits-1));// *** DEBUG ***
-                this.pnSign = (pn >> (Util.wordBits-1)) & 1;    // new PN sign after shifting
-                pn = ((pn << 1) & Util.absWordMask) | pnShiftCarry;
+                // High-order PN bit will be the PN sign for next cycle after shifting even word left.
+                this.pnSign = (pn >> (Util.wordBits-1)) & 1;
+                pnc = this.pnSign;              // *** DEBUG ***
+                pn = ((pn << 1) & Util.wordMask) | pnShiftCarry;
+                this.drum.setPN0T1Bit(this.pnSign);             // set PN sign for next cycle
 
-                qBit = 1-rSign;                 // determine the quotient bit from the remainder sign
+                // Remainder sign from this cycle determines quotient bit (applied next cycle).
+                qBit = 1-rSign;
+
                 if (this.tracing) {             // *** DEBUG ***
                     debugTraceOdd();            // *** DEBUG ***
                 }                               // *** DEBUG ***
@@ -1527,7 +1565,7 @@ class Processor {
             break;
         case -0x51: case -0x71:         // Q - Permit type in
             if (this.OC.value == IOCodes.ioCmdReady) {
-                this.OC.value = IOCodes.ioCmdTypeIn;
+                this.enableTypeIn();
             }
             break;
         case -0x52: case -0x72:         // R - Return to marked place
@@ -1551,7 +1589,7 @@ class Processor {
             this.setCommandLine(this.CD.value | (code & 0b00111));
             break;
         case IOCodes.ioCodeStop:        // S - Cancel I/O
-            this.cancelIO();
+            this.finishIO();
             break;
         }
     }
@@ -1561,14 +1599,15 @@ class Processor {
         /* Processes a keyboard code sent from ControlPanel. If the code is
         negative, it is the ASCII code for a control command used with the ENABLE
         switch. Otherwise it is an I/O data/control code to be processed as
-        TYPE IN (D=31, S=12) input . Note that an "S" key can be used for
-        both purposes depending on the state of this.enableSwitch */
+        TYPE IN (D=31, S=12) input. Note that the "S" key can be used for both
+        purposes depending on the state of this.enableSwitch. If the ENABLE
+        switch is not on and TYPE IN is not active, the keystroke is ignored */
 
         if (this.enableSwitch) {                                // Control command
             await this.executeKeyboardCommand(code);
         } else if (this.OC.value == IOCodes.ioCmdTypeIn) {      // Input during TYPE IN
-            if (code == IOCodes.ioCodeStop && (this.OC.value & 0b0011) == 0) { // check for cancel
-                this.cancelIO();                                // no reload with STOP from Typewriter
+            if (code == IOCodes.ioCodeStop) {                   // check for cancel
+                this.finishIO();                                // no reload with STOP from Typewriter
             } else {
                 await this.receiveInputCode(code);
             }
@@ -1680,8 +1719,8 @@ class Processor {
                     break;
                 }
 
-                if (this.OC.value != IOCodes.ioCmdPunch19) {
-                    punching = false;   // I/O canceled
+                if (this.canceledIO) {
+                    punching = false;
                 } else {
                     this.devices.paperTapePunch.write(code);    // no await
                     await this.ioTimer.delayUntil(outTime);
@@ -1691,17 +1730,16 @@ class Processor {
                     // blank leader. It tries to simulate what happens when a second
                     // Punch Line 19 is executed while a prior one is still in progress.
                     if (this.duplicateIO) {
-                        fmt = await this.drum.ioPrecessLongLineToMZ(2, 3);      // get initial 3-bit format code
+                        this.duplicateIO = false;
+                        code = IOCodes.ioCodeReload;                    // trigger a reload to restart the I/O
                     } else {
-                        fmt = await this.drum.ioPrecessMZToCode(3);             // get next 3-bit format code
+                        fmt = await this.drum.ioPrecessMZToCode(3);     // get next 3-bit format code
                     }
                 }
             } while (code != IOCodes.ioCodeReload && punching);
         } while (punching);
 
-        if (this.OC.value == IOCodes.ioCmdPunch19) {    // check for cancel
-            this.finishIO();
-        }
+        this.finishIO();
     }
 
     /**************************************/
@@ -1773,12 +1811,12 @@ class Processor {
                 }
 
                 // Pause printing while the ENABLE switch is on
-                while (this.enableSwitch && this.OC.value == IOCodes.ioCmdTypeAR) {
+                while (this.enableSwitch && !this.canceledIO) {
                     await this.ioTimer.delayUntil(outTime);
                     outTime += printPeriod;
                 }
 
-                if (this.OC.value != IOCodes.ioCmdTypeAR) {
+                if (this.canceledIO) {
                     printing = false;   // I/O canceled
                 } else {
                     this.devices.typewriter.write(code);        // no await
@@ -1793,9 +1831,7 @@ class Processor {
             } while (code != IOCodes.ioCodeReload && printing);
         } while (printing);
 
-        if (this.OC.value == IOCodes.ioCmdTypeAR) {     // check for cancel
-            this.finishIO();
-        }
+        this.finishIO();
     }
 
     /**************************************/
@@ -1860,12 +1896,12 @@ class Processor {
                 }
 
                 // Pause printing while the ENABLE switch is on
-                while (this.enableSwitch && this.OC.value == IOCodes.ioCmdType19) {
+                while (this.enableSwitch && !this.canceledIO) {
                     await this.ioTimer.delayUntil(outTime);
                     outTime += printPeriod;
                 }
 
-                if (this.OC.value != IOCodes.ioCmdType19) {
+                if (this.canceledIO) {
                     printing = false;   // I/O canceled
                 } else {
                     this.devices.typewriter.write(code);        // no await
@@ -1880,9 +1916,7 @@ class Processor {
             } while (code != IOCodes.ioCodeReload && printing);
         } while (printing);
 
-        if (this.OC.value == IOCodes.ioCmdType19) {     // check for cancel
-            this.finishIO();
-        }
+        this.finishIO();
     }
 
     /**************************************/
@@ -1893,8 +1927,9 @@ class Processor {
         this.activeIODevice = this.devices.paperTapeReader;
         this.ioPromise = Promise.resolve();
         if (await this.devices.paperTapeReader.read()) {
-            return;                     // no tape or buffer overrun -- leave I/O hanging
-        } else if (this.OC.value == IOCodes.ioCmdPTRead) {      // check for cancel
+            this.hungIO = true;         // no tape or buffer overrun -- leave I/O hanging
+            return;
+        } else {
             this.finishIO();
         }
     }
@@ -1911,8 +1946,11 @@ class Processor {
         this.OC.value = IOCodes.ioCmdPTRev1;
         this.activeIODevice = this.devices.paperTapeReader;
         if (await this.devices.paperTapeReader.reverseBlock()) {
-            return;                     // no tape or buffer overrun -- leave I/O hanging
-        } else if (this.OC.value == IOCodes.ioCmdPTRev1) {      // check for cancel
+            this.hungIO = true;         // no tape or buffer overrun -- leave I/O hanging
+            return;
+        } else if (this.canceledIO) {
+            this.finishIO();
+        } else {
             await this.reversePaperTapePhase2();
         }
     }
@@ -1928,13 +1966,15 @@ class Processor {
         this.OC.value = IOCodes.ioCmdPTRev2;
         this.activeIODevice = this.devices.paperTapeReader;
         if (await this.devices.paperTapeReader.reverseBlock()) {
-            return;                     // no tape or buffer overrun -- leave I/O hanging
-        } else if (this.OC.value == IOCodes.ioCmdPTRev2) {      // check for cancel
-            if (await this.devices.paperTapeReader.read()) {
-                return;                 // no tape or buffer overrun -- leave I/O hanging
-            } else if (this.OC.value == IOCodes.ioCmdPTRev2) {  // check again for cancel
-                this.finishIO();
-            }
+            this.hungIO = true;         // no tape or buffer overrun -- leave I/O hanging
+            return;
+        } else if (this.canceledIO) {
+            this.finishIO();
+        } else if (await this.devices.paperTapeReader.read()) {
+            this.hungIO = true;         // no tape or buffer overrun -- leave I/O hanging
+            return;
+        } else {
+            this.finishIO();
         }
     }
 
@@ -1952,27 +1992,32 @@ class Processor {
     cancelIO() {
         /* Cancels any in-progress I/O operation, but leaves it not Ready
         pending a finishIO(). The individual devices will detect this and abort
-        their operations */
+        their operations. If the I/O is hung, no device is listening, so the
+        I/O is simply terminated */
 
         if (this.activeIODevice) {
             this.activeIODevice.cancel();
-        }
-
-        if (this.OC.value < IOCodes.ioCmdReady) {
-            this.finishIO();
+            if (this.hungIO) {
+                this.finishIO();
+            } else {
+                this.canceledIO = true;
+            }
         }
     }
 
     /**************************************/
     finishIO() {
-        /* Terminates an I/O operation, resetting state and setting Ready */
+        /* Terminates an I/O operation, resetting state and setting Ready.
+        Note that if no I/O is in progress, calling this has no effect */
 
         this.OC.value = IOCodes.ioCmdReady;     // set I/O Ready state
         this.AS.value = 0;
         this.OS.value = 0;
         this.ioBitCount = 0;
         this.activeIODevice = null;
+        this.canceledIO = false;
         this.duplicateIO = false;
+        this.hungIO = false;
     }
 
     /**************************************/
@@ -1987,7 +2032,7 @@ class Processor {
                 this.waitUntilT();      // same I/O as the one in progress, so
                 return;                 // just ignore the request
             } else {
-                this.warning(`D=31 S=${sCode}: initiateIO with I/O active, OC=${this.OC.value}`);
+                this.warning(`D=31 S=${sCode}: initiateIO with I/O active, OC=${this.OC.value.toString(16)}`);
                 sCode |= this.OC.value; // S is always OR-ed into OC, not copied
                 this.cancelIO();        // cancel the in-progress I/O -- not what the G-15 did, though
             }
@@ -2087,41 +2132,52 @@ class Processor {
     /**************************************/
     returnExit() {
         /* Handles the messy details of D=31, S=20, Select Command Line and
-        Return Exit. See G-15 Technical Applications Memorandum 4 and 41 */
+        Return Exit. See G-15 Technical Applications Memorandum 4 and 41, and
+        the Programmer's Reference Manual, p.56-58 */
         let loc = this.drum.L.value;
-        let n = this.N.value;
+        let n0 = this.N.value;          // original value of N
         let mark = (this.drum.CM.value & 0b11_11111_11111_0) >> 1;
-        let t = this.T.value;
+        let m = mark;
+        let n = n0;
+        let t = this.T.value + this.DI.value;
 
         this.setCommandLine((this.C1.value << 2) | this.C.value);
 
         // Adjust the drum locations to account for wrap-around, word 107 -> 0
-        if (mark < loc) {mark += Util.longLineSize}
-        if (t < loc) {t += Util.longLineSize}
-        if (n < loc) {n += Util.longLineSize}
+        if (t < loc) {
+            t += Util.longLineSize;
+            m += Util.longLineSize;
+            n += Util.longLineSize;
+        }
+
+        if (m < t) {m += Util.longLineSize}
+        if (n < t) {n += Util.longLineSize}
 
         if ((this.computeSwitch == 2 && this.BP.value) || !this.CZ.value) {
             // If the Compute switch is set to BP and the command is marked BP,
             // or if single-stepping is in progress, always return to the marked
             // location and ignore N (Tech Memo 41).
-            this.N.value = mark % Util.longLineSize;
+            this.N.value = mark;
         } else if (t == n) {
-            // Return to the N location unconditionally (Tech Memo 4).
-        } else if (t <= n && n <= mark) {
-            // Return to the N location unconditionally (Tech Memo 4).
+            // Return to the command's N location unconditionally (Prog.Ref p.57).
+        } else if (t <= n && n <= m) {
+            // Return to the command's N location unconditionally (Tech Memo 4).
         } else {
             // Otherwise, return to the marked location
-            this.N.value = mark % Util.longLineSize;
+            this.N.value = mark;
         }
 
         this.waitUntilT();
         if (this.tracing) {
             const dL = Util.lineHex[loc];
             const cm = Util.g15SignedHex(this.drum.CM.value);
-            const nA = Util.lineHex[n];
-            const nL = this.N.value;
-            const tL = Util.lineHex[t];
-            console.log(`              RET L=${dL}: CM=${cm} T=${tL} N=${nA} MARK=${mark} => ${Util.formatDrumLoc(this.cmdLine, nL, true)}`);
+            const mL = Util.lineHex[mark];
+            const nL = Util.lineHex[n0];
+            const tL = Util.lineHex[this.T.value];
+            const r1 = t == n ? "==" : t < n ? "<" : ">";
+            const r2 = n <= m ? "<=" : ">";
+            console.log(`             RET: L=${dL}: CM=${cm} [Tk=${tL} ${r1} N=${nL} ${r2} MARK=${mL}] => %s`,
+                        Util.formatDrumLoc(this.cmdLine, this.N.value, true));
         }
     }
 
@@ -2186,42 +2242,54 @@ class Processor {
 
         case 21:        // select command line & mark exit
             this.setCommandLine((this.C1.value << 2) | this.C.value);
-            // Set the mark in T2-T13 of CM. This command takes only one word
-            // time regardless of this.C1, so don't use this.transferDriver().
-            // Note that if the command is immediate (DI=0), transfer state ends
-            // at T-1, not T, hence the +DI-1 adjustment to the mark value.
-            this.drum.CM.value = ((this.T.value + this.DI.value - 1) << 1) |
-                    (this.drum.CM.value & 0b1_1111111_1_1111111_00_00000_00000_1);
-            this.drum.waitUntil(this.T.value + this.DI.value);  // ignore this.C1 (DP bit)
+            {
+                // Set the mark in T2-T13 of CM. Transfer state for his command
+                // takes only one word time regardless of this.C1 or this.DI, so
+                // don't use this.transferDriver(). Note that if the command is
+                // immediate (DI=0), transfer starts and ends at L+1.
+                let mark = 0;
+                if (!this.DI.value) {   // immediate execution
+                    mark = this.drum.L.value;
+                } else {                // deferred execution
+                    mark = (this.T.value + Util.longLineSize) % Util.longLineSize;
+                    this.drum.waitUntil(this.T.value);  // ignore this.C1 (DP bit)
+                }
+
+                this.drum.CM.value = (this.drum.CM.value & 0b1_1111111_1_1111111_00_00000_00000_1) |
+                                     (mark << 1);
             if (this.tracing) {
                 let loc = Util.lineHex[this.drum.L.value];
-                let n = (this.N.value + this.DI.value - 1 + Util.longLineSize)%Util.longLineSize;
-                let t = Util.lineHex[this.T.value];
+                    let m = Util.lineHex[mark];
                 let cm = Util.g15SignedHex(this.drum.CM.value);
-                console.log(`              MRK L=${loc}: T=${t}, CM=${cm} => ${Util.formatDrumLoc(this.cmdLine, n, true)}`);
+                    console.log(`             MRK: L=${loc}: CM=${cm}, MARK=${m} => %s`,
+                                Util.formatDrumLoc(this.cmdLine, this.N.value, true));
+                }
             }
+            this.drum.waitFor(1);       // always a single word-time for Transfer
             break;
 
         case 22:        // sign of AR to TEST
             if (this.drum.read(regAR) & Util.wordSignMask) {
                 this.CQ.value = 1;
-                if (this.tracing) {
-                    console.log("    TEST AR SIGN: L=%s: AR=%s : CQ=%s",
-                            Util.formatDrumLoc(20, this.drum.L.value, true),
-                            Util.g15SignedHex(this.drum.read(regAR)), this.FO.value);
-                }
+            }
+            if (this.tracing) {
+                console.log("    TEST AR SIGN: L=%s: AR=%s : CQ=%s",
+                        Util.formatDrumLoc(20, this.drum.L.value, true),
+                        Util.g15SignedHex(this.drum.read(regAR)), this.CQ.value);
             }
             this.waitUntilT();
             break;
 
         case 23:        // clear MQ/ID/PN/IP, etc.
-            this.dpCarry = 0;
-            this.dpEvenSign = 0;
             this.mqShiftCarry = 0;
             this.pnAddCarry = 0;
             this.pnAddendSign = 0;
             this.pnAugendSign = 0;
             this.pnSign = 0;
+            if (this.tracing) {
+                this.traceRegisters();
+            }
+
             switch (this.C.value) {
             case 0:                     // clear MQ/ID/PN/IP
                 this.IP.value = 0;
@@ -2229,21 +2297,29 @@ class Processor {
                     this.drum.write(regMQ, 0);
                     this.drum.write(regID, 0);
                     this.drum.write(regPN, 0);
-                    if (this.tracing) {
-                        this.traceRegisters("CLR");
-                    }
                 });
+                if (this.tracing) {
+                    this.traceRegisters("CLR");
+                }
                 break;
             case 3:                     // PN.M2 -> ID, PN.M2/ -> PN
-                if (this.tracing) {
-                    this.traceRegisters();
-                }
                 this.transferDriver(() => {
+                    let m2 = this.drum.read(2);
                     let pn = this.drum.read(regPN);
-                    this.drum.write(regID, pn & this.drum.read(2));
-                    this.drum.write(regPN, pn & (~this.drum.read(2)));
+                    let id = this.drum.read(regID);
+                    let i2 = pn & m2;
+                    let p2 = pn & ~m2;
+                    this.drum.write(regID, i2);
+                    this.drum.write(regPN, p2);
                     if (this.tracing) {
-                        this.traceRegisters("PN&M2=>ID");
+                        console.log("               PN&M2=>ID: L=%s: M2=%s,  PN=%s, ID=%s => %s",
+                                Util.formatDrumLoc(regPN, this.drum.L.value, true),
+                                Util.g15SignedHex(m2), Util.g15SignedHex(pn),
+                                Util.g15SignedHex(id), Util.g15SignedHex(i2));
+                        console.log("              PN&~M2=>PN: L=%s: M2=%s, ~M2=%s, PN=%s => %s",
+                                Util.formatDrumLoc(regPN, this.drum.L.value, true),
+                                Util.g15SignedHex(m2), Util.g15SignedHex(~m2),
+                                Util.g15SignedHex(pn), Util.g15SignedHex(p2));
                     }
                 });
                 break;

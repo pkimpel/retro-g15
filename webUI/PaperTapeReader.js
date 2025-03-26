@@ -56,6 +56,7 @@ class PaperTapeReader {
         this.ready = false;             // a tape has been loaded into the reader
         this.busy = false;              // an I/O is in progress
         this.canceled = false;          // current I/O canceled
+        this.rewinding = false;         // tape is currently rewinding
 
         this.blockNr = 0;               // current tape image block number
         this.buffer = "";               // reader input buffer (paper-tape reel)
@@ -64,6 +65,7 @@ class PaperTapeReader {
 
         this.makeBusy(false);
         this.setBlockNr(0);
+        this.setReaderEmpty();
     }
 
     /**************************************/
@@ -140,10 +142,12 @@ class PaperTapeReader {
             this.ready = true;
         }
 
-        for (x=f.length-1; x>=0; x--) {
-            tape = new FileReader();
-            tape.onload = fileLoaderLoad;
-            tape.readAsText(f[x]);
+        if (!this.busy && !this.rewinding) {
+            for (x=f.length-1; x>=0; x--) {
+                tape = new FileReader();
+                tape.onload = fileLoaderLoad;
+                tape.readAsText(f[x]);
+            }
         }
     }
 
@@ -172,9 +176,10 @@ class PaperTapeReader {
         /* Cancels the I/O currently in process */
 
         if (this.busy) {
-            this.makeBusy(false);
             this.canceled = true;
         }
+
+        this.makeBusy(false);
     }
 
     /**************************************/
@@ -306,18 +311,44 @@ class PaperTapeReader {
     }
 
     /**************************************/
-    async rewind() {
-        /* Rewinds the tape to its beginning */
+    fastRewind() {
+        /* Rewinds the tape image immediately */
 
-        while (this.bufIndex > 0) {
-            if (await this.reverseBlock()) {
-                break;
+        if (!this.busy && !this.rewinding) {
+            this.bufIndex = 0;
+            this.setBlockNr(0);
+            this.$$("PRTapeSupplyBar").value = this.bufLength;
+            if (this.processor.punchSwitch == 2) {
+                this.$$("EnableSwitchOff").checked = true;   // turn off REWIND
+                this.processor.punchSwitchChange(0);
             }
         }
+    }
 
-        this.bufIndex = 0;
-        this.setBlockNr(0);
-        this.makeBusy(false);
+    /**************************************/
+    async rewind() {
+        /* Rewinds the tape to its beginning or until the REWIND switch is turned off */
+
+        if (!this.rewinding) {
+            this.rewinding = true;
+            while (this.bufIndex > 0 && this.processor.punchSwitch == 2) {
+                if (await this.reverseBlock()) {
+                    break;
+                }
+            }
+
+            this.makeBusy(false);
+            if (this.bufIndex <= 0) {       // fully rewound
+                this.bufIndex = 0;
+                this.setBlockNr(0);
+                if (this.processor.punchSwitch == 2) {
+                    this.$$("PunchSwitchOff").checked = true;       // turn off REWIND
+                    this.processor.punchSwitchChange(0);
+                }
+            }
+
+            this.rewinding = false;
+        }
     }
 
     /**************************************/

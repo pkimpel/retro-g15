@@ -14,6 +14,7 @@
 export const wordBits = 29;                     // bits per G-15 word
 export const wordMagBits = 28;                  // magnitude bits in a G-15 word
 export const wordBytes = 4;                     // bytes per G-15 word (32 bits holding 29 bits)
+export const drumLineSize = 124;                // words along drum circumference
 export const longLineSize = 108;                // words per long drum line
 export const fastLineSize = 4;                  // words per fast drum line
 export const minTimeout = 4;                    // browsers will do setTimeout for at least 4ms
@@ -25,6 +26,8 @@ export const two28 = 0x10000000;                // 2**28 for complementing word 
 
 export const defaultRPM = 1800;                 // default drum revolution speed, rev/min
 export let drumRPM = defaultRPM;                // drum revolution speed, rev/minute
+
+// The following are constants once the drum RPM is determined.
 export let wordTime = 0;                        // one word time on the drum [124 words/rev], ms
 export let bitTime = 0;                         // one bit time on the drum, ms
 export let drumCycleTime = 0;                   // one drum cycle (108 words), ms
@@ -138,11 +141,10 @@ export function setTiming(newRPM=defaultRPM) {
     /* Computes the drum timing factors from the specified drumRPM (default=1800) */
 
     if (newRPM >= defaultRPM) {
-        drumRPM = newRPM;               // drum revolution speed, rev/minute
-        wordTime = 60000/drumRPM/124;   // one word time on the drum [124 words/rev], ms
-        bitTime = wordTime/wordBits;    // one bit time on the drum, ms
-        drumCycleTime = wordTime*longLineSize;
-                                        // one drum cycle (108 words), ms
+        drumRPM = newRPM;                       // drum revolution speed, rev/minute
+        wordTime = 60000/drumRPM/drumLineSize;  // one word time on the drum [124 words/rev], ms
+        bitTime = wordTime/wordBits;            // one bit time on the drum, ms
+        drumCycleTime = wordTime*longLineSize;  // one drum cycle (108 words), ms
     }
 }
 
