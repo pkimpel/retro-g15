@@ -286,9 +286,9 @@ class DiagPanel {
         this.runTime = this.$$("RunTime");
         this.wordTimes = this.$$("WordTimes");
 
-        this.drumLoc = new DiagRegister(this.$$("DrumLocBox"), 7, false, false, "DrumL_", "Drum L");
-        this.CDReg = new DiagRegister(this.$$("CDBox"), 3, false, false, "CDReg_", "CD");
-        this.cmdLoc = new DiagRegister(this.$$("CmdLocBox"), 7, false, false, "CmdL_", "Cmd L");
+        this.drumLoc = new DiagRegister(this.$$("DrumLocBox"), 7, false, 0b0000, "DrumL_", "Drum L");
+        this.CDReg = new DiagRegister(this.$$("CDBox"), 3, false, 0b0100, "CDReg_", "CD");
+        this.cmdLoc = new DiagRegister(this.$$("CmdLocBox"), 7, false, 0b0000, "CmdL_", "Cmd L");
         this.RCLamp = new DiagLamp(this.$$("RCBox"), 4, 2, "RCLamp");
         this.RCLamp.setCaption("RC");
         this.TRLamp = new DiagLamp(this.$$("TRBox"), 4, 2, "TRLamp");
@@ -307,28 +307,28 @@ class DiagPanel {
         this.cmdDisasmBox = this.$$("CmdDisasmBox");
         this.DILamp = new DiagLamp(this.$$("DIBox"), 4, 2, "IDLamp");
         this.DILamp.setCaption("I/D");
-        this.TReg = new DiagRegister(this.$$("TBox"), 7, false, false, "TReg_", "T");
+        this.TReg = new DiagRegister(this.$$("TBox"), 7, false, 0b0000, "TReg_", "T");
         this.BPLamp = new DiagLamp(this.$$("BPBox"), 4, 2, "BPLamp");
         this.BPLamp.setCaption("BP");
-        this.NReg = new DiagRegister(this.$$("NBox"), 7, false, false, "NReg_", "N");
-        this.CReg = new DiagRegister(this.$$("CBox"), 2, false, false, "CReg_", "C");
-        this.SReg = new DiagRegister(this.$$("SBox"), 5, false, false, "SReg_", "S");
-        this.DReg = new DiagRegister(this.$$("DBox"), 5, false, false, "DReg_", "D");
+        this.NReg = new DiagRegister(this.$$("NBox"), 7, false, 0b0000, "NReg_", "N");
+        this.CReg = new DiagRegister(this.$$("CBox"), 2, false, 0b0100, "CReg_", "C");
+        this.SReg = new DiagRegister(this.$$("SBox"), 5, false, 0b0000, "SReg_", "S");
+        this.DReg = new DiagRegister(this.$$("DBox"), 5, false, 0b0000, "DReg_", "D");
         this.C1Lamp = new DiagLamp(this.$$("C1Box"), 4, 2, "SDLamp");
         this.C1Lamp.setCaption("S/D");
 
-        this.ARReg = new DiagRegister(this.$$("ARBox"), Util.wordBits, true, true, "ARReg_", "AR");
+        this.ARReg = new DiagRegister(this.$$("ARBox"), Util.wordBits, true, 0b0111, "ARReg_", "AR");
         this.IPLamp = new DiagLamp(this.$$("IPBox"), 4, 2, "IPLamp");
         this.IPLamp.setCaption("IP");
 
-        this.ID1Reg = new DiagRegister(this.$$("ID1Box"), Util.wordBits, true, false, "ID1Reg_", "ID:1");
-        this.ID0Reg = new DiagRegister(this.$$("ID0Box"), Util.wordBits, true, true,  "ID0Reg_", "ID:0");
+        this.ID1Reg = new DiagRegister(this.$$("ID1Box"), Util.wordBits, true, 0b1110, "ID1Reg_", "ID.1");
+        this.ID0Reg = new DiagRegister(this.$$("ID0Box"), Util.wordBits, true, 0b0111, "ID0Reg_", "ID.0");
 
-        this.MQ1Reg = new DiagRegister(this.$$("MQ1Box"), Util.wordBits, true, false, "MQ1Reg_", "MQ:1");
-        this.MQ0Reg = new DiagRegister(this.$$("MQ0Box"), Util.wordBits, true, true,  "MQ0Reg_", "MQ:0");
+        this.MQ1Reg = new DiagRegister(this.$$("MQ1Box"), Util.wordBits, true, 0b1110, "MQ1Reg_", "MQ.1");
+        this.MQ0Reg = new DiagRegister(this.$$("MQ0Box"), Util.wordBits, true, 0b0111, "MQ0Reg_", "MQ.0");
 
-        this.PN1Reg = new DiagRegister(this.$$("PN1Box"), Util.wordBits, true, false, "PN1Reg_", "PN:1");
-        this.PN0Reg = new DiagRegister(this.$$("PN0Box"), Util.wordBits, true, true,  "PN0Reg_", "PN:0");
+        this.PN1Reg = new DiagRegister(this.$$("PN1Box"), Util.wordBits, true, 0b1110, "PN1Reg_", "PN.1");
+        this.PN0Reg = new DiagRegister(this.$$("PN0Box"), Util.wordBits, true, 0b0111, "PN0Reg_", "PN.0");
 
         this.$$("LineNr").addEventListener("focus", this.boundFocusHandler);
         this.$$("LineNr").addEventListener("change", this.boundDumpLine);

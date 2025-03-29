@@ -18,35 +18,60 @@ import {DiagLamp} from "./DiagLamp.js";
 
 class DiagRegister {
 
-    constructor(parent, bits, grouped, signed, idPrefix, caption) {
+
+
+// Static class properties
+
+    static hSpacing = 10;               // horizontal lamp spacing, pixels
+    static hOffset = 4;                 // horizontal lamp offset within container, pixels
+    static vOffset = 2;                 // vertical lamp offset within container, pixels
+    static groupSpacing = 6;            // horizontal inter-group spacing, pixels
+    static lampHeight = 8;              // lamp outer height, pixels
+    static lampWidth = 6;               // lamp outer width, pixels
+    static two30 = 0x40000000;          // 2**30
+    static panelClass = "diagRegister";
+    static captionClassCenter = "diagCaptionCenter";
+    static captionClassRight = "diagCaptionRight";
+
+
+    constructor(parent, bits, grouped, format, idPrefix, caption) {
         /* Parameters:
             parent      the DOM element (usually a <div>) within which the register will be built.
             bits        number of bits in register.
             grouped     group lamps in 4-bit hex units
-            signed      low-order lamp is the sign bit
+            format      mask of format options:
+                          0x01 signed: low-order lamp is the sign bit
+                          0x02 0=partial word: centered/caption on left,
+                               1=full word: right-justified/caption on right
+                          0x04 0=hex value, 1=decimal value
+                          0x08 0=even or only word, 1=odd word of a two-word pair
             idPrefix    prefix string for the individual lamp ids.
-            caption     optional caption displayed at the bottom of the register */
-
-        let groups = (grouped ? Math.floor((bits+3-(signed ? 1 : 0))/4) : 1);   // number of hex bit-groups
+            caption     optional caption displayed above the register */
 
         this.element = parent;          // containing element for the panel
         this.bits = bits;               // number of bits in the register
         this.grouped = grouped;         // lamps are groups in 4-bit units
-        this.groups = groups;           // number of groups
-        this.signed = signed            // low-order lamp is the sign bit
         this.caption = caption || "";   // panel caption
-        this.lastValue = 0;             // prior register value
+        this.lastValue = 1;             // prior register value
+
+        this.signed = format & 1;
+        this.fullWord = (format >> 1) & 1;
+        this.decimal = (format >> 2) & 1;
+        this.oddWord = (format >> 3) & 1;
+
         this.lamps = new Array(bits);   // bit lamps
+        this.groups = (grouped ? Math.floor((bits+3-(this.signed ? 1 : 0))/4) : 1);  // number of hex bit-groups
 
         let cx = bits*DiagRegister.hSpacing + DiagRegister.hOffset +
-             (grouped ? (groups-1)*DiagRegister.groupSpacing : 0) +
-             (signed ? DiagRegister.groupSpacing : 0);
+             (grouped ? (this.groups-1)*DiagRegister.groupSpacing : 0) +
+             (this.signed ? DiagRegister.groupSpacing : 0);
         let gx = 0;                     // lamp-within-group index
+        let signNeeded = this.signed;
         for (let b=0; b<bits; b++) {
             cx -= DiagRegister.hSpacing;
             this.lamps[b] = new DiagLamp(parent, cx, DiagRegister.vOffset, idPrefix + b.toString());
-            if (signed) {
-                signed = false;
+            if (signNeeded) {
+                signNeeded = false;
                 cx -= DiagRegister.groupSpacing;
             } else if (grouped) {
                 if (++gx >= 4) {
@@ -59,13 +84,23 @@ class DiagRegister {
         parent.style.width = this.panelWidth(bits).toString() + "px";
         parent.style.height = this.panelHeight().toString() + "px";
         this.captionDiv = document.createElement("div");
-        this.captionDiv.className = DiagRegister.captionClass;
-        this.captionValue = null;
-        if (caption) {
-            this.captionDiv.appendChild(document.createTextNode(caption));
+        this.captionDiv.className = this.fullWord ?
+                DiagRegister.captionClassRight : DiagRegister.captionClassCenter;
+        if (!caption) {
+            this.caption1Value = this.caption2Value = null;
+        } else {
+            const captionNode = document.createTextNode(caption);
+            this.captionDiv.appendChild(captionNode);
             if (bits > 1) {
-                this.captionValue = document.createElement("span");
-                this.captionDiv.appendChild(this.captionValue);
+                this.caption1Value = document.createElement("span");
+                if (this.fullWord) {
+                    this.caption2Value = document.createElement("span");
+                    this.captionDiv.insertBefore(this.caption1Value, captionNode);
+                    this.captionDiv.insertBefore(this.caption2Value, this.caption1Value);
+                } else {
+                    this.captionDiv.appendChild(document.createTextNode("="));
+                    this.captionDiv.appendChild(this.caption1Value);
+                }
             }
         }
 
@@ -97,18 +132,27 @@ class DiagRegister {
         let thisValue = Math.floor(Math.abs(value)) % DiagRegister.two30;
 
         if (thisValue != lastValue) {
-            let bitBase = 0;
             this.lastValue = thisValue; // save it for next time
-            if (this.captionValue) {
-                if (this.signed) {
-                    let sign = thisValue & 1;
-                    let mag = thisValue >> 1;
-                    this.captionValue.textContent = "=" +
-                            (sign ? "-" : "") +
-                            (sign ? (Util.two28 - mag)%Util.two28 : mag).toString();
+            let bitBase = 0;
+            let sign = "";
+            if (this.signed) {
+                if (thisValue & 1) {
+                    sign = "-";
+                    thisValue >>= 1;
+                    thisValue = (Util.two28 - thisValue) % Util.two28;
                 } else {
-                    this.captionValue.textContent = "=" + thisValue.toString();
+                    thisValue >>= 1;
                 }
+            }
+
+            if (this.caption1Value) {
+                this.caption1Value.textContent = this.decimal ?
+                        sign + thisValue.toString() : Util.lineHex[thisValue];
+            }
+
+            if (this.caption2Value) {
+                this.caption2Value.textContent =
+                        (thisValue/(this.signed ? Util.two28 : Util.two29)).toFixed(9) + sign;
             }
 
             do {
@@ -157,16 +201,3 @@ class DiagRegister {
     }
 
 } // class DiagRegister
-
-
-// Static class properties
-
-DiagRegister.hSpacing = 10;             // horizontal lamp spacing, pixels
-DiagRegister.hOffset = 4;               // horizontal lamp offset within container, pixels
-DiagRegister.vOffset = 2;               // vertical lamp offset within container, pixels
-DiagRegister.groupSpacing = 6;          // horizontal inter-group spacing, pixels
-DiagRegister.lampHeight = 8;            // lamp outer height, pixels
-DiagRegister.lampWidth = 6;             // lamp outer width, pixels
-DiagRegister.two30 = 0x40000000;        // 2**30
-DiagRegister.panelClass = "diagRegister";
-DiagRegister.captionClass = "diagRegCaption";

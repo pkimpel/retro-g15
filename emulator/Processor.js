@@ -238,12 +238,11 @@ class Processor {
     *******************************************************************/
 
     /**************************************/
-    addSingle(a, b, suppressMinus0=0) {
+    addSingle(a, b, suppressMinus0=false) {
         /* Adds two signed, single-precision words. Assumes negative numbers
         have been converted to complement form. Sets this.overflowed true
         if the signs of the operands are the same and the sign of the sum
-        does not match). Returns the sum in G-15 complement form.
-        Avoids returning -0 */
+        does not match). Returns the sum in G-15 complement form */
         let aSign = a & Util.wordSignMask;      // sign of a
         let aMag =  a & Util.absWordMask;       // 2s complement magnitude of a
         let bSign = b & Util.wordSignMask;      // sign of b
@@ -251,19 +250,11 @@ class Processor {
 
         // Develop the raw 2s-complement sum without the sign bits.
         let sum = aMag + bMag;
-        let endCarry = (sum >> Util.wordBits) & 1;
+        let endCarry = suppressMinus0 ? 1 : (sum >> Util.wordBits) & 1;
         sum &= Util.wordMask;                   // discard any overflow bits in sum
-        if (suppressMinus0) {
-            endCarry = 1-endCarry;              // compensate for -0 reaching the adder
-        }
 
         // Check for arithmetic overflow (see drawing 27 in Theory of Operation).
         this.overflowed = aSign == bSign && (endCarry ? (bSign == 0 || sum == 0) : (bSign != 0));
-
-        // ?? Not sure why this is necessary, but it is ??
-        if (endCarry && sum == 0 && this.overflowed) {
-            endCarry = 0;                       // prevent -0 on overflow
-        }
 
         // Put the raw sum back into G-15 complement format.
         let sumSign = aSign ^ bSign ^ endCarry;
@@ -292,29 +283,28 @@ class Processor {
     }
 
     /**************************************/
-    addDoubleOdd(a, b, suppressMinus0=0) {
+    addDoubleOdd(a, b, suppressMinus0=false) {
         /* Adds the odd word "b" (representing the source word) of a double-
         precision pair to the odd word "a" (representing PN-odd). Assumes
         negative numbers have been converted to complement form. Sets
         this.overflowed true if the signs of the operands were the same and
         the sign of the sum does not match. Computes the result sign and
         returns the odd-word sum (which does not have a sign bit) with the
-        result sign in this.pnSign. Avoids generating a -0 result */
+        result sign in this.pnSign */
 
         // Develop the raw odd-word sum without the sign bits.
         let sum = a + b + this.pnAddCarry;
-        let endCarry = (sum >> Util.wordBits) & 1;
+        let endCarry = suppressMinus0 ? 1 : (sum >> Util.wordBits) & 1;
+        sum &= Util.wordMask;
 
         // Put the raw sum back into G-15 complement format and inhibit -0.
-        sum &= Util.wordMask;
-        this.pnSign = this.pnAugendSign ^ this.pnAddendSign ^ (suppressMinus0 ? 1-endCarry : endCarry);
+        this.pnSign = this.pnAugendSign ^ this.pnAddendSign ^ endCarry;
 
         // Check for arithmetic overflow (see drawing 27 in Theory of Operation).
         this.overflowed = this.pnAugendSign == this.pnAddendSign &&
                 (endCarry ? (this.pnAddendSign == 0 || sum == 0) : (this.pnAddendSign != 0));
 
         // Return the odd-word sum with the result sign in this.pnSign.
-        this.pnAddCarry = endCarry;
         return sum;
     }
 
@@ -345,10 +335,6 @@ class Processor {
         to hold any carry from complementing the even word of the pair.
         this.dpEvenSign is assumed to hold the sign from the even word of the
         pair. Any overflow from complementing the high-order word is discarded */
-
-        if (word) {
-            this.suppressMinus0 = false;        // since odd word != 0, can't be a -0
-        }
 
         if (this.dpEvenSign) {          // even word was negative
             return (Util.wordMask - word + this.dpCarry) & Util.wordMask;
@@ -806,6 +792,7 @@ class Processor {
         D=26 when copying two-word registers with characteristic=0 */
         let mnem = (dest == regMQ ? "MQ" : "PN");
 
+        this.suppressMinus0 = false;
         this.transferDriver(() => {
             let ib = 0;                 // intermediate bus (written to AR for TVA/AVA)
             let lb = 0;                 // late bus: dest value (read from AR for TVA/AVA)
@@ -854,6 +841,27 @@ class Processor {
 
                 if (this.tracing) {
                     this.traceTransfer(mnem, tva, word, ib, lb, `: IP=${this.IP.value}`);
+                }
+                break;
+
+            case 1: // AD
+                if (dest != regPN) {
+                    this.transformNormal(mnem);
+                } else {
+                    word = this.readSource();
+                    if (!this.C1.value || this.drum.CE) {       // SP operation or even word
+                        lb = this.complementSingle(word);
+                    } else {                                    // DP odd word
+                        lb = this.complementDoubleOdd(word);
+                        if (word == 0 && this.suppressMinus0) {
+                            this.drum.setPN0T1Bit(0);                   // suppress -0
+                        }
+                    }
+
+                    this.drum.write(regPN, lb);
+                    if (this.tracing) {
+                        this.traceTransfer(mnem, 0, word, ib, lb, lb==0 && this.suppressMinus0 ? " [mz]" : "");
+                    }
                 }
                 break;
 
@@ -913,8 +921,25 @@ class Processor {
                 }
                 break;
 
-            default:    // odd characteristics work as if for a normal line
-                this.transformNormal(mnem);
+            case 3: // SU
+                if (dest != regPN) {
+                    this.transformNormal(mnem);
+                } else {
+                    word = this.readSource();
+                    if (!this.C1.value || this.drum.CE) {       // SP operation or even word
+                        lb = this.complementSingle(word ^ 1);           // change sign bit
+                    } else {                // DP odd word
+                        lb = this.complementDoubleOdd(word);
+                        if (word == 0 && this.suppressMinus0) {
+                            this.drum.setPN0T1Bit(0);                   // suppress -0
+                        }
+                    }
+
+                    this.drum.write(regPN, lb);
+                    if (this.tracing) {
+                        this.traceTransfer(mnem, 0, word, ib, lb, lb==0 && this.suppressMinus0 ? " [mz]" : "");
+                    }
+                }
                 break;
             } // switch this.C
         });
@@ -925,15 +950,19 @@ class Processor {
         /* Executes a transfer from any source to the AR register (D=28). Note
         that for D=28, "via AR" operations are not supported, and instead
         characteristics 2 & 3 perform absolute value and negation, respectively.
+        The Processor transferred values to AR by adding the source value, but
+        blocked AR recirculation while doing so, effectively the operation was
+        AR = 0 + source.
 
         This is a little messy -- in G-15 arithmetic, adding a -0 would
         interfere with determination of the result sign, so the G-15 had a
         rather complicated test to detect -0 coming off the inverting gates at
         T29 time and cause the adder to adjust the sign in the next word time.
         This only happens when transferring or adding to AR or PN, and only for
-        CH=1). The following has the equivalent effect. See the Theory of
-        Operation manual, page 34, paragraph C-10t */
+        CH=1,3). The following has the equivalent effect. See the Theory of
+        Operation manual, page 34, paragraph C-10t, and drawing 27 */
 
+        this.suppressMinus0 = false;
         this.transferDriver(() => {
             let lb = 0;                         // late bus: dest value written to AR
             let word = this.readSource();       // original source word
@@ -945,17 +974,10 @@ class Processor {
 
             case 1: // AD
                 if (!this.C1.value || this.drum.CE) {           // SP operation or even word
-                    if ((word & Util.absWordMask) == 0) {               // suppress -0
-                        lb = 0;
-                    } else {
-                        lb = this.complementSingle(word);
-                    }
+                    lb = this.complementSingle(word);
                 } else {                // DP odd word
-                    if (word == 0 && this.suppressMinus0) {
-                        this.dpEvenSign = 0;                            //suppress -0
-                    } else {
-                        ib = this.complementDoubleOdd(word);
-                    }
+                    lb = this.complementDoubleOdd(word);
+                    this.suppressMinus0 = this.suppressMinus0 && word == 0;
                 }
                 break;
 
@@ -969,13 +991,15 @@ class Processor {
 
             case 3: // SU
                 if (!this.C1.value || this.drum.CE) {           // SP operation or even word
-                    lb = this.complementSingle(word ^ 1);              // change sign bit
+                    lb = this.complementSingle(word ^ 1);               // change sign bit
                 } else {                // DP odd word
                     lb = this.complementDoubleOdd(word);
+                    this.suppressMinus0 = this.suppressMinus0 && word == 0;
                 }
                 break;
             } // switch this.C
 
+            lb = this.addSingle(0, lb, this.suppressMinus0);
             this.drum.write(regAR, lb);
             if (this.tracing) {
                 this.traceTransfer("AR", 0, word, 0, lb, null);
@@ -993,9 +1017,10 @@ class Processor {
         rather complicated test to detect -0 coming off the inverting gates at
         T29 time and cause the adder to adjust the sign in the next word time.
         This only happens when transferring or adding to AR or PN, and only for
-        CH=1). The following has the equivalent effect. See the Theory of
-        Operation manual, page 34, paragraph C-10t */
+        CH=1,3). The following has the equivalent effect. See the Theory of
+        Operation manual, page 34, paragraph C-10t, and drawing 27 */
 
+        this.suppressMinus0 = false;
         this.transferDriver(() => {
             let a = this.drum.read(regAR);      // original value of AR (augend)
             let ib = 0;                         // effective addend
@@ -1005,17 +1030,15 @@ class Processor {
             switch (this.C.value) {
             case 0: // TR
                 ib = word;
-                lb = this.addSingle(a, ib);
                 break;
 
             case 1: // AD
                 if (!this.C1.value || this.drum.CE) {   // SP operation or even word
                     ib = this.complementSingle(word);
                 } else {                                // DP odd word
+                    this.suppressMinus0 = this.suppressMinus0 && word == 0;
                     ib = this.complementDoubleOdd(word);
                 }
-
-                lb = this.addSingle(a, ib, this.suppressMinus0);
                 break;
 
             case 2: // AV
@@ -1024,21 +1047,19 @@ class Processor {
                 } else {                // DP odd word
                     ib = this.complementDoubleOdd(word);
                 }
-
-                lb = this.addSingle(a, ib);
                 break;
 
             case 3: // SU
                 if (!this.C1.value || this.drum.CE) {   // SP operation or even word
                     ib = this.complementSingle(word ^ 1);       // change sign bit
                 } else {                // DP odd word
+                    this.suppressMinus0 = this.suppressMinus0 && word == 0;
                     ib = this.complementDoubleOdd(word);
                 }
-
-                lb = this.addSingle(a, ib, this.suppressMinus0);
                 break;
             } // switch this.C
 
+            lb = this.addSingle(a, ib, this.suppressMinus0);
             if (this.overflowed) {
                 this.FO.value = 1;
             }
@@ -1046,13 +1067,14 @@ class Processor {
             this.drum.write(regAR, lb);
             if (this.tracing) {
                 let loc = this.drum.L.value;
-                console.log("              AR+ %s=%s %d> %s + AR=%s => %s FO=%d%s",
+                console.log("              AR+ %s=%s %d> %s + AR=%s => %s FO=%d%s%s",
                         Util.formatDrumLoc(this.S.value, loc, true),
                         Util.g15SignedHex(word), this.C.value,
                         Util.g15SignedHex(ib),
                         Util.g15SignedHex(a),
                         Util.g15SignedHex(lb),
-                        this.FO.value, (this.overflowed ? "*" : " "));
+                        this.FO.value, (this.overflowed ? "*" : " "),
+                        (this.suppressMinus0 ? " [mz]" : ""));
             }
         });
     }
@@ -1083,7 +1105,7 @@ class Processor {
         rather complicated test to detect -0 coming off the inverting gates at
         T29 time and cause the adder to adjust the sign in the next word time.
         This only happens when transferring or adding to AR or PN, and only for
-        CH=1). The following has the equivalent effect. See the Theory of
+        CH=1,3). The following has the equivalent effect. See the Theory of
         Operation manual, page 34, paragraph C-10t */
 
         this.pnAddCarry = 0;            // carry bit from even word to odd word
@@ -1095,6 +1117,7 @@ class Processor {
             this.traceRegisters();
         }
 
+        this.suppressMinus0 = false;
         this.transferDriver(() => {
             let isEven = (this.drum.CE);        // at even word
             let pw = this.drum.read(regPN);     // current PN word
@@ -1123,14 +1146,16 @@ class Processor {
                     pw = this.addDoubleOdd(pw, word);
                     break;
                 case 1: // AD
-                    word = this.complementDoubleOdd(word);      // may reset this.suppressMinus0
+                    this.suppressMinus0 = this.suppressMinus0 && word == 0;
+                    word = this.complementDoubleOdd(word);
                     pw = this.addDoubleOdd(pw, word, this.suppressMinus0);
                     break;
                 case 2: // AV           // since it's absolute value, no complementing is necessary
                     pw = this.addDoubleOdd(pw, word);
                     break;
                 case 3: // SU
-                    word = this.complementDoubleOdd(word);      // may reset this.suppressMinus0
+                    this.suppressMinus0 = this.suppressMinus0 && word == 0;
+                    word = this.complementDoubleOdd(word);
                     pw = this.addDoubleOdd(pw, word, this.suppressMinus0);
                     break;
                 }

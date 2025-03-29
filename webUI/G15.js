@@ -132,12 +132,18 @@ let globalLoad = (ev) => {
 
         if (processor.CH.value == 0 || processor.OC.value & 0b1111) {
             processor.stop();
-            processor.cancelIO();
-            setTimeout(systemShutDown, 1000);
+            if (processor.activeIODevice) {
+                if (processor.canceledIO) {
+                    processor.finishIO();
+                } else {
+                    processor.cancelIO();
+                }
+            }
+            setTimeout(systemShutDown, 250);
             return;
         }
 
-        let devices = context.devices;
+        const devices = context.devices;
         for (const e in devices) {
             if (devices[e]) {
                 devices[e].shutDown();

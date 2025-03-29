@@ -71,14 +71,27 @@ DIV.diagLampBottomCaption {
     left:               calc(50% - 16px);
     width:              32px}
 
-DIV.diagRegCaption {
+DIV.diagCaptionCenter {
     position:           absolute;
     top:                -1.5em;
     font-size:          10px;
     font-weight:        bold;
     text-align:         center;
-    left:               calc(50% - 60px);
-    width:              120px}
+    width:              100%}
+
+DIV.diagCaptionRight {
+    position:           absolute;
+    top:                -1.5em;
+    font-size:          10px;
+    font-weight:        bold;
+    text-align:         right;
+    width:              100%}
+DIV.diagCaptionRight SPAN:nth-child(2) {
+    position:           absolute;
+    right:              6ch}
+DIV.diagCaptionRight SPAN:nth-child(1) {
+    position:           absolute;
+    left:               6ch}
 
 #HeaderTable {
     width:              100%}

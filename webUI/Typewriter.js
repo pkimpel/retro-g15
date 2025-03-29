@@ -67,8 +67,6 @@ class Typewriter {
         /* Initializes (and if necessary, creates) the typewriter unit state */
 
         this.ready = true;              // typewriter is ready for output
-        this.busy = false;              // an I/O is in progress
-        this.canceled = false;          // current I/O canceled
         this.printerLine = 0;
         this.printerCol = 0;
 
@@ -77,16 +75,10 @@ class Typewriter {
 
     /**************************************/
     cancel() {
-        /* Cancels the I/O currently in process. Since the keyboard
-        generates input only when the user presses a key, there's nothing here
-        to interrupt, so this routine does nothing useful. It exists only to
-        satisfy the Processor's cancelation interface */
+        /* Cancels the I/O currently in process by sending a Stop
+        code to the Processor */
 
-        if (this.busy) {
-            this.canceled = true;     // currently affects nothing
-        }
-
-        this.busy = false;
+        this.processor.receiveKeyboardCode(IOCodes.ioStopCode);
     }
 
 
@@ -362,12 +354,12 @@ class Typewriter {
             this.menuOpen();
             break;
         case "TypewriterExtractBtn":
-            if (this.ready && !this.busy) {
+            if (this.ready) {
                 this.extractPaper();
             }
             break;
         case "TypewriterPrintBtn":
-            if (this.ready && !this.busy) {
+            if (this.ready) {
                 this.platen.contentWindow.print();
             }
             break;
