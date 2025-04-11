@@ -22,3 +22,5 @@ $RECYCLE.BIN/
 webSite/HelpMenu.html
 webUI/ThreeWaySwitch.js
 webUI/resources/ToggleMid.png
+
+node_modules
