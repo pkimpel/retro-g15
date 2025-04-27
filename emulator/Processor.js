@@ -1614,7 +1614,7 @@ class Processor {
             this.setCommandLine(this.CD.value | (code & 0b00111));
             break;
         case IOCodes.ioCodeStop:        // S - Cancel I/O
-            this.finishIO();
+            this.cancelIO();
             break;
         }
     }
@@ -1718,7 +1718,7 @@ class Processor {
         let outTime = this.drum.ioTime + punchPeriod;
 
         // Output an initial SPACE code (a quirk of the Slow-Out logic)
-        await this.devices.paperTapePunch.write(IOCodes.ioCodeSpace);
+        this.devices.paperTapePunch.write(IOCodes.ioCodeSpace);
         await this.ioTimer.delayUntil(outTime);
         outTime += punchPeriod;
 
@@ -1929,7 +1929,7 @@ class Processor {
                 if (this.canceledIO) {
                     printing = false;   // I/O canceled
                 } else {
-                    this.devices.typewriter.write(code);        // no await
+                    this.devices.typewriter.write(code);
                     if (this.punchSwitch == 1) {
                         this.devices.paperTapePunch.write(code);
                     }
@@ -2014,6 +2014,15 @@ class Processor {
     }
 
     /**************************************/
+    cancelTypeIn() {
+        /* If the current I/O operation is a TypeIn, terminates the I/O */
+
+        if (this.OC.value == IOCodes.ioCmdTypeIn) {         // check for Typewrite input
+            this.finishIO();
+        }
+    }
+
+    /**************************************/
     cancelIO() {
         /* Cancels any in-progress I/O operation, but leaves it not Ready
         pending a finishIO(). The individual devices will detect this and abort
@@ -2021,11 +2030,11 @@ class Processor {
         I/O is simply terminated */
 
         if (this.activeIODevice) {
-            this.activeIODevice.cancel();
             if (this.hungIO) {
                 this.finishIO();
             } else {
                 this.canceledIO = true;
+                this.activeIODevice.cancel();
             }
         }
     }

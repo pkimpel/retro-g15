@@ -75,10 +75,9 @@ class Typewriter {
 
     /**************************************/
     cancel() {
-        /* Cancels the I/O currently in process by sending a Stop
-        code to the Processor */
+        /* Cancels any TypeIn I/O currently in process */
 
-        this.processor.receiveKeyboardCode(IOCodes.ioStopCode);
+        this.processor.cancelTypeIn();
     }
 
 
