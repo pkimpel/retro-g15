@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Pierce G-15 Paper Tape Decoder</title>
+<meta name="Author" content="Paul Kimpel">
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta http-equiv="Content-Script-Type" content="text/javascript">
+<meta http-equiv="Content-Style-Type" content="text/css">
+
+<script>
+/***********************************************************************
+* retro-g15/software/tools Pierce-Paper-Tape-Decoder.html
+************************************************************************
+* Copyright (c) 2021, Paul Kimpel.
+* Licensed under the MIT License,
+*       see http://www.opensource.org/licenses/mit-license.php
+************************************************************************
+* Script to convert binary paper-tape images to the ASCII ".pti" format
+* used by David Green in his collection of G-15 software. See:
+*
+*   http://www.piercefuller.com/collect/bendix/
+*   https://www.uraone.com/computers/bendixg15/
+*
+* The standard image format (.ptr files) has one 8-bit byte per tape
+* frame with the following bit arrangement:
+*
+*       _ _ _ 5 4 3.2 1
+*
+* Paul Pierce's image format (.pt files) has one 8-bit byte per tape
+* frame with the following bit arrangement. These channels are in
+* reverse order compared to normal G-15 usage (i.e., the high-order
+* 5-channel is in the low-order bit of the byte):
+*
+*       _ _ _ 1 2 3.4 5
+*
+* The "_" are unused bits and should be zero,. These channels are in
+* reverse order compared to normal G-15 usage (i.e., the high-order
+* 5-channel is in the low-order bit of the byte). the "." represents the
+* location of the sprocket hole in the tape, and 1-5 are the channel
+* numbers as used in the Bendix documentation.
+*
+* This script translates the binary codes to Green's ".pti" ASCII
+* convention, reversing the bit order of Pierce's .pt frames first, as
+* follows:
+*
+*     hex  graphic  description
+*      00           (blank tape, ignored)
+*      01     -     minus sign
+*      02     C     carriage return
+*      03     T     tabulate
+*      04     S     stop
+*      05     /     reload (precess line 23 to line 19 and read next block)
+*      06     .     period (ignored on input, "P" also accepted on input)
+*      07     H     wait
+*   08-0F           (same as corresponding 00-07 codes)
+*   10-19   0-9     decimal digits
+*   1A-1F   u-z     hexadecimal digits (A-F, respectively)
+*
+* A "^" in the output indicates that an incoming frame had a value greater
+* than 31, i.e., the high-order three bits in the byte were not zero.
+*
+* To use, select the file using the file selection control on the
+* page. Files with a .pt extension are assumed to have Pierce's bit
+* ordering; all other extensions are considered to have the alternate
+* ordering. Selecting a file automatically starts the conversion.
+*
+* This version outputs the converted data by opening a save dialog for
+* the file. From there you can save the image to a local filesystem.
+************************************************************************
+* 2020-11-21  P.Kimpel
+*   Original version, from retro-220 software/tools/220-Paper-Tape-Decoder.html.
+* 2025-05-01  P.Kimpel
+*   Revised to (a) include all zero bytes (blank tape) in the output,
+*   format blank leader on separate lines from the actual data, and
+*   save the file to the local filesystem.
+***********************************************************************/
+"use strict";
+
+window.onload = function() {
+    let panel = document.getElementById("TextPanel");
+    let tapeBlob = null;                // blob read from .ptp file
+    let tapeData = null;                // tape blob as a DataView
+
+    const codeMinus = 1;
+    const codeCarriageReturn = 2;
+    const codeTabulate = 3;
+    const codeStop = 4;
+    const codeReload = 5;
+    const codePeriod = 6;
+    const codeWait = 7;
+
+    const rev5Bits = [  // reverse the low-order five bits in a byte
+        0b00000, 0b10000, 0b01000, 0b11000, 0b00100, 0b10100, 0b01100, 0b11100,
+        0b00010, 0b10010, 0b01010, 0b11010, 0b00110, 0b10110, 0b01110, 0b11110,
+        0b00001, 0b10001, 0b01001, 0b11001, 0b00101, 0b10101, 0b01101, 0b11101,
+        0b00011, 0b10011, 0b01011, 0b11011, 0b00111, 0b10111, 0b01111, 0b11111];
+
+    const g15Hex = [    // translate binary to G-15 hexadecimal convention
+        "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "u", "v", "w", "x", "y", "z"];
+
+
+    function spout(text) {
+        /* Appends "text"+NL as a new text node to the panel DOM element */
+        const e = document.createTextNode(text + "\n");
+
+        panel.appendChild(e);
+    }
+
+    function clearPanel() {
+        /* Clears the text panel */
+        let kid;
+
+        while (kid = panel.firstChild) {
+            panel.removeChild(kid);
+        }
+    }
+
+    function extractFile(blob, fileName, fileSize) {
+        /* Extracts the digits from the tape blob, converts the blob bytes to
+           ASCII, and writes it to a new window object within the browser. */
+        const len = blob.byteLength;
+
+        spout("");
+        spout(`Extracting ${fileName}, ${fileSize} bytes`);
+        if (len < 1) {
+            spout("    --- Empty file ---");
+            return;
+        }
+
+        // Determine the frame bit layout.
+        let pierceFormat = false;
+        let filePrefix = fileName;
+        let extension = "";
+        const match = fileName.match(/^ *([^.]+)([^ ]*) *$/);
+        if (match) {
+            filePrefix = match[1];
+            extension = match[2];
+            pierceFormat = extension.toLowerCase() == ".pt";
+        }
+
+        // Process the blocks on the tape image.
+        let image = "";
+        let x = 0;
+        while (x < len) {
+            let eob = false;
+            let frame = 0;
+            let lastFrame = 0;
+            let leaderBytes = 0;
+            let line = "";
+
+            // Scan for leading zero bytes in a block and format and blank leader.
+            while (x < len && frame == 0) {
+                frame = blob.getUint8(x) & 0b11111;
+                if (pierceFormat) {
+                    frame = rev5Bits[frame];
+                }
+
+                if (frame == 0) {
+                    ++leaderBytes;
+                    ++x;
+                }
+            }
+
+            if (leaderBytes > 0) {
+                if (x < len && frame != codeMinus) {
+                    --leaderBytes;      // if next digit is not a minus, back up 1 frame
+                    --x;                // to output a leading a leading space in the block
+                }
+
+                image += (" ").repeat(leaderBytes) + "\n";
+            }
+
+            // Convert the bytes of the block.
+            while (x < len && !eob) {
+                frame = blob.getUint8(x);
+                if (frame > 31) {
+                    line += "^";
+                } else {
+                    if (pierceFormat) {
+                        frame = rev5Bits[frame];
+                    }
+
+                    if (frame & 0b10000) {      // digit code
+                        line += g15Hex[frame & 0b1111];
+                    } else {
+                        switch (frame & 0b0111) {
+                        case 0:                 // blank tape, output space
+                            line += " ";
+                            break;
+                        case codeMinus:
+                            line += "-";
+                            break;
+                        case codeCarriageReturn:
+                            line += "C";
+                            break;
+                        case codeTabulate:
+                            line += "T";
+                            break;
+                        case codeReload:
+                            image += `${line}/\n`;
+                            line = "";
+                            break;
+                        case codeStop:
+                            line += "S\n\n";
+                            if (lastFrame == codeReload) { // put the Stop on same line
+                                image = `${image.slice(-1)}${line}`;
+                            } else {
+                                image += line;
+                            }
+                            line = "";
+                            eob = true;
+                            break;
+                        case codePeriod:
+                            line += ".";
+                            break;
+                        case codeWait:
+                            line += "H";
+                            break;
+                        }
+                    }
+                }
+
+                lastFrame = frame;
+                ++x;
+            }
+
+            if (line.length) {
+                image += line;
+            }
+        }
+
+        if (!image.endsWith("\n")) {            // make sure there's a final new-line
+            image += "\n";
+        }
+
+        // Convert to a Data URL and open a save dialog for the user.
+        const url = `data:text/plain,${encodeURIComponent(image)}`;
+        const hiddenLink = document.createElement("a");
+
+        hiddenLink.setAttribute("download", `${filePrefix}.pti`);
+        hiddenLink.setAttribute("href", url);
+        hiddenLink.click();
+    }
+
+    function fileSelector_onChange(ev) {
+        /* Handle the <input type=file> onchange event when a file is selected */
+
+        clearPanel();
+        const f = ev.target.files[0];
+        //alert("File selected: " + f.name +
+        //        "\nModified " + f.lastModifiedDate +
+        //        "\nType=" + f.type + ", Size=" + f.size + " octets");
+
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            /* Handle the onload event for an ArrayBuffer FileReader
+            Use DataView() to avoid problems with little-endians */
+            const tapeData = new DataView(ev.target.result);
+
+            extractFile(tapeData, f.name, f.size);
+        };
+        reader.readAsArrayBuffer(f);
+    }
+
+    function checkBrowser() {
+        /* Checks whether this browser can support the necessary stuff */
+        let missing = "";
+
+        if (!window.File) {missing += ", File"}
+        if (!window.FileReader) {missing += ", FileReader"}
+        if (!window.FileList) {missing += ", FileList"}
+        if (!window.Blob) {missing += ", Blob"}
+        if (!window.ArrayBuffer) {missing += ", ArrayBuffer"}
+        if (!window.DataView) {missing += ", DataView"}
+
+        if (missing.length == 0) {
+            return false;
+        } else {
+            alert("No can do... your browser does not support the following features:\n" +
+                    missing.substring(2));
+            return true;
+        }
+    }
+
+    /* Start of window.onload() */
+    if (checkBrowser()) {
+        return;
+    }
+    document.getElementById("FileSelector").addEventListener("change", fileSelector_onChange, false);
+}
+</script>
+</head>
+
+<body>
+
+<div style="position:relative; width:100%; height:3em">
+    <div style="position:absolute; left:0; top:0; width:auto">
+        Pierce G-15 Paper Tape Tape Decoder Utility
+    </div>
+    <div style="position:absolute; top:0; right:0; width:auto">
+        <input id=FileSelector type=file size=60>
+    </div>
+
+</div>
+
+<pre id=TextPanel>
+</pre>
+
+</body>
+</html>
