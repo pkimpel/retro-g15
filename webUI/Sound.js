@@ -17,10 +17,13 @@ class Sound {
     this._lines = [];
 
     //Create a buffer for the sound...
+    let bits = 124 * Util.wordBits;
+    let rps = Util.drumRPM / 60;
+    let sps = bits * rps;
     this.rawSampleBuffer = this.audioCtx.createBuffer(
       1, //channels
       Util.longLineSize * Util.wordBits, //One sample per BIT
-      0.5 * Util.longLineSize * Util.wordBits * (Util.drumRPM / 60) //Samples per second
+      sps //Samples per second
     );
 
     //Create audio source using the buffer
@@ -61,6 +64,17 @@ class Sound {
           }
         }
       }
+
+    //Stop the old one
+    this.bufferSource.stop();
+
+    //Create audio source using the buffer
+    this.bufferSource = this.audioCtx.createBufferSource();
+    this.bufferSource.buffer = this.rawSampleBuffer;
+    this.bufferSource.loop = true; //Drum spins round and round
+    this.bufferSource.connect(this.gainNode);
+    this.bufferSource.start();
+
     }
   }
 
