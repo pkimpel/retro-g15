@@ -5,10 +5,10 @@ import { BitField } from "../emulator/BitField.js";
 
 class Sound {
   //The per line contribution to the audio sigbal (+/-)
-  static LINE_SIGNAL_STRENGTH = 0.01;
+  static LINE_SIGNAL_STRENGTH = 0.3;
 
   //How often to resample the drum
-  static RESAMPLE_MS = 33;
+  static RESAMPLE_MS = 11;
 
   constructor(context) {
     this.drum = context.processor.drum;
@@ -16,36 +16,28 @@ class Sound {
     this._intervalID = false;
     this._lines = [];
 
-    //Create a buffer for the sound...
-    let bits = 124 * Util.wordBits;
-    let rps = Util.drumRPM / 60;
-    let sps = bits * rps;
-    this.rawSampleBuffer = this.audioCtx.createBuffer(
-      1, //channels
-      Util.longLineSize * Util.wordBits, //One sample per BIT
-      sps //Samples per second
-    );
+    this.initAudio();
+  }
 
-    //Create audio source using the buffer
-    this.bufferSource = this.audioCtx.createBufferSource();
-    this.bufferSource.buffer = this.rawSampleBuffer;
-    this.bufferSource.loop = true; //Drum spins round and round
-
+  async initAudio() {
     //Connect to the audio context
     this.gainNode = this.audioCtx.createGain();
-    this.bufferSource.connect(this.gainNode);
     this.gainNode.connect(this.audioCtx.destination);
+    await this.audioCtx.audioWorklet.addModule("SoundWorklet.js");
+    this.workletNode = new AudioWorkletNode(
+      this.audioCtx,
+      "SoundWorklet",
+    );
+    this.workletNode.connect(this.gainNode);
 
-    this.bufferSource.start();
-
-    this.enabled = false;
+    this.lines = [2,3];
+    this.enabled = true;
   }
 
   updateAudio() {
     /* Update the audio buffer with values based on the currently tapped lines */
     if (this._enabled) {
-      const buf = this.rawSampleBuffer.getChannelData(0);
-      buf.fill(0);
+      const buf = new Float32Array(Util.longLineSize * Util.wordBits);
 
       //For every tapped line
       for (let line of this._lines) {
@@ -64,17 +56,8 @@ class Sound {
           }
         }
       }
-
-    //Stop the old one
-    this.bufferSource.stop();
-
-    //Create audio source using the buffer
-    this.bufferSource = this.audioCtx.createBufferSource();
-    this.bufferSource.buffer = this.rawSampleBuffer;
-    this.bufferSource.loop = true; //Drum spins round and round
-    this.bufferSource.connect(this.gainNode);
-    this.bufferSource.start();
-
+      const buffer = buf.buffer;
+      this.workletNode.port.postMessage(buffer, [buffer]);
     }
   }
 

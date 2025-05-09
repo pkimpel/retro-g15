@@ -347,6 +347,8 @@ class DiagPanel {
         this.$$("AudioLines").addEventListener("keyup", this.boundSetAudioLines);
         this.window.addEventListener("unload", this.boundShutDown);
 
+        this.$$("AudioLines").value = this.context.devices.sound.lines.join(",");
+        
         this.updatePanel();
         if (!this.intervalToken) {
             this.intervalToken = this.window.setInterval(this.boundUpdatePanel, DiagPanel.displayRefreshPeriod);
