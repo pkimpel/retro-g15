@@ -5,14 +5,14 @@ import { BitField } from "../emulator/BitField.js";
 
 class Sound {
   //The per line contribution to the audio sigbal (+/-)
-  static LINE_SIGNAL_STRENGTH = 0.3;
+  static LINE_SIGNAL_STRENGTH = 0.1;
 
   //How often to resample the drum
   static RESAMPLE_MS = 11;
 
   constructor(context) {
     this.drum = context.processor.drum;
-    this.audioCtx = new AudioContext();
+
     this._intervalID = false;
     this._lines = [];
 
@@ -20,7 +20,8 @@ class Sound {
   }
 
   async initAudio() {
-    //Connect to the audio context
+    /* Initialize audio and start the Audio Worklet */
+    this.audioCtx = new AudioContext();
     this.gainNode = this.audioCtx.createGain();
     this.gainNode.connect(this.audioCtx.destination);
     await this.audioCtx.audioWorklet.addModule("SoundWorklet.js");
