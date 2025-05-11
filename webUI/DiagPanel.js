@@ -109,7 +109,7 @@ class DiagPanel {
                 text += x.toString().padStart(3, " ");
                 for (let y=0; y<inc; ++y) {
                     let word = drum.line[lineNr][x+y];
-                    text += ` ${(word & Util.wordSignMask) ? "-" : " "}${Util.g15Hex(word >> 1)}`;
+                    text += ` ${Util.g15SignedHex(word)}`;
                 }
 
                 text += "\n";
@@ -129,7 +129,7 @@ class DiagPanel {
 
         for (let x=0; x<Util.fastLineSize; ++x) {
             let word = drum.line[lineNr][x];
-            text += ` ${(word & Util.wordSignMask) ? "-" : " "}${Util.g15Hex(word >> 1)}`;
+            text += ` ${Util.g15SignedHex(word)}`;
         }
 
         this.$$(id).textContent = text;
