@@ -103,7 +103,6 @@ class Processor {
         this.canceledIO = false;                        // current I/O has been canceled
         this.duplicateIO = false;                       // second I/O of same type initiated while first in progress
         this.hungIO = false;                            // current I/O is intentionally hung, awaiting cancel
-        this.ioBitCount = 0;                            // current input/output bit count
         this.ioTimer = new Util.Timer();                // general timer for I/O operations
         this.ioPromise = Promise.resolve();             // general Promise for I/O operations
 
@@ -1495,7 +1494,9 @@ class Processor {
     async receiveInputCode(code) {
         /* Receives the next I/O code from an input device and either stores
         it onto the drum or acts on its control function */
+        const autoReload = this.AS.value && (this.OC.value & 0b1100) == 0b1100;
         let eob = false;                // end-of-block flag
+        let marker = 0;                 // auto-reload marker code
 
         this.drum.ioStartTiming();
 
@@ -1503,8 +1504,7 @@ class Processor {
             eob = true;                         // canceled or invalid call
         } else {
             if (code & IOCodes.ioDataMask) {    // it's a data frame
-                await this.drum.ioPrecessCodeTo23(code, 4);
-                this.ioBitCount += 4;
+                marker = await this.drum.ioPrecessCodeTo23(code, 4);
             } else {
                 switch(code & 0b00111) {
                 case IOCodes.ioCodeMinus:       // minus: set sign FF
@@ -1512,35 +1512,34 @@ class Processor {
                     break;
                 case IOCodes.ioCodeCR:          // carriage return: shift sign into word
                 case IOCodes.ioCodeTab:         // tab: shift sign into word
-                    await this.drum.ioPrecessCodeTo23(this.OS.value, 1);
+                    marker = await this.drum.ioPrecessCodeTo23(this.OS.value, 1);
                     this.OS.value = 0;
-                    ++this.ioBitCount;
                     break;
                 case IOCodes.ioCodeStop:        // end/stop
                     eob = true;
                     // no break: Stop implies Reload (if not TypeIn - see receiveKeyboardCode())
                 case IOCodes.ioCodeReload:      // reload
-                    await this.ioPromise;
-                    await this.drum.ioCopy23ToMZ();
-                    this.ioPromise = this.drum.ioPrecessMZTo19();
-                    this.ioBitCount = 0;
+                    if (!this.AS.value) {
+                        await this.ioPromise;
+                        await this.drum.ioCopy23ToMZ(false);
+                        this.ioPromise = this.drum.ioPrecessMZTo19();
+                    }
                     break;
                 case IOCodes.ioCodePeriod:      // period: ignored
                     break;
                 case IOCodes.ioCodeWait:        // wait: insert a 0 digit on input
-                    await this.drum.ioPrecessCodeTo23(0, 4);
-                    this.ioBitCount += 4;
+                    marker = await this.drum.ioPrecessCodeTo23(0, 4);
                     break;
                 default:                        // treat everything else as space & ignore
                     break;
                 }
             }
 
-            // Check if automatic reload is enabled
-            if (this.AS.value && this.ioBitCount >= Util.fastLineSize*Util.wordBits) {
+            // Check if automatic reload is enabled and line 23 is full
+            if (this.AS.value && marker == 1) {
+                await this.ioPromise;
                 await this.drum.ioCopy23ToMZ();
                 await this.drum.ioPrecessMZTo19();
-                this.ioBitCount = 0;
             }
         }
 
@@ -1633,7 +1632,7 @@ class Processor {
         } else if (this.OC.value == IOCodes.ioCmdTypeIn) {      // Input during TYPE IN
             if (code == IOCodes.ioCodeStop) {                   // check for cancel
                 this.finishIO();                                // no reload with STOP from Typewriter
-            } else {
+            } else if (code > 0) {
                 await this.receiveInputCode(code);
             }
         }
@@ -1784,7 +1783,6 @@ class Processor {
 
         this.drum.ioStartTiming();
         let outTime = this.drum.ioTime + printPeriod;
-        this.ioBitCount = 1;            // account for the sign bit
 
         // Start a MZ reload cycle.
         do {
@@ -1796,19 +1794,8 @@ class Processor {
                 this.OS.value = this.drum.AR.value & Util.wordSignMask; // detect AR sign before precession
                 [code, zeroed] = await this.formatOutputCharacter(fmt, this.boundIOPrecessARToCode);
 
-                // Not sure if the following is correct, but it appears from the
-                // Theory of Operation manual that once all bits have been processed
-                // from AR, an automatic stop occurs at the next digit fetch.
-                if ((code & IOCodes.ioDataMask) == IOCodes.ioDataMask) { // a digit coming from the drum
-                    if (this.ioBitCount >= Util.wordBits) {
-                        printing = false;       // AR completely processed
-                        break;                  // out of inner do loop & exit
-                    }
-                }
-
                 switch (code) {
                 case IOCodes.ioDataMask:        // digit zero
-                    this.ioBitCount += 4;
                     if (suppressing) {
                         code = IOCodes.ioCodeSpace;
                     }
@@ -1830,7 +1817,6 @@ class Processor {
                     suppressing = false;
                     break;
                 default:                        // all non-zero digit codes turn off suppression
-                    this.ioBitCount += 4;
                     suppressing = false;
                     break;
                 }
@@ -2047,7 +2033,6 @@ class Processor {
         this.OC.value = IOCodes.ioCmdReady;     // set I/O Ready state
         this.AS.value = 0;
         this.OS.value = 0;
-        this.ioBitCount = 0;
         this.activeIODevice = null;
         this.canceledIO = false;
         this.duplicateIO = false;
@@ -2073,7 +2058,10 @@ class Processor {
         }
 
         if (this.C1.value) {
-            this.AS.value = 1;          // set automatic line 23 reload (alphanumeric systems)
+            this.AS.value = 1;          // set automatic line 23 reload
+            if ((sCode & 0b1100) == 0b1100) {   // SLOW IN commands
+                this.drum.ioInitialize23ForReload();
+            }
         }
 
         switch (sCode) {

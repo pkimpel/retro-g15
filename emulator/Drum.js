@@ -231,6 +231,10 @@ class Drum {
         /* Writes a word transparently to drum line "lineNr" at the current
         location, this.L. Writes to lines 27, 29, 30, 31 are ignored */
 
+        if (word < 0 || word > 0x1FFFFFFF) {
+            debugger;
+        }
+
         if (lineNr < 20) {
             this.line[lineNr][this.L.value] = word;
         } else if (lineNr < 24) {
@@ -416,6 +420,10 @@ class Drum {
         /* Writes a word transparently to drum line 19 at the current
         location */
 
+        if (word < 0 || word > 0x1FFFFFFF) {
+            debugger;
+        }
+
         this.line[19][this.ioL.value] = word;
     }
 
@@ -431,6 +439,10 @@ class Drum {
     ioWrite23(word) {
         /* Writes a word transparently to drum line 23 at the current
         location */
+
+        if (word < 0 || word > 0x1FFFFFFF) {
+            debugger;
+        }
 
         this.line[23][this.ioL4] = word;
     }
@@ -448,13 +460,17 @@ class Drum {
         /* Writes a word transparently to the I/O buffer MZ at the current
         location, this.ioL */
 
+        if (word < 0 || word > 0x1FFFFFFF) {
+            debugger;
+        }
+
         this.MZ[this.ioL4] = word;
     }
 
     /**************************************/
     async ioPrecessARToCode(bits) {
         /* Precesses the original contents of AR (line 28) by "bits" bits,
-        inserting zero in the four low-order bits of the word, and returning
+        inserting zero in the "bits" low-order bits of the word, and returning
         the original "bits" high order bits of the word and a Boolean that is
         always false (to make the return value signature identical to
         ioPrecess19ToCode). This is normally used to get the next data code
@@ -464,6 +480,11 @@ class Drum {
 
         let word = this.read(28) & Util.wordMask;
         let code = word >> keepBits;
+
+        if (word < 0 || word > 0x1FFFFFFF) {
+            debugger;
+        }
+
         this.write(28, (word & keepMask) << bits);
         this.ioWaitFor(1);
 
@@ -566,12 +587,31 @@ class Drum {
     }
 
     /**************************************/
-    async ioCopy23ToMZ() {
-        /* Copies the four words of line 23 to MZ, freeing 23 for more input */
+    async ioInitialize23ForReload() {
+        /* Initializes line 23 for auto reload. Sets the T1 bit of word 0 in
+        line 23 and zeroes the remaining bits of the line */
+
+        this.ioWaitUntil4(0);
+        for (let x=0; x<Util.fastLineSize; ++x) {
+            this.ioWrite23(0);
+            this.ioWaitFor(1);
+        }
+
+        await this.ioThrottle();
+    }
+
+    /**************************************/
+    async ioCopy23ToMZ(autoReload) {
+        /* Copies the four words of line 23 to MZ, freeing 23 for more input.
+        If "autoReload" is truthy, sets the T1 bit of word 0 in line 23 and
+        zeroes the remaining bits of the line instead of "recirculating" them */
 
         this.ioWaitUntil4(0);
         for (let x=0; x<Util.fastLineSize; ++x) {
             this.ioWriteMZ(this.ioRead23());
+            if (autoReload) {
+                this.ioWrite23(x == 0 ? 1 : 0);
+            }
             this.ioWaitFor(1);
         }
 
@@ -581,7 +621,7 @@ class Drum {
     /**************************************/
     async ioPrecess19ToCode(bits) {
         /* Precesses the original contents of line 19 by "bits" bits to higher
-        word numbers, inserting zero in the four low-order bits of word 0, and
+        word numbers, inserting zero in the "bits" low-order bits of word 0, and
         returning the original "bits" high order bits of word 107 and a Boolean
         indicating whether line 19 is now "empty" (all zeroes). This is
         normally used to get the next data code for output */
