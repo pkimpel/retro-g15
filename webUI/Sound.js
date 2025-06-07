@@ -14,9 +14,11 @@ class Sound {
     this.drum = context.processor.drum;
 
     this._intervalID = false;
-    this._lines = [];
-
+    
     this.initAudio();
+
+    this._lines = [];
+    this.enabled = false;
   }
 
   async initAudio() {
@@ -30,9 +32,6 @@ class Sound {
       "SoundWorklet",
     );
     this.workletNode.connect(this.gainNode);
-
-    this.lines = [2,3];
-    this.enabled = true;
   }
 
   updateAudio() {
