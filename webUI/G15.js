@@ -21,6 +21,7 @@ import {Processor} from "../emulator/Processor.js";
 import {PaperTapeReader} from "./PaperTapeReader.js";
 import {PaperTapePunch} from "./PaperTapePunch.js";
 import {Typewriter} from "./Typewriter.js";
+import {Sound} from "./Sound.js";
 
 let globalLoad = (ev) => {
     //let config = new G15SystemConfig(); // system configuration object
@@ -114,7 +115,8 @@ let globalLoad = (ev) => {
         context.devices = {
             "paperTapeReader":          new PaperTapeReader(context),
             "paperTapePunch":           new PaperTapePunch(context),
-            "typewriter":               new Typewriter(context)
+            "typewriter":               new Typewriter(context),
+            "sound":                    new Sound(context)
         }
 
         let timingFactor = Util.drumRPM/Util.defaultRPM;

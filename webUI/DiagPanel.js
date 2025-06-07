@@ -42,6 +42,9 @@ class DiagPanel {
         this.boundShutDown = this.shutDown.bind(this);
         this.boundDumpLine = this.dumpLine.bind(this);
         this.boundBPSetChange = this.bpSetChange.bind(this);
+        this.boundSetAudioLines = (ev) => {
+            this.context.devices.sound.lines = this.$$("AudioLines").value.trim();
+        };
         this.boundProcStep = context.processor.step.bind(this.context.processor);
         this.boundProcBP = (ev) => {
             this.context.controlPanel.setComputeSwitch(2);
@@ -341,8 +344,11 @@ class DiagPanel {
         this.$$("BPBtn").addEventListener("click", this.boundProcBP);
         this.$$("GoBtn").addEventListener("click", this.boundProcGo);
         this.$$("StopBtn").addEventListener("click", this.boundProcStop);
+        this.$$("AudioLines").addEventListener("keyup", this.boundSetAudioLines);
         this.window.addEventListener("unload", this.boundShutDown);
 
+        this.$$("AudioLines").value = this.context.devices.sound.lines.join(",");
+        
         this.updatePanel();
         if (!this.intervalToken) {
             this.intervalToken = this.window.setInterval(this.boundUpdatePanel, DiagPanel.displayRefreshPeriod);
@@ -366,6 +372,7 @@ class DiagPanel {
         this.$$("BPBtn").removeEventListener("click", this.boundProcBP);
         this.$$("GoBtn").removeEventListener("click", this.boundProcGo);
         this.$$("StopBtn").removeEventListener("click", this.boundProcStop);
+        this.$$("AudioLines").removeEventListener("keyup", this.boundSetAudioLines);
         if (this.intervalToken) {       // if the display auto-update is running
             this.window.clearInterval(this.intervalToken);  // kill it
             this.intervalToken = 0;
