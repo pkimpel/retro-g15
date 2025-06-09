@@ -34,6 +34,14 @@ class Sound {
     this.workletNode.connect(this.gainNode);
   }
 
+  shutDown() {
+    /* Shuts down the device */
+    this.lines = [];
+    this.workletNode.disconnect();
+    this.gainNode.disconnect();
+    this.audioCtx.close();
+  }
+
   updateAudio() {
     /* Update the audio buffer with values based on the currently tapped lines */
     if (this._enabled) {
