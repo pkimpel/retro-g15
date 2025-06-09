@@ -19,8 +19,10 @@ $RECYCLE.BIN/
 .DS_Store
 
 # Project-specific files
-webSite/HelpMenu.html
-webUI/ThreeWaySwitch.js
-webUI/resources/ToggleMid.png
+/webSite/HelpMenu.html
+/webUI/ThreeWaySwitch.js
+/webUI/resources/ToggleMid.png
 
 node_modules
+/package-lock.json
+/package.json

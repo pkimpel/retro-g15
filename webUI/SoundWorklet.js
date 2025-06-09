@@ -1,3 +1,16 @@
+/***********************************************************************
+* retro-g15/webUI SoundWorklet.js
+************************************************************************
+* Copyright (c) 2025, Bill Kuker.
+* Licensed under the MIT License, see
+*       http://www.opensource.org/licenses/mit-license.php
+************************************************************************
+* Bendix G-15 sound worklet support module for Sound.js.
+************************************************************************
+* 2025-05-09  B.Kuker
+*   Original version.
+***********************************************************************/
+
 import { wordBits, drumRPM } from "../emulator/Util.js";
 
 //Calculate G15 sample rate

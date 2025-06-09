@@ -1,9 +1,0 @@
-{
-  "name": "retro-g15",
-  "scripts": {
-    "dev": "vite"
-  },
-  "dependencies": {
-    "vite": "^6.3.5"
-  }
-}

@@ -1,3 +1,16 @@
+/***********************************************************************
+* retro-g15/webUI Sound.js
+************************************************************************
+* Copyright (c) 2025, Bill Kuker.
+* Licensed under the MIT License, see
+*       http://www.opensource.org/licenses/mit-license.php
+************************************************************************
+* Bendix G-15 sound device for playing music from drum lines.
+************************************************************************
+* 2025-05-07  B.Kuker
+*   Original version.
+***********************************************************************/
+
 export { Sound };
 
 import * as Util from "../emulator/Util.js";
@@ -14,7 +27,7 @@ class Sound {
     this.drum = context.processor.drum;
 
     this._intervalID = false;
-    
+
     this.initAudio();
 
     this._lines = [];
@@ -110,5 +123,13 @@ class Sound {
       }
       this.audioCtx.suspend();
     }
+  }
+
+  shutDown() {
+    /* Shuts down the device */
+    this.lines = [];
+    this.workletNode.disconnect();
+    this.gainNode.disconnect();
+    this.audioCtx.close();
   }
 }
