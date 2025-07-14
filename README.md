@@ -25,6 +25,7 @@ The contents of this project are licensed under the [MIT License](http://www.ope
 | Emulator hosting site | http://www.phkimpel.us/Bendix-G15/ |
 | Project Wiki | https://github.com/pkimpel/retro-G15/wiki/ |
 | Project Blog | https://retro-emulation.blogspot.com/ |
+| Project Sofware Library | https://github.com/retro-software/G15-software |
 | G-15 Documents at bitsavers | http://bitsavers.org/pdf/bendix/g-15/ |
 | Huskey G-15 lecture | https://www.youtube.com/watch?v=flb6ha3XRw8 |
 | David Green's G-15 site | https://www.uraone.com/computers/bendixg15/ |

@@ -593,7 +593,7 @@ class Drum {
 
         this.ioWaitUntil4(0);
         for (let x=0; x<Util.fastLineSize; ++x) {
-            this.ioWrite23(0);
+            this.ioWrite23(x == 0 ? 1 : 0);
             this.ioWaitFor(1);
         }
 

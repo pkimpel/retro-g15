@@ -86,6 +86,7 @@ class Processor {
         // Single- and double-precision inter-word globals
         this.dpCarry = 0;                               // inter-word carry bit for double-precision
         this.dpEvenSign = 0;                            // sign of the even word of a double-precision pair
+        this.lastRCWordTime = 0;                        // word-time of last Read Command state
         this.mqShiftCarry = 0;                          // left-precession carry bit for MQ
         this.pnAddCarry = 0;                            // addition inter-word carry bit for PN
         this.pnAddendSign = 0;                          // sign of double-precision addend
@@ -168,7 +169,7 @@ class Processor {
                 "NCAR   " : Util.formatDrumLoc(this.cmdLine, this.cmdLoc.value, true);
 
         console.log(`<TRACE${this.devices.paperTapeReader.blockNr.toString().padStart(3, " ")}> ` +
-                    `${drumLoc}  ${Util.disassembleCommand(this.cmdWord)}`);
+                    `${this.lastRCWordTime.toFixed().padStart(8)}: ${drumLoc}  ${Util.disassembleCommand(this.cmdWord)}`);
     }
 
     /**************************************/
@@ -404,14 +405,6 @@ class Processor {
     }
 
     /**************************************/
-    waitUntilT() {
-        /* Advances the drum to the end of Transfer State: if immediate, T.
-        If deferred, T+1+DP */
-
-        this.drum.waitUntil(this.DI.value ? this.T.value+1+this.C1.value : this.T.value);
-    }
-
-    /**************************************/
     readSource() {
         /* Reads one word from the source specified by this.S at the current
         drum location, returning the raw word value */
@@ -534,6 +527,11 @@ class Processor {
             transform();
             this.drum.waitFor(1);
         } while (--count > 0);
+    }
+
+    /**************************************/
+    transformNothing() {
+        /* An empty transform to simply mark time until Transfer State terminates */
     }
 
     /**************************************/
@@ -1519,7 +1517,7 @@ class Processor {
                     eob = true;
                     // no break: Stop implies Reload (if not TypeIn - see receiveKeyboardCode())
                 case IOCodes.ioCodeReload:      // reload
-                    if (!this.AS.value) {
+                    if (!autoReload) {
                         await this.ioPromise;
                         await this.drum.ioCopy23ToMZ(false);
                         this.ioPromise = this.drum.ioPrecessMZTo19();
@@ -1536,7 +1534,7 @@ class Processor {
             }
 
             // Check if automatic reload is enabled and line 23 is full
-            if (this.AS.value && marker == 1) {
+            if (autoReload && marker == 1) {
                 await this.ioPromise;
                 await this.drum.ioCopy23ToMZ();
                 await this.drum.ioPrecessMZTo19();
@@ -1770,6 +1768,7 @@ class Processor {
     async typeAR() {
         /* Types the contents of AR, starting with the four high-order
         bits of the word, and precessing the word with each character */
+        let arBitCount = 1;             // account for the sign bit
         let code = 0;                   // output character code
         let fmt = 0;                    // format code
         let printing = true;            // true until STOP or I/O cancel
@@ -1794,8 +1793,18 @@ class Processor {
                 this.OS.value = this.drum.AR.value & Util.wordSignMask; // detect AR sign before precession
                 [code, zeroed] = await this.formatOutputCharacter(fmt, this.boundIOPrecessARToCode);
 
+                // It appears from the Theory of Operation manual that once all bits have
+                // been processed from AR, an automatic stop occurs at the next digit fetch.
+                if ((code & IOCodes.ioDataMask) == IOCodes.ioDataMask) { // a digit coming from the drum
+                    if (arBitCount >= Util.wordBits) {
+                        printing = false;       // AR completely processed
+                        break;                  // out of inner do loop & exit
+                    }
+                }
+
                 switch (code) {
                 case IOCodes.ioDataMask:        // digit zero
+                    arBitCount += 4;
                     if (suppressing) {
                         code = IOCodes.ioCodeSpace;
                     }
@@ -1817,6 +1826,7 @@ class Processor {
                     suppressing = false;
                     break;
                 default:                        // all non-zero digit codes turn off suppression
+                    arBitCount += 4;
                     suppressing = false;
                     break;
                 }
@@ -2047,8 +2057,8 @@ class Processor {
         // nor the same I/O code, cancel the I/O.
         if (this.OC.value != IOCodes.ioCmdReady && sCode != 0) {
             if (this.OC.value == sCode) {
-                this.duplicateIO = true;
-                this.waitUntilT();      // same I/O as the one in progress, so
+                this.transferDriver(this.transformNothing);
+                this.duplicateIO = true;// same I/O as the one in progress, so
                 return;                 // just ignore the request
             } else {
                 this.warning(`D=31 S=${sCode}: initiateIO with I/O active, OC=${this.OC.value.toString(16)}`);
@@ -2142,7 +2152,7 @@ class Processor {
             break;
         }
 
-        this.waitUntilT();
+        this.transferDriver(this.transformNothing);
 
     }
 
@@ -2189,7 +2199,7 @@ class Processor {
             this.N.value = mark;
         }
 
-        this.waitUntilT();
+        this.transferDriver(this.transformNothing);
         if (this.tracing) {
             const dL = Util.lineHex[loc];
             const cm = Util.g15SignedHex(this.drum.CM.value);
@@ -2211,7 +2221,7 @@ class Processor {
         switch(this.S.value) {
         case 16:        // halt
             this.stop();
-            this.waitUntilT();
+            this.transferDriver(this.transformNothing);
             break;
 
         case 17:        // ring bell & friends
@@ -2223,20 +2233,21 @@ class Processor {
 
             this.bellTiming = wordTimes;        // sensed and reset by ControlPanel
         }
-            switch (this.C.value ) {
-            case 1:     // ring bell and test control panel PUNCH switch
-                if (this.punchSwitch == 1) {
-                    this.CQ.value = 1;  // next command from N+1
+            this.transferDriver(() => {
+                switch (this.C.value ) {
+                case 1:     // ring bell and test control panel PUNCH switch
+                    if (this.punchSwitch == 1) {
+                        this.CQ.value = 1;  // next command from N+1
+                    }
+                    break;
+                case 2:     // ring bell & start INPUT REGISTER
+                    // INPUT REGISTER not implemented (no warning)
+                    break;
+                case 3:     // ring bell & stop INPUT REGISTER
+                    // INPUT REGISTER not implemented (no warning)
+                    break;
                 }
-                break;
-            case 2:     // ring bell & start INPUT REGISTER
-                // INPUT REGISTER not implemented (no warning)
-                break;
-            case 3:     // ring bell & stop INPUT REGISTER
-                // INPUT REGISTER not implemented (no warning)
-                break;
-            }
-            this.waitUntilT();
+            });
             break;
 
         case 18:        // transfer M20.ID to output register
@@ -2255,7 +2266,7 @@ class Processor {
 
         case 19:        // start/stop DA-1
             this.warning(`D=31 S=${this.S.value} Start/Stop DA-1 not implemented`);
-            this.waitUntilT();
+            this.transferDriver(this.transformNothing);
             break;
 
         case 20:        // select command line & return exit
@@ -2299,7 +2310,7 @@ class Processor {
                         Util.formatDrumLoc(20, this.drum.L.value, true),
                         Util.g15SignedHex(this.drum.read(regAR)), this.CQ.value);
             }
-            this.waitUntilT();
+            this.transferDriver(this.transformNothing);
             break;
 
         case 23:        // clear MQ/ID/PN/IP, etc.
@@ -2375,11 +2386,11 @@ class Processor {
                 break;
             case 1:                     // test Input Register ready
                 this.warning("TEST INPUT REGISTER READY not implemented");
-                this.waitUntilT();
+                this.transferDriver(this.transformNothing);
                 break;
             case 2:                     // test Output Register ready
                 this.warning("TEST OUTPUT REGISTER READY not implemented");
-                this.waitUntilT();
+                this.transferDriver(this.transformNothing);
                 break;
             case 3:                     // test Differential Analyzer off
                 this.warning("TEST DIFFERENTIAL ANALYZER OFF not implemented");
@@ -2397,29 +2408,31 @@ class Processor {
                         this.FO.value, this.FO.value | this.CQ.value);
             }
 
-            if (this.FO.value) {
-                this.CQ.value = 1;      // next command from N+1
-                this.FO.value = 0;      // test resets overflow condition
-            }
-            this.waitUntilT();
+            this.transferDriver(() => {
+                if (this.FO.value) {
+                    this.CQ.value = 1;  // next command from N+1
+                    this.FO.value = 0;  // test resets overflow condition
+                }
+            });
             break;
 
         case 30:        // magnetic tape write file code
             this.warning(`D=31 S=${this.S.value} Mag Tape Write File Code not implemented`);
-            this.waitUntilT();
+            this.transferDriver(this.transformNothing);
             break;
 
         case 31:        // odds & sods
             switch (this.C.value) {
             case 0:                     // next command from AR
-                this.CG.value = 1;
-                this.waitUntilT();
+                this.transferDriver(() => {
+                    this.CG.value = 1;
+                });
                 break;
             case 1:                     // copy number track, OR into line 18
                 this.transferDriver(() => {
                     let m18 = this.drum.read(18);
                     let cn =  this.drum.readCN();
-                    let ored = m18 + cn;
+                    let ored = m18 | cn;
                     this.drum.write(18, ored);
                     if (this.tracing) {
                         console.log("         M18|=CN: L=%s: M18=%s | CN=%s => %s",
@@ -2432,7 +2445,7 @@ class Processor {
                 this.transferDriver(() => {
                     let m18 = this.drum.read(18);
                     let m20 = this.drum.readCN();
-                    let ored = m18 + m20;
+                    let ored = m18 | m20;
                     this.drum.write(18, ored);
                     if (this.tracing) {
                         console.log("        M18|=M20: L=%s: M18=%s | M20=%s => %s",
@@ -2468,6 +2481,7 @@ class Processor {
         }
 
         this.drum.waitUntil(loc);
+        this.lastRCWordTime = this.drum.wordTimeCount;
         this.cmdLoc.value = loc;
         this.isNCAR = this.CG.value;    // used only by tracing
         if (this.CG.value) {            // next command from AR
@@ -2557,14 +2571,13 @@ class Processor {
         case 23:
             this.transferNormal();      // dispense with the low-hanging fruit
 
-            /********** DEBUG -- Halt if we start executing zero words at location 0 **********
-                        Special test for timing the 4-word memory-clear program.
+            /********** DEBUG -- Halt if we start executing zero words at location 0
+                        Special test for timing the 4-word memory-clear program. **********
 
             if (this.cmdLoc.value == 0 && this.cmdWord == 0) {
                 this.stop();
-                //debugger;
             }
-            *******************************************************************/
+            /*******************************************************************/
 
             break;
         case 24:

@@ -2,7 +2,7 @@
 * retro-205/emulator website.css
 ************************************************************************
 * Copyright (c) 2015, Paul Kimpel.
-* Licensed under the MIT License, see 
+* Licensed under the MIT License, see
 *       http://www.opensource.org/licenses/mit-license.php
 ************************************************************************
 * Datatron 205 emulator test site global style sheet.
@@ -40,7 +40,9 @@ BODY {
     max-width:          80ex;
     font-family:        DejaVuSansWeb, sans-serif;
     font-size:          small;
-    margin:             1ex}
+    margin:             1ex;
+    left:               50%;
+    transform:          translate(-50%,0)}
 
 H1 {
     margin-top:         4ex;

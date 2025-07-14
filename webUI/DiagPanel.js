@@ -37,7 +37,11 @@ class DiagPanel {
         this.context = context;
         this.intervalToken = 0;         // interval timer cancel token
         this.bpSetLoc = null;           // drum location of BPSet word
+        this.wordTimeOffset = 0;        // drum wordTime offset for display purposes
+        this.runTimeOffset = 0;         // drum runTime offset for display purposes
+
         this.boundUpdatePanel = this.updatePanel.bind(this);
+        this.boundResetTiming = this.resetTiming.bind(this);
         this.boundFocusHandler = this.focusHandler.bind(this);
         this.boundShutDown = this.shutDown.bind(this);
         this.boundDumpLine = this.dumpLine.bind(this);
@@ -74,6 +78,17 @@ class DiagPanel {
         /* Returns a DOM object based on its "id" property */
 
         return this.doc.getElementById(id);
+    }
+
+    /**************************************/
+    resetTiming(ev) {
+        /* Double-click handler for the HeaderTable element. Sets this.runTimeOffset
+        and this.wordTimeOffset to the current drum values to zero the display of
+        word-times and total run time on the panel */
+        const drum = this.context.processor.drum; // local copy of Drum reference
+
+        this.wordTimeOffset = drum.wordTimeCount;
+        this.runTimeOffset = drum.runTime;
     }
 
     /**************************************/
@@ -220,12 +235,12 @@ class DiagPanel {
             rt += now;
         }
 
-        let wt = drum.wordTimeCount.toString();
+        let wt = (drum.wordTimeCount-this.wordTimeOffset).toString();
         for (let x=wt.length-3; x>0; x-=3) {
             wt = `${wt.substring(0, x)},${wt.substring(x)}`;
         }
 
-        this.runTime.textContent = (rt/1000).toFixed(2);
+        this.runTime.textContent = ((rt-this.runTimeOffset)/1000).toFixed(2);
         this.wordTimes.textContent = wt;
 
         this.drumLoc.updateFromRegister(drum.L);
@@ -333,6 +348,7 @@ class DiagPanel {
         this.PN1Reg = new DiagRegister(this.$$("PN1Box"), Util.wordBits, true, 0b1110, "PN1Reg_", "PN.1");
         this.PN0Reg = new DiagRegister(this.$$("PN0Box"), Util.wordBits, true, 0b0111, "PN0Reg_", "PN.0");
 
+        this.$$("HeaderTable").addEventListener("dblclick", this.boundResetTiming);
         this.$$("LineNr").addEventListener("focus", this.boundFocusHandler);
         this.$$("LineNr").addEventListener("change", this.boundDumpLine);
         this.$$("BPSetLine").addEventListener("focus", this.boundFocusHandler);
@@ -359,10 +375,9 @@ class DiagPanel {
     shutDown() {
         /* Closes the panel, unwires its events, and deallocates its resources */
 
+        this.$$("HeaderTable").removeEventListener("dblclick", this.boundResetTiming);
         this.$$("LineNr").removeEventListener("change", this.boundDumpLine);
-
         this.$$("LineNr").removeEventListener("focus", this.boundFocusHandler);
-        this.$$("LineNr").removeEventListener("change", this.boundDumpLine);
         this.$$("BPSetLine").removeEventListener("focus", this.boundFocusHandler);
         this.$$("BPSetLine").removeEventListener("change", this.boundBPSetChange);
         this.$$("BPSetWord").removeEventListener("focus", this.boundFocusHandler);
