@@ -61,7 +61,7 @@ class Processor {
         this.TR = new FlipFlop(this.drum, false);       // transfer-state FF
 
         // Registers (additional registers are part of the Drum object)
-        this.C = new Register( 2, this.drum, false);    // characteristic bits in command
+        this.C  = new Register( 2, this.drum, false);   // characteristic bits in command
         this.CD = new Register( 3, this.drum, false);   // current command-line designator
         this.D  = new Register( 5, this.drum, false);   // destination line in command
         this.IR = new Register(Util.wordBits, this.drum, true);
@@ -2308,7 +2308,7 @@ class Processor {
 
         case 22:        // sign of AR to TEST
             if ((this.drum.read(regAR) & Util.wordSignMask) &&
-                    this.C == 0) {      // characteristic must be 0 for serial >= 211 and systems with CA-2 mod
+                    this.C.value == 0) { // characteristic must be 0 for serial >= 211 and systems with CA-2 mod
                 this.CQ.value = 1;
             }
             if (this.tracing) {
