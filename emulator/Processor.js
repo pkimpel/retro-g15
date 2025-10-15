@@ -1618,12 +1618,17 @@ class Processor {
 
     /**************************************/
     async receiveKeyboardCode(code) {
-        /* Processes a keyboard code sent from ControlPanel. If the code is
-        negative, it is the ASCII code for a control command used with the ENABLE
-        switch. Otherwise it is an I/O data/control code to be processed as
-        TYPE IN (D=31, S=12) input. Note that the "S" key can be used for both
-        purposes depending on the state of this.enableSwitch. If the ENABLE
-        switch is not on and TYPE IN is not active, the keystroke is ignored */
+        /* Processes a keyboard code sent from ControlPanel. Codes are ignored
+        if the system has not yet been reset. If the code is negative, it is
+        the ASCII code for a control command used with the ENABLE switch.
+        Otherwise it is an I/O data/control code to be processed as TYPE IN
+        (D=31, S=12) input. Note that the "S" key can be used for both purposes
+        depending on the state of this.enableSwitch. If the ENABLE switch is
+        not on and TYPE IN is not active, the keystroke is ignored */
+
+        if (!this.poweredOn) {
+            return;
+        }
 
         if (this.enableSwitch) {                                // Control command
             await this.executeKeyboardCommand(code);
@@ -2302,7 +2307,8 @@ class Processor {
             break;
 
         case 22:        // sign of AR to TEST
-            if (this.drum.read(regAR) & Util.wordSignMask) {
+            if ((this.drum.read(regAR) & Util.wordSignMask) &&
+                    this.C == 0) {      // characteristic must be 0 for serial >= 211 and systems with CA-2 mod
                 this.CQ.value = 1;
             }
             if (this.tracing) {

@@ -128,8 +128,8 @@ class Sound {
   shutDown() {
     /* Shuts down the device */
     this.lines = [];
-    this.workletNode.disconnect();
-    this.gainNode.disconnect();
-    this.audioCtx.close();
+    this.workletNode?.disconnect();
+    this.gainNode?.disconnect();
+    this.audioCtx?.close();
   }
 }
