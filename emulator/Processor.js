@@ -2855,8 +2855,6 @@ class Processor {
         };
 
 
-        /***** The 4-word memory-clear wunder-kode described by Jim Horning in his blog *****/
-
         // First, fill the drum with non-zero values for testing
         this.drum.AR.value = 0x1234567;
         this.drum.ID[0].value = 0x2345678;
@@ -2873,13 +2871,14 @@ class Processor {
             }
         }
 
-        // And now for the main event... the infamous 4-word memory clear routine (Paul's version).
+        // And now for the main event... the infamous 4-word memory clear
+        // routine described by Jim Hornung in his blog (original version).
 
         //  M     L  D/I   T    N  C   S   D  C1  BP
-        asm(23,   0,  0,   2, 105, 0, 29, 28);          // ZERO: clear AR (accumulator)
-        asm(23,   1,  0,   4,   3, 2, 23, 23);          // SWAP: precess line 23 via AR starting at L=106 thru L=3 (after first time will be L=3 thru L=3)
-        asm(23,   2,  0,   4,   2, 0, 27, 29);          // CLEAR: smear zeroes to current line
-        asm(23,   3,  0,   6,   2, 0, 26, 31);          // INCR: shift ID/MQ by 3 bits (6 word-times), incrementing AR by 3
+        asm(23,   0,  1,   2,  05, 0, 29, 28);          // ZERO: clear AR (accumulator)
+        asm(23,   1,  0,  12,  15, 2, 23, 23);          // SWAP: precess line 23 via AR starting at L=106 thru L=3 (after first time will be L=3 thru L=3)
+        asm(23,   2,  0,  16,  10, 0, 27, 29);          // CLEAR: smear zeroes to current line
+        asm(23,   3,  0,   6,  10, 0, 26, 31);          // INCR: shift ID/MQ by 3 bits (6 word-times), incrementing AR by 3
 
         /***************************************
         // Multiplication/Division test
