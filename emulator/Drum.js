@@ -21,11 +21,41 @@ export {Drum}
 
 import * as Util from "./Util.js";
 import {Register} from "./Register.js";
+import {WaitSignal} from "./WaitSignal.js";
 
 
 class Drum {
 
-    static minDelayTime = 4;            // minimum time to accumulate throttling delay, >= 4ms
+    static minThrottleDelay =           // minimum time to accumulate throttling delay, >= 4ms
+            Util.minTimeout+1;
+    static cmMask = 0x7F;               // mask for the 7-bit counters in the CM register
+
+    static computeDrumCount(L, T) {
+        /* Computes and returns the number of word-times the drum must traverse
+        from word-time L to word-time T. If L=T, returns zero. This works a
+        little weird, because the word-time is a 7-bit number and the G-15
+        counted to T by computing the difference between L and T in an unsigned
+        7-bit field in the Command Register (CM), then incrementing that field
+        until it overflowed at 128. If the count would cross words 107->0,
+        however, the register would be incremented by an additional 20 to
+        account for the fact that a 7-bit register counts up to 127, but on the
+        drum, the word following 107 is 0, not 108 (which is 128-20). In some
+        cases, adding the 20 would overflow the CM field immediately, which
+        would stop the traversal at that point, i.e., word-time 0 */
+        const cm = ((~T & Drum.cmMask) + L) & Drum.cmMask;
+
+        if (L + Drum.cmMask-cm < Util.longLineSize) {   // The easy case... does not cross 107->0
+          return Drum.cmMask - cm;
+        } else {                                        // Traversal crosses 107->0
+            if (cm+20 < Drum.cmMask && L + Drum.cmMask - (cm+20) > Util.longLineSize) {
+                // Adding 20 does not overflow CM, so compute word-times.
+                return Drum.cmMask - (cm+20) & Drum.cmMask;
+            } else {
+                // Adding 20 does overflow CM, so traversal will stop at WT 0.
+                return Util.longLineSize - L;
+            }
+        }
+    }
 
     constructor() {
         /* Constructor for the G-15 drum object, including the drum-based registers */
@@ -33,10 +63,10 @@ class Drum {
         let size = 0;
         const drumWords = 20*Util.longLineSize +        // 20x108 word long lines
                           4*Util.fastLineSize +         // 4x4 word fast lines
-                          4 +                           // 1x4 word MZ I/O buffer line
+                          Util.fastLineSize +           // 1x4 word MZ I/O buffer line
                           Util.longLineSize;            // 1x108 word CN number track
 
-        let buildRegisterArray = (length, bits, invisible) => {
+        const buildRegisterArray = (length, bits, invisible) => {
             let a = [];                 // the register array
 
             for (let x=0; x<length; ++x) {
@@ -46,23 +76,29 @@ class Drum {
             return a;
         };
 
-        // Main system timing variables
+        // System timing and synchronization variables.
         this.eTime = 0;                 // current emulation time, ms
         this.eTimeSliceEnd = 0;         // current timeslice end emulation time, ms
         this.runTime = 0;               // total accumulated run time, ms
-        this.wordTimeCount = 0;         // total accumulated word-times
-        this.L = new Register(7, this, false);  // current drum rotational position: word-time 0-107
+        this.drumTime = 0;              // drum clock in word-times
+        this.timingActive = false;      // true if the timing mechanism is active
+        this.stepWait = null;           // Promise used by stepDrum() to serialize stepping
         this.drumTimer = new Util.Timer();
-
-        // I/O subsystem timing variables
-        this.ioTime = 0;                // current I/O emulation time, ms
-        this.ioL = new Register(7, this, false);// current I/O drum rotational position
-        this.ioTimer = new Util.Timer();
         this.line19Timer = new Util.Timer();
 
-        // Drum storage and line layout
+        this.procActive = false;        // true if the Processor is currently running
+        this.procSync = new WaitSignal();
+        this.boundProcProceed = this.procSync.proceed.bind(this.procSync);
+
+        this.ioActive = false;          // true if I/O is currently running
+        this.ioCanceled = false;        // true if I/O has been canceled by Processor
+        this.ioSync = new WaitSignal();
+        this.boundIOProceed = this.ioSync.proceed.bind(this.ioSync);
+
+        // Drum storage and line layout.
         this.drum = new ArrayBuffer(drumWords*Util.wordBytes);  // Drum: 32-bit Uint words
         this.line = new Array(33);
+        this.L = new Register(7, this, false);  // current drum rotational position: word-time 0-107
 
         // Build the long lines, 108 words each
         size = Util.longLineSize*Util.wordBytes;
@@ -71,34 +107,34 @@ class Drum {
             drumOffset += size;
         }
 
-        // Build the fast lines, 4 words each
+        // Build the fast lines, 4 words each.
         size = Util.fastLineSize*Util.wordBytes;
         for (let x=20; x<24; ++x) {
             this.line[x] = new Uint32Array(this.drum, drumOffset, Util.fastLineSize);
             drumOffset += size;
         }
 
-        // Build the 108-word Number Track
+        // Build the 108-word Number Track.
         size = Util.longLineSize*Util.wordBytes;
         this.CN = new Uint32Array(this.drum, drumOffset, Util.longLineSize);
         drumOffset += size;
 
-        // Build the double-precision registers (not implemented as part of the drum array)
+        // Build the double-precision registers (not implemented as part of the drum array).
         this.line[24] = this.MQ = buildRegisterArray(2, Util.wordBits, false);   // was: new Uint32Array(this.drum, drumOffset, 2);
         this.line[25] = this.ID = buildRegisterArray(2, Util.wordBits, false);   // was: new Uint32Array(this.drum, drumOffset, 2);
         this.line[26] = this.PN = buildRegisterArray(2, Util.wordBits, false);   // was: new Uint32Array(this.drum, drumOffset, 2);
         this.line[27] = null;           // TEST register, not actually on the drum
 
-        // Build the one-word registers (not implemented here as part of the drum array)
+        // Build the one-word registers (not implemented here as part of the drum array).
         this.line[28] = this.AR = new Register(Util.wordBits, this, false);
         this.CM = new Register(Util.wordBits, this, false);
         this.line[29] = null;
         this.line[30] = null;
         this.line[31] = null;
 
-        // Build the four-word MZ I/O buffer line
-        size = 4*Util.wordBytes;
-        this.line[32] = this.MZ = new Uint32Array(this.drum, drumOffset, 4);
+        // Build the four-word MZ I/O buffer line.
+        size = Util.fastLineSize*Util.wordBytes;
+        this.line[32] = this.MZ = new Uint32Array(this.drum, drumOffset, Util.fastLineSize);
         drumOffset += size;
     }
 
@@ -129,70 +165,185 @@ class Drum {
         to compensate for many browsers limiting the precision of
         performance.now() to one millisecond, which can make real time appear
         to go backwards */
-        const now = performance.now();
 
-        while (this.runTime >= 0) {
-            this.runTime -= now;
+        if (this.timingActive) {
+            debugger;
+        } else {
+            const now = performance.now();
+            this.timingActive = true;
+            while (this.runTime >= 0) {
+                this.runTime -= now;
+            }
+
+            if (Math.floor(now/Util.wordTime) > Math.floor(this.eTime/Util.wordTime)) {
+                this.eTime = now;
+            } else {
+                this.eTime += Util.wordTime;
+            }
+
+            this.eTimeSliceEnd = this.eTime + Drum.minThrottleDelay;
+            this.L.value = Math.floor(this.eTime/Util.wordTime) % Util.longLineSize;
         }
-
-        this.eTime = Math.max(this.eTime, now);
-        this.eTimeSliceEnd = this.eTime + Drum.minDelayTime;
-        this.L.value = Math.round(this.eTime/Util.wordTime) % Util.longLineSize;
     }
 
     /**************************************/
     stopTiming() {
         /* Stops the run timer */
-        const now = performance.now();
 
-        while (this.runTime < 0) {
-            this.runTime += now;
-        }
-    }
-
-    /**************************************/
-    throttle() {
-        /* Returns a Promise that unconditionally resolves after a delay to
-        allow browser real time to catch up with the emulation clock, this.eTime.
-        Since most browsers will force a setTimeout() to wait for a minimum of
-        4ms, this routine will not delay if emulation time has not yet reached
-        the end of its time slice or the difference between real time (as
-        reported by performance.now()) and emulation time is less than
-        Util.minTimeout */
-
-        if (this.eTime < this.eTimeSliceEnd) {
-            return Promise.resolve(null);       // i.e., don't wait at all
+        if (!this.timingActive) {
+            debugger;
         } else {
-            this.eTimeSliceEnd += Drum.minDelayTime;
-            return this.drumTimer.delayUntil(this.eTime);
+            const now = performance.now();
+            this.timingActive = false;
+            while (this.runTime < 0) {
+                this.runTime += now;
+            }
         }
     }
 
     /**************************************/
-    waitFor(wordTimes) {
+    async stepDrum() {
+        /* Steps the drum to its next word-time and updates the timing.
+        Returns either immediately or after a delay to allow browser real time
+        to catch up with the emulation clock, this.eTime. Since most browsers
+        will force a setTimeout() to wait for a minimum of 4ms, this routine
+        will not delay if emulation time has not yet reached the end of its
+        time slice */
+
+        // If a step is already in progress, complain.
+        if (this.stepWait) {
+            throw new Error("Drum stepDrum called during stepping");
+        }
+
+        // Determine if it's time slow things down to real time.
+        if ((this.eTime += Util.wordTime) < this.eTimeSliceEnd) {
+            this.stepWait = Promise.resolve();  // i.e., don't wait at all
+        } else {
+            this.eTimeSliceEnd += Drum.minThrottleDelay;
+            this.stepWait = this.drumTimer.delayUntil(this.eTime);
+        }
+
+        ++this.drumTime;
+        this.L.value = (this.L.value + 1) % Util.longLineSize;
+
+        await this.stepWait;
+        this.stepWait = null;
+    }
+
+    /**************************************/
+    tracePrecession(code, word, caption) {
+        /* Log I/O precession activity to the console */
+        const drumLoc = Util.formatDrumLoc(77, this.L.value, true);
+
+        console.debug("<I/O PREC>" +
+                    `${this.drumTime.toFixed().padStart(9)}: ${drumLoc}  ${code.toString(16)}, ${Util.g15SignedHex(word)} ${caption}`);
+    }
+
+
+    /*******************************************************************
+    *  Processor Drum Methods                                          *
+    *******************************************************************/
+
+    /**************************************/
+    async procStart() {
+        /* Initializes the drum and emulation timing for I/O */
+
+        if (this.procActive || this.procSync.waiting) {
+            console.debug(`<<< procStart: active=${this.procActive}, waiting=${this.procSync.waiting}`);
+            debugger;
+        }
+
+        if (!this.procActive) {
+            this.procActive = true;
+            if (!this.timingActive) {
+                this.startTiming();
+            }
+
+            // If stepDrum is currently in progress, wait for it to finish.
+            if (this.stepWait) {
+                await this.stepWait;
+            }
+        }
+    }
+
+    /**************************************/
+    procStop() {
+        /* Disables drum timing for the Processor */
+
+        if (!this.procActive || this.procSync.waiting) {
+            console.debug(`<<< procStop: active=${this.procActive}, waiting=${this.procSync.waiting}, IO active=${this.ioActive}, IO waiting=${this.ioSync.waiting}`);
+            debugger;
+        }
+
+        if (this.procActive) {
+            this.procActive = false;
+            if (this.procSync.waiting) {
+                debugger;
+                console.debug("<<< procStop: procSync was waiting");
+                this.procSync.proceed();
+            }
+
+            if (this.ioSync.waiting) {          // I/O is waiting for us to step
+                this.stepDrum().then(this.boundIOProceed);
+            }
+
+            if (!this.ioActive) {
+                this.stopTiming();
+            }
+        }
+    }
+
+    /**************************************/
+    async waitFor(wordTimes) {
         /* Simulates waiting for the drum to rotate through the specified number
-        of word-times, which must be non-negative. Increments the current drum
-        location by that amount and advances the emulation clock accordingly */
+        of word-times, which must be non-negative. Steps one word-time at a
+        time, synchronizing with stepping for I/O. this.stepDrum will update
+        this.L and the timing, and will throttle performance as necessary */
+        let i = wordTimes;
 
-        this.wordTimeCount += wordTimes;
-        this.L.value = (this.L.value + wordTimes) % Util.longLineSize;
-        this.eTime += wordTimes*Util.wordTime;
+        const startL = this.L.value;    // <<<<< DEBUG >>>>> //
+
+        while (--i >= 0) {
+            if (!this.procActive) {             // if proc stopped, just quit
+                debugger;
+                break;
+            } else if (!this.ioActive) {        // I/O not active, so just step
+                await this.stepDrum();
+            } else if (this.ioSync.waiting) {   // I/O is waiting for us to step
+                await this.stepDrum();
+                this.ioSync.proceed();
+            } else {                            // we need to wait for I/O to step
+                await this.procSync.wait();
+            }
+        }
+
+        // <<<<< DEBUG >>>>> //
+        const stopL = (startL + wordTimes) % Util.longLineSize;
+        if (this.L.value != stopL) {
+            console.debug(`>>>waitFor WRONG L: start=${startL}, words=${wordTimes}, stop=${stopL}, L=${this.L.value}`);
+            debugger;
+        }
     }
 
     /**************************************/
-    waitUntil(loc) {
+    async waitUntil(wordTime) {
         /* Simulates waiting for the drum to rotate to the specified word-time.
-        Locations must be non-negative. Updates the drum location and the
-        emulation clock via waitFor() */
-        let words = loc - this.L.value;
+        Updates the drum location and the emulation clock via waitFor().
+        Word-times must be non-negative and < 128.  */
+        const count = Drum.computeDrumCount(this.L.value, wordTime);
 
-        if (words < 0) {
-            words += Util.longLineSize;
+        const startL = this.L.value;    // <<<<< DEBUG >>>>> //
+
+        if (count > 0) {                // if we're already there, do nothing
+            await this.waitFor(count);
         }
 
-        if (words > 0) {
-            this.waitFor(words);
+        // <<<<< DEBUG >>>>> //
+        if (this.L.value != wordTime) {
+            console.debug(`>>>waitUntil WRONG L: start=${startL}, stop=${wordTime}, L=${this.L.value}`);
+            debugger;
         }
+
     }
 
     /**************************************/
@@ -231,7 +382,7 @@ class Drum {
         /* Writes a word transparently to drum line "lineNr" at the current
         location, this.L. Writes to lines 27, 29, 30, 31 are ignored */
 
-        if (word < 0 || word > 0x1FFFFFFF) {
+        if (word < 0 || word > Util.wordMask) {
             debugger;
         }
 
@@ -271,6 +422,10 @@ class Drum {
     writeCN(word) {
         /* Writes a word transparently to the number track (CN) at the current
         location, this.L */
+
+        if (word < 0 || word > Util.workMask) {
+            debugger;
+        }
 
         this.CN[this.L.value] = word;
     }
@@ -344,127 +499,206 @@ class Drum {
     *******************************************************************/
 
     /**************************************/
-    get ioL4() {
-        /* Returns the current word-time for four-word lines */
+    async ioStart(caption) {
+        /* Initializes the drum and emulation timing for I/O */
 
-        return this.ioL.value % Util.fastLineSize;
-    }
+        //console.debug(`--IO Start: ${caption}`);
+        if (this.ioLastWasStart) {
+            console.debug(`>>> ioStart Last Was Start: was=${this.ioLastCaption}, now=${caption}`);
+            debugger;
+        }
 
-    /**************************************/
-    ioStartTiming() {
-        /* Initializes the drum and emulation timing for I/O. Math.max()
-        is used to compensate for many browsers limiting the precision of
-        performance.now() to one millisecond, which can make real time appear
-        to go backwards */
+        this.ioLastWasStart = true;
+        this.ioLastCaption = caption;
 
-        this.ioTime = Math.max(performance.now(), this.ioTime);
-        this.ioL.value = Math.round(this.ioTime/Util.wordTime) % Util.longLineSize;
-    }
+        if (this.ioActive || this.ioSync.waiting) {
+            console.debug(`<<< ioStart ${caption}: active=${this.ioActive}, waiting=${this.ioSync.waiting}`);
+            debugger;
+        }
 
-    /**************************************/
-    ioThrottle() {
-        /* Returns a Promise that unconditionally resolves after a delay to
-        allow browser real time to catch up with the I/O subsystem clock, this.ioTime.
-        Since most browsers will force a setTimeout() to wait for a minimum of
-        4ms, this routine will not delay if the difference between real time
-        (as reported by performance.now()) and emulation time is less than
-        Util.minTimeout */
+        if (!this.ioActive) {
+            this.ioActive = true;
+            if (!this.timingActive) {
+                this.startTiming();
+            }
 
-        return this.ioTimer.delayUntil(this.ioTime);
-    }
-
-    /**************************************/
-    ioWaitFor(wordTimes) {
-        /* Simulates waiting for the drum to rotate through the specified number
-        of word-times, which must be non-negative. Increments the current drum
-        location by that amount and advances the emulation clock accordingly */
-
-        this.ioL.value = (this.ioL.value + wordTimes) % Util.longLineSize;
-        this.ioTime += wordTimes*Util.wordTime;
-    }
-
-    /**************************************/
-    ioWaitUntil(loc) {
-        /* Simulates waiting for the drum to rotate to the specified word
-        location. Locations must be non-negative. Updates the I/O drum location
-        and clock via waitFor() */
-        let words = (loc - this.ioL.value + Util.longLineSize) % Util.longLineSize;
-
-        if (words > 0) {
-            this.ioWaitFor(words);
+            // If stepDrum is currently in progress, wait for it to finish.
+            if (this.stepWait) {
+                await this.stepWait;
+            }
         }
     }
 
     /**************************************/
-    ioWaitUntil4(loc) {
+    ioStop(caption) {
+        /* Disables drum timing for I/O */
+
+        //console.debug(`--IO Stop:  ${caption}`);
+        if (this.ioLastWasStart) {
+            if (this.ioLastCaption != caption) {
+                console.debug(`>>> ioStop Caption Mismatch: was ${this.ioLastCaption}, now ${caption}`);
+                debugger;
+            }
+        } else {
+            console.debug(`>>> ioStop Last NOT Start: was=${this.ioLastCaption}, now=${caption}`);
+            debugger;
+        }
+
+        this.ioLastWasStart = false;
+
+        if (!this.ioActive /*|| this.ioSync.waiting*/) {
+            console.debug(`<<< ioStop ${caption}: active=${this.ioActive}, waiting=${this.ioSync.waiting}, Proc active=${this.procActive}, Proc waiting=${this.procSync.waiting}`);
+            debugger;
+        }
+
+        if (this.ioActive) {
+            this.ioActive = false;
+            this.ioCanceled = false;
+            if (this.ioSync.waiting) {
+                console.debug(`<<< IO Stop ioSync waiting, ${caption}`);
+                debugger;
+                this.ioSync.proceed();
+            }
+
+            if (this.procSync.waiting) {        // Processor is waiting for us to step
+                this.stepDrum().then(this.boundProcProceed);
+            }
+
+            if (!this.procActive) {
+                this.stopTiming();
+            }
+        }
+    }
+
+    /**************************************/
+    ioCancel() {
+        /* Called by Processor to cancel the current I/O */
+
+        if (this.ioActive) {
+            this.ioCanceled = true;
+        }
+    }
+
+    /**************************************/
+    async ioWaitFor(wordTimes) {
+        /* Simulates waiting for the drum to rotate through the specified number
+        of word-times, which must be non-negative. Steps one word-time at a
+        time, synchronizing with stepping for the Processor. this.stepDrum will
+        update this.L and the timing, and will throttle performance as necessary */
+        let i = wordTimes;
+
+        const startL = this.L.value;    // <<<<< DEBUG >>>>> //
+
+        while (--i >= 0) {
+            if (!this.ioActive) {               // if I/O stopped, just quit
+                debugger;
+                break;
+            } else if (this.ioCanceled) {
+                break;
+            } else if (!this.procActive) {      // Processor not active, so just step
+                await this.stepDrum();
+            } else if (this.procSync.waiting) { // Processor is waiting for us to step
+                await this.stepDrum();
+                this.procSync.proceed();
+            } else {                            // we need to wait for Processor to step
+                await this.ioSync.wait();
+            }
+        }
+
+        // <<<<< DEBUG >>>>> //
+        const stopL = (startL + wordTimes) % Util.longLineSize;
+        if (this.L.value != stopL && !this.ioCanceled) {
+            console.debug(`>>>ioWaitFor WRONG L: start=${startL}, words=${wordTimes}, stop=${stopL}, L=${this.L.value}`);
+            debugger;
+        }
+    }
+
+    /**************************************/
+    async ioWaitUntil(wordTime) {
+        /* Simulates waiting for the drum to rotate to the specified word-time.
+        Updates the drum location and the emulation clock via waitFor().
+        Word-times must be non-negative and < 128 */
+        const count = Drum.computeDrumCount(this.L.value, wordTime);
+
+        const startL = this.L.value;    // <<<<< DEBUG >>>>> //
+
+        if (count > 0) {                // if we're already there, do nothing
+            await this.ioWaitFor(count);
+        }
+
+        // <<<<< DEBUG >>>>> //
+        if (this.L.value != wordTime && !this.ioCanceled) {
+            console.debug(`>>>ioWaitUntil WRONG L: start=${startL}, stop=${wordTime}, L=${this.L.value}, count=${count}`);
+            debugger;
+        }
+    }
+
+    /**************************************/
+    async ioWaitUntil4(wordTime) {
         /* Simulates waiting for the drum to rotate to the specified word
         location on a 4-word line. Locations must be non-negative. Updates
         the I/O drum location and clock via waitFor() */
-        let words = (loc - this.ioL.value + Util.longLineSize) % Util.fastLineSize;
+        let words = (wordTime - this.L.value + Util.longLineSize) % Util.fastLineSize;
 
         if (words > 0) {
-            this.ioWaitFor(words);
+            await this.ioWaitFor(words);
         }
     }
 
     /**************************************/
     ioRead19() {
-        /* Reads a word transparently from drum line 19 at the current
-        location, this.ioL */
+        /* Reads a word transparently from drum line 19 at the current location */
 
-        return this.line[19][this.ioL.value];
+        return this.line[19][this.L.value];
     }
 
     /**************************************/
     ioWrite19(word) {
-        /* Writes a word transparently to drum line 19 at the current
-        location */
+        /* Writes a word transparently to drum line 19 at the current location */
 
-        if (word < 0 || word > 0x1FFFFFFF) {
+        if (word < 0 || word > Util.workMask) {
             debugger;
         }
 
-        this.line[19][this.ioL.value] = word;
+        this.line[19][this.L.value] = word;
     }
 
     /**************************************/
     ioRead23() {
-        /* Reads a word transparently from drum line 23 at the current
-        location, this.ioL */
+        /* Reads a word transparently from drum line 23 at the current location */
 
-        return this.line[23][this.ioL4];
+        return this.line[23][this.L4];
     }
 
     /**************************************/
     ioWrite23(word) {
-        /* Writes a word transparently to drum line 23 at the current
-        location */
+        /* Writes a word transparently to drum line 23 at the current location */
 
-        if (word < 0 || word > 0x1FFFFFFF) {
+        if (word < 0 || word > Util.wordMask) {
             debugger;
         }
 
-        this.line[23][this.ioL4] = word;
+        this.line[23][this.L4] = word;
     }
 
     /**************************************/
     ioReadMZ() {
         /* Reads a word transparently from the I/O buffer MZ at the current
-        location, this.ioL */
+        location */
 
-        return this.MZ[this.ioL4];
+        return this.MZ[this.L4];
     }
 
     /**************************************/
     ioWriteMZ(word) {
         /* Writes a word transparently to the I/O buffer MZ at the current
-        location, this.ioL */
+        location */
 
-        if (word < 0 || word > 0x1FFFFFFF) {
+        if (word < 0 || word > Util.wordMask) {
             debugger;
         }
 
-        this.MZ[this.ioL4] = word;
+        this.MZ[this.L4] = word;
     }
 
     /**************************************/
@@ -473,22 +707,25 @@ class Drum {
         inserting zero in the "bits" low-order bits of the word, and returning
         the original "bits" high order bits of the word and a Boolean that is
         always false (to make the return value signature identical to
-        ioPrecess19ToCode). This is normally used to get the next data code
-        for output */
+        ioPrecess19ToCode). Always starts a precession at T0. This is normally
+        used to get the next data code from AR for output */
         let keepBits = Util.wordBits - bits;
         let keepMask = Util.wordMask >> bits;
 
-        let word = this.read(28) & Util.wordMask;
-        let code = word >> keepBits;
-
-        if (word < 0 || word > 0x1FFFFFFF) {
+        await this.ioWaitUntil(0);      // start precession at T0
+        let word = this.read(28);
+        if (word < 0 || word > Util.wordMask) {
             debugger;
         }
 
-        this.write(28, (word & keepMask) << bits);
-        this.ioWaitFor(1);
+        let code = word >> keepBits;
+        if (!this.ioCanceled) {
+            this.write(28, (word & keepMask) << bits);
 
-        // await this.ioThrottle(); -- too small a delay to wait
+            this.tracePrecession(code, word, `Precess AR:${bits} to Code`);   // <<< DEBUG ONLY >>>
+
+            await this.ioWaitFor(1);
+        }
         return [code, false];
     }
 
@@ -499,26 +736,25 @@ class Drum {
         by four words to higher addresses in the line, and leaving the original
         contents of words 104-107 of line 19 in line MZ. Since this operation
         can run concurrently with other I/O-based drum operations, it doesn't
-        use the regular ioReadX or ioWriteX routines nor update this.ioL */
+        use the regular ioReadX or ioWriteX routines or this.ioWait* routines */
 
         // Compute delay until line 19 word 0.
-        let delay = ((Util.longLineSize - this.ioL) % Util.longLineSize)*Util.wordTime;
+        let delay = Drum.computeDrumCount(this.L.value, 0)*Util.wordTime;
 
         for (let x=0; x<Util.longLineSize; ++x) {
+            if (this.ioCanceled) {
+                delay = 0;
+                break;
+            }
+
             // Synchronize drum timing
-            if (delay > Util.minTimeout) {
+            if (delay > Drum.minThrottleDelay) {
                 await this.line19Timer.set(delay);
                 delay = 0;
             }
 
             let mx = x % Util.fastLineSize;
-            let wMZ = this.MZ[mx];
-            //console.log("PrecessMZTo19: %3d %s %s", x,
-            //    wMZ.toString(16).padStart(8, "0"),
-            //    this.line[19][x].toString(16).padStart(8, "0"));
-
-            this.MZ[mx] = this.line[19][x];
-            this.line[19][x] = wMZ;
+            [this.line[19][x], this.MZ[mx]] = [this.MZ[mx], this.line[19][x]];
             delay += Util.wordTime;
         }
 
@@ -543,22 +779,35 @@ class Drum {
     async ioPrecessMZToCode(bits) {
         /* Precesses the original contents of MZ by "bits" bits to higher
         word numbers, inserting zero in the "bits" low-order bits of word 0,
-        and returning the original "bits" high order bits of word 3. This is
-        normally used to get the next 3-bit format code for slow output */
+        and returning the original "bits" high order bits of word 3. Always
+        starts a precession at T0. This is normally used to get the next 3-bit
+        format code for slow output */
         let keepBits = Util.wordBits - bits;
         let keepMask = Util.wordMask >> bits;
         let code = 0;
         let word = 0;
 
-        this.ioWaitUntil4(0);
+        await this.ioWaitUntil(0);      // start precession at T0
         for (let x=0; x<Util.fastLineSize; ++x) {
-            word = this.ioReadMZ() & Util.wordMask;
+            if (this.ioCanceled) {
+                code = 0;
+                break;
+            }
+
+            word = this.ioReadMZ();
+            if (word < 0 || word > Util.wordMask) {
+                debugger;
+            }
+
             this.ioWriteMZ(((word & keepMask) << bits) | code);
             code = word >> keepBits;
-            this.ioWaitFor(1);
+            await this.ioWaitFor(1);
+
+            if (x == Util.fastLineSize-1) {
+                this.tracePrecession(code, word, `Precess MZ:${bits} to Code`);   // <<< DEBUG ONLY >>>
+            }
         }
 
-        await this.ioThrottle();
         return code;
     }
 
@@ -574,30 +823,45 @@ class Drum {
         let code = 0;
         let word = 0;
 
-        this.ioWaitUntil(0);
+        await this.ioWaitUntil(0);      // start precession at T0
         for (let x=0; x<Util.fastLineSize; ++x) {
-            word = this.line[line][x] & Util.wordMask;
+            if (this.ioCanceled) {
+                code = 0;
+                break;
+            }
+
+            word = this.read(line);
+            if (word < 0 || word > Util.wordMask) {
+                debugger;
+            }
+
             this.ioWriteMZ(((word & keepMask) << bits) | code);
             code = word >> keepBits;
-            this.ioWaitFor(1);
+
+            if (x == Util.fastLineSize-1) {
+                this.tracePrecession(code, word, `Precess L${line}:${bits} to MZ to Code`);   // <<< DEBUG ONLY >>>
+            }
+
+            await this.ioWaitFor(1);
         }
 
-        await this.ioThrottle();
         return code;
     }
 
     /**************************************/
-    async ioInitialize23ForReload() {
+    async ioInitialize23ForAutoReload() {
         /* Initializes line 23 for auto reload. Sets the T1 bit of word 0 in
         line 23 and zeroes the remaining bits of the line */
 
-        this.ioWaitUntil4(0);
+        await this.ioWaitUntil4(0);
         for (let x=0; x<Util.fastLineSize; ++x) {
-            this.ioWrite23(x == 0 ? 1 : 0);
-            this.ioWaitFor(1);
-        }
+            if (this.ioCanceled) {
+                break;
+            }
 
-        await this.ioThrottle();
+            this.ioWrite23(x == 0 ? 1 : 0);
+            await this.ioWaitFor(1);
+        }
     }
 
     /**************************************/
@@ -606,16 +870,18 @@ class Drum {
         If "autoReload" is truthy, sets the T1 bit of word 0 in line 23 and
         zeroes the remaining bits of the line instead of "recirculating" them */
 
-        this.ioWaitUntil4(0);
+        await this.ioWaitUntil4(0);
         for (let x=0; x<Util.fastLineSize; ++x) {
+            if (this.ioCanceled) {
+                break;
+            }
+
             this.ioWriteMZ(this.ioRead23());
             if (autoReload) {
                 this.ioWrite23(x == 0 ? 1 : 0);
             }
-            this.ioWaitFor(1);
+            await this.ioWaitFor(1);
         }
-
-        await this.ioThrottle();
     }
 
     /**************************************/
@@ -624,7 +890,7 @@ class Drum {
         word numbers, inserting zero in the "bits" low-order bits of word 0, and
         returning the original "bits" high order bits of word 107 and a Boolean
         indicating whether line 19 is now "empty" (all zeroes). This is
-        normally used to get the next data code for output */
+        normally used to get the next data code from line 19 for output */
         let keepBits = Util.wordBits - bits;
         let keepMask = Util.wordMask >> bits;
         let code = 0;
@@ -632,9 +898,19 @@ class Drum {
         let newWord = 0;
         let word = 0;
 
-        this.ioWaitUntil(0);
+        await this.ioWaitUntil(0);      // start precession at T0
         for (let x=0; x<Util.longLineSize; ++x) {
-            word = this.ioRead19() & Util.wordMask;
+            if (this.ioCanceled) {
+                code = 0;
+                empty = true;
+                break;
+            }
+
+            word = this.ioRead19();
+            if (word < 0 || word > Util.wordMask) {
+                debugger;
+            }
+
             newWord = ((word & keepMask) << bits) | code;
             if (newWord) {
                 empty = false;
@@ -642,14 +918,41 @@ class Drum {
 
             this.ioWrite19(newWord);
             code = word >> keepBits;
-            this.ioWaitFor(1);
-            if (x % 22 == 0) {          // 5.91ms
-                await this.ioThrottle();
+
+            if (x == Util.longLineSize-1) {
+                this.tracePrecession(code, word, `Precess 19:${bits} to Code`);   // <<< DEBUG ONLY >>>
             }
+
+            await this.ioWaitFor(1);
         }
 
-        await this.ioThrottle();
         return [code, empty];
+    }
+
+    /**************************************/
+    async ioPrecess19ToMZ() {
+        /* Precesses the high-order 4 words of line 19 to MZ and zeroes into the
+        low-order words of line 19. This is normally used by canceling an I/O to
+        get the 4-word precession as a side effect */
+        let word = 0;
+
+        await this.ioWaitUntil(0);      // start precession at T0
+        for (let x=0; x<Util.longLineSize; ++x) {
+            ////if (this.ioCanceled) {
+            ////    break;
+            ////}
+
+            word = this.ioRead19();
+            if (word < 0 || word > Util.wordMask) {
+                debugger;
+            }
+
+            this.ioWrite19(x < Util.fastLineSize ? 0 : this.ioReadMZ());
+            this.ioWriteMZ(word);
+            await this.ioWaitFor(1);
+        }
+
+        this.tracePrecession(0, word, "Precess 19:4 words to MZ");   // <<< DEBUG ONLY >>>
     }
 
     /**************************************/
@@ -665,14 +968,22 @@ class Drum {
         let carry = code & codeMask;
         let word = 0;
 
-        this.ioWaitUntil4(0);
+        await this.ioWaitUntil4(0);
         for (let x=0; x<Util.fastLineSize; ++x) {
-            word = this.ioRead23() & Util.wordMask;
+            if (this.ioCanceled) {
+                break;
+            }
+
+            word = this.ioRead23();
+            if (word < 0 || word > Util.wordMask) {
+                debugger;
+            }
+
             this.ioWrite23(((word & keepMask) << bits) | carry);
             carry = word >> keepBits;
-            this.ioWaitFor(1);
+            await this.ioWaitFor(1);
         }
-        await this.ioThrottle();
+
         return carry;
     }
 

@@ -119,9 +119,6 @@ let globalLoad = (ev) => {
             "sound":                    new Sound(context)
         }
 
-        let timingFactor = Util.drumRPM/Util.defaultRPM;
-        let readerSpeed = Math.min(PaperTapeReader.defaultSpeed*timingFactor, 2000);
-        context.devices.paperTapeReader.setSpeed(readerSpeed)
         context.devices.paperTapeReader.preload();      // preload the PPR image
         context.processor.powerUp();
         context.controlPanel.enablePanel();
@@ -135,11 +132,7 @@ let globalLoad = (ev) => {
         if (processor.CH.value == 0 || processor.OC.value & 0b1111) {
             processor.stop();
             if (processor.activeIODevice) {
-                if (processor.canceledIO) {
-                    processor.finishIO();
-                } else {
-                    processor.cancelIO();
-                }
+                processor.finishIO();
             }
             setTimeout(systemShutDown, 250);
             return;
@@ -162,10 +155,12 @@ let globalLoad = (ev) => {
         //config.flush();
 
         if (processor.poweredOn) {
+            /**********
             const systemShutdown = $$("SystemShutdown");
             systemShutdown.volume = 0.25;
             systemShutdown.currentTime = 0;
             systemShutdown.play();
+            **********/
             $$("DCPowerLamp").classList.remove("redLit");
             $$("DCPowerLampFX").classList.add("powerDown");
         }
@@ -193,10 +188,8 @@ let globalLoad = (ev) => {
 
             switch (key) {
             case "RPM":
-                val = parseInt(val, 10);
-                if (val && val > Util.defaultRPM) {
-                    Util.setTiming(val);
-                }
+                val = parseInt(val, 10) ?? 0;
+                Util.enableNonStandardTiming(val);
                 break;
             } // switch key
         }

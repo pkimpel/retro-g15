@@ -94,7 +94,6 @@ class Processor {
         this.pnSign = 0;                                // sign bit from PN even word
 
         // UI state
-        this.bellTiming = 0;                            // word-times the bell should be rung (sensed by ControlPanel)
         this.computeSwitch = 0;                         // 0=OFF, 1=GO, 2=BP
         this.enableSwitch = 0;                          // 0=normal, 1=enable typewriter keyboard
         this.punchSwitch = 0;                           // 0=off, 1=copy to paper-tape punch
@@ -104,11 +103,9 @@ class Processor {
         this.canceledIO = false;                        // current I/O has been canceled
         this.duplicateIO = false;                       // second I/O of same type initiated while first in progress
         this.hungIO = false;                            // current I/O is intentionally hung, awaiting cancel
-        this.ioTimer = new Util.Timer();                // general timer for I/O operations
-        this.ioPromise = Promise.resolve();             // general Promise for I/O operations
+        this.ioPrecession = Promise.resolve();          // Promise for I/O line 19 precession
 
         // Bound methods
-        this.boundTransformNormal = this.transformNormal.bind(this);
         this.boundIOPrecess19ToCode = this.drum.ioPrecess19ToCode.bind(this.drum);
         this.boundIOPrecessARToCode = this.drum.ioPrecessARToCode.bind(this.drum);
     }
@@ -168,8 +165,17 @@ class Processor {
         const drumLoc = this.isNCAR ?
                 "NCAR   " : Util.formatDrumLoc(this.cmdLine, this.cmdLoc.value, true);
 
-        console.log(`<TRACE${this.devices.paperTapeReader.blockNr.toString().padStart(3, " ")}> ` +
-                    `${this.lastRCWordTime.toFixed().padStart(8)}: ${drumLoc}  ${Util.disassembleCommand(this.cmdWord)}`);
+        console.log(`<TRACE${this.devices.paperTapeReader.blockNr.toString().padStart(3, " ")}>` +
+                    `${this.lastRCWordTime.toFixed().padStart(9)}: ${drumLoc}  ${Util.disassembleCommand(this.cmdWord)}`);
+    }
+
+    /**************************************/
+    traceIO(caption) {
+        /* Log current I/O activity to the console */
+        const drumLoc = Util.formatDrumLoc(99, this.drum.L.value, true);
+
+        console.log("<I/O>     " +
+                    `${this.drum.drumTime.toFixed().padStart(9)}: ${drumLoc}  ${caption}`);
     }
 
     /**************************************/
@@ -499,23 +505,25 @@ class Processor {
     }
 
     /**************************************/
-    transferDriver(transform) {
-        /* Executes a transfer to a destination under control of the transform
-        function, which is called each word-time during execution. This routine
-        handles the majority of immediate/deferred and DP timing details */
+    async transferDriver(transform, arg) {
+        /* Executes a transfer to a destination under control of the "transform"
+        function, which is called each word-time during execution. The optional
+        parameter "arg" is passed to "transform" on each iteration. This routine
+        handles the majority of immediate/deferred and DP timing details,
+        stepping the drum through each word of the transfer state */
         let count = 1;                  // defaults to one word time
 
         if (this.DI.value) {
             // Deferred execution: transfer one or two words at time T.
-            this.drum.waitUntil(this.T.value);
+            await this.drum.waitUntil(this.T.value);
             if (this.C1.value && this.drum.CE) {
                 ++count;                // DP operand: two-word transfer state
             }
         } else {
             // Immediate execution: transfer during current word time through T-1.
-            count = this.T.value - this.drum.L.value;
-            if (count <= 0) {
-                count += Util.longLineSize;
+            count = Drum.computeDrumCount(this.drum.L.value, this.T.value);
+            if (count == 0) {
+                count = Util.longLineSize;
             }
         }
 
@@ -524,18 +532,18 @@ class Processor {
         }
 
         do {
-            transform();
-            this.drum.waitFor(1);
+            transform.call(this, arg);
+            await this.drum.waitFor(1);
         } while (--count > 0);
     }
 
     /**************************************/
-    transformNothing() {
+    transferNothing() {
         /* An empty transform to simply mark time until Transfer State terminates */
     }
 
     /**************************************/
-    transformNormal(prefix) {
+    transferNormal(prefix) {
         /* Implements the source-to-destination transformation for normal
         transfers (D=0..23). "Via AR" operations are not supported for the
         sources >=28, so special action is taken for those cases */
@@ -592,13 +600,6 @@ class Processor {
     }
 
     /**************************************/
-    transferNormal() {
-        /* Executes a transfer from any source to drum lines 0-23 */
-
-        this.transferDriver(this.boundTransformNormal);
-    }
-
-    /**************************************/
     transferToTEST() {
         /* Executes a transfer from any source to the TEST register (D=27). If
         any single- or double-precision value is non-zero, CQ is set to cause
@@ -606,180 +607,174 @@ class Processor {
         The Theory of Operation Manual (p.48) says that if any one-bits appear
         on the LATE bus, CQ will be set. Therefore, -0 (which the adder does
         not generate) tests as non-zero */
+        let ib = 0;                     // intermediate bus (written to AR for TVA/AVA)
+        let lb = 0;                     // late bus: tested (read from AR for TVA/AVA)
+        let word = this.readSource();   // original source word
 
-        this.transferDriver(() => {
-            let ib = 0;                 // intermediate bus (written to AR for TVA/AVA)
-            let lb = 0;                 // late bus: tested (read from AR for TVA/AVA)
-            let word = this.readSource(); // original source word
+        switch (this.C.value) {
+        case 0: // TR (transfer)
+            lb = word;
+            switch (this.S.value) {
+            case 24:    // MQ
+            case 25:    // ID
+            case 26:    // PN
+                if (!this.C1.value || this.drum.CE) {
+                    lb &= Util.absWordMask;                 // zero sign bit on even word for DP
+                }
+                break;
+            }
+            break;
 
-            switch (this.C.value) {
-            case 0: // TR (transfer)
-                lb = word;
+        case 1: // AD ("add": complement negative numbers)
+            if (!this.C1.value || this.drum.CE) {           // SP operation or even word
+                lb = this.complementSingle(word);
+            } else {                                        // DP odd word
+                lb = this.complementDoubleOdd(word);
+            }
+            break;
+
+        case 2: // TVA (transfer via AR) or AV (absolute value)
+            if (this.CS.value) {        // transfer via AR
+                ib = word;
+                lb = this.drum.read(regAR);
                 switch (this.S.value) {
                 case 24:    // MQ
                 case 25:    // ID
                 case 26:    // PN
                     if (!this.C1.value || this.drum.CE) {
-                        lb &= Util.absWordMask;                 // zero sign bit on even word for DP
+                        ib &= Util.absWordMask;             // zero sign bit on even word for DP
                     }
                     break;
                 }
-                break;
+                this.drum.write(regAR, ib);
+            } else {                        // absolute value
+                if (!this.C1.value || this.drum.CE) {   // SP operation or even word
+                    lb = word & Util.absWordMask;
+                } else {                                // DP odd word
+                    lb = word;
+                }
+            }
+            break;
 
-            case 1: // AD ("add": complement negative numbers)
-                if (!this.C1.value || this.drum.CE) {           // SP operation or even word
-                    lb = this.complementSingle(word);
-                } else {                                        // DP odd word
+        case 3: // AVA (add via AR) or SU ("subtract": change sign)
+            if (this.CS.value) {        // add via AR
+                lb = this.drum.read(regAR);
+                if (!this.C1.value || this.drum.CE) {       // SP operation or even word
+                    this.drum.write(regAR, ib = this.complementSingle(word));
+                } else {                // DP odd word
+                    this.drum.write(regAR, ib = this.complementDoubleOdd(word));
+                }
+            } else {
+                if (!this.C1.value || this.drum.CE) {       // SP operation or even word
+                    lb = this.complementSingle(word ^ 1);
+                } else {                // DP odd word
                     lb = this.complementDoubleOdd(word);
                 }
-                break;
-
-            case 2: // TVA (transfer via AR) or AV (absolute value)
-                if (this.CS.value) {            // transfer via AR
-                    ib = word;
-                    lb = this.drum.read(regAR);
-                    switch (this.S.value) {
-                    case 24:    // MQ
-                    case 25:    // ID
-                    case 26:    // PN
-                        if (!this.C1.value || this.drum.CE) {
-                            ib &= Util.absWordMask;             // zero sign bit on even word for DP
-                        }
-                        break;
-                    }
-                    this.drum.write(regAR, ib);
-                } else {                        // absolute value
-                    if (!this.C1.value || this.drum.CE) {       // SP operation or even word
-                        lb = word & Util.absWordMask;
-                    } else {                                    // DP odd word
-                        lb = word;
-                    }
-                }
-                break;
-
-            case 3: // AVA (add via AR) or SU ("subtract": change sign)
-                if (this.CS.value) {            // add via AR
-                    lb = this.drum.read(regAR);
-                    if (!this.C1.value || this.drum.CE) {       // SP operation or even word
-                        this.drum.write(regAR, ib = this.complementSingle(word));
-                    } else {                // DP odd word
-                        this.drum.write(regAR, ib = this.complementDoubleOdd(word));
-                    }
-                } else {
-                    if (!this.C1.value || this.drum.CE) {       // SP operation or even word
-                        lb = this.complementSingle(word ^ 1);
-                    } else {                // DP odd word
-                        lb = this.complementDoubleOdd(word);
-                    }
-                }
-                break;
-            } // switch this.C
-
-            if (lb) {
-                this.CQ.value = 1;
             }
+            break;
+        } // switch this.C
 
-            if (this.tracing) {
-                this.traceTransfer("TEST", this.CS.value, word, ib, lb, `: CQ=${this.CQ.value}`);
-            }
-        });
+        if (lb) {
+            this.CQ.value = 1;
+        }
+
+        if (this.tracing) {
+            this.traceTransfer("->TEST", this.CS.value, word, ib, lb, `: CQ=${this.CQ.value}`);
+        }
     }
 
     /**************************************/
     transferToID() {
         /* Executes a transfer from any source to the ID register (D=25) */
+        let ib = 0;                     // intermediate bus (written to AR for TVA/AVA)
+        let lb = 0;                     // late bus: dest value (read from AR for TVA/AVA)
+        let word = 0;                   // original source word
+        let tva = 0;                    // transfer via AR (for tracing only)
 
-        this.transferDriver(() => {
-            let ib = 0;                 // intermediate bus (written to AR for TVA/AVA)
-            let lb = 0;                 // late bus: dest value (read from AR for TVA/AVA)
-            let word = 0;               // original source word
-            let tva = 0;                // transfer via AR (for tracing only)
-
-            switch (this.C.value) {
-            case 0: // TR
-                lb = word = this.readSource();
-                switch (this.S.value) {
-                case 24:    // MQ
-                case 25:    // ID
-                case 26:    // PN
-                    if (!this.C1.value || this.drum.CE) {
-                        lb &= Util.absWordMask;
-                    }
-                    break;
-                default:    // S = 0..23 or 27..31
-                    if (!this.C1.value || this.drum.CE) {
-                        this.IP.value = word & Util.wordSignMask;       // set IP on even word for DP
-                        lb &= Util.absWordMask;
-                    }
-                    break;
-                } // switch this.S
-
-                this.drum.write(regID, lb);     // >>> was: word & Util.absWordMask);
-                this.drum.write(regPN, 0);      // clear this half of PN
-                if (this.tracing) {
-                    this.traceTransfer("ID", tva, word, ib, lb, `: IP=${this.IP.value} PN=0`);
+        switch (this.C.value) {
+        case 0: // TR
+            lb = word = this.readSource();
+            switch (this.S.value) {
+            case 24:    // MQ
+            case 25:    // ID
+            case 26:    // PN
+                if (!this.C1.value || this.drum.CE) {
+                    lb &= Util.absWordMask;
                 }
                 break;
+            default:    // S = 0..23 or 27..31
+                if (!this.C1.value || this.drum.CE) {
+                    this.IP.value = word & Util.wordSignMask;       // set IP on even word for DP
+                    lb &= Util.absWordMask;
+                }
+                break;
+            } // switch this.S
 
-            case 2: // TVA/AV
-                word = this.readSource();
-                switch (this.S.value) {
-                case 24:    // MQ
-                case 25:    // ID
-                case 26:    // PN
-                    tva = 1;
-                    if (this.drum.CE) {                 // even word time
-                        this.drum.write(regID, lb = 0); // clear ID-0
-                        this.drum.write(regAR, ib = word & Util.absWordMask);
-                    } else {                            // odd word time
-                        this.drum.write(regID, lb = this.drum.read(regAR));// copy AR to ID-1
-                        if (this.C1.value) {            // double-precision
-                            this.drum.write(regAR, ib = word);
-                        } else {
-                            this.drum.write(regAR, ib = word & Util.absWordMask);
-                        }
-                    }
-                    break;
-                case 28:    // AR
-                case 29:    // 20.IR
-                case 30:    // 20/.21
-                case 31:    // 20.21
-                    if (!this.C1.value || this.drum.CE) {
-                        this.drum.write(regID, lb = word & Util.absWordMask);
+            this.drum.write(regID, lb); // >>> was: word & Util.absWordMask);
+            this.drum.write(regPN, 0);  // clear this half of PN
+            if (this.tracing) {
+                this.traceTransfer("->ID", tva, word, ib, lb, `: IP=${this.IP.value} PN=0`);
+            }
+            break;
+
+        case 2: // TVA/AV
+            word = this.readSource();
+            switch (this.S.value) {
+            case 24:    // MQ
+            case 25:    // ID
+            case 26:    // PN
+                tva = 1;
+                if (this.drum.CE) {     // even word time
+                    this.drum.write(regID, lb = 0); // clear ID-0
+                    this.drum.write(regAR, ib = word & Util.absWordMask);
+                } else {                            // odd word time
+                    this.drum.write(regID, lb = this.drum.read(regAR));// copy AR to ID-1
+                    if (this.C1.value) {            // double-precision
+                        this.drum.write(regAR, ib = word);
                     } else {
-                        this.drum.write(regID, lb = word);
+                        this.drum.write(regAR, ib = word & Util.absWordMask);
                     }
-                    break;
-                default:    // S = 0..23 or 27
-                    tva = 1;
-                    if (this.drum.CE) {         // even word time
-                        this.drum.write(regID, lb = 0);         // clear ID-0
+                }
+                break;
+            case 28:    // AR
+            case 29:    // 20.IR
+            case 30:    // 20/.21
+            case 31:    // 20.21
+                if (!this.C1.value || this.drum.CE) {
+                    this.drum.write(regID, lb = word & Util.absWordMask);
+                } else {
+                    this.drum.write(regID, lb = word);
+                }
+                break;
+            default:    // S = 0..23 or 27
+                tva = 1;
+                if (this.drum.CE) {     // even word time
+                    this.drum.write(regID, lb = 0);     // clear ID-0
+                    this.drum.write(regAR, ib = word & Util.absWordMask);
+                    this.IP.value = word & Util.wordSignMask;
+                } else {                    // odd word time
+                    this.drum.write(regID, lb = this.drum.read(regAR)); // copy AR to ID-1
+                    if (this.C1.value) {                // double-precision
+                        this.drum.write(regAR, ib = word);
+                    } else {
                         this.drum.write(regAR, ib = word & Util.absWordMask);
                         this.IP.value = word & Util.wordSignMask;
-                    } else {                    // odd word time
-                        this.drum.write(regID, lb = this.drum.read(regAR));     // copy AR to ID-1
-                        if (this.C1.value) {                    // double-precision
-                            this.drum.write(regAR, ib = word);
-                        } else {
-                            this.drum.write(regAR, ib = word & Util.absWordMask);
-                            this.IP.value = word & Util.wordSignMask;
-                        }
                     }
-                    break;
-                } // switch this.S
-
-                this.drum.write(regPN, 0);     // clear this half of PN
-
-                if (this.tracing) {
-                    this.traceTransfer("ID", tva, word, ib, lb, `: IP=${this.IP.value} PN=0`);
                 }
                 break;
+            } // switch this.S
 
-            default:    // odd characteristics work as if for a normal line
-                this.transformNormal("ID");
-                break;
-            } // switch this.C
-        });
+            this.drum.write(regPN, 0); // clear this half of PN
+
+            if (this.tracing) {
+                this.traceTransfer("->ID", tva, word, ib, lb, `: IP=${this.IP.value} PN=0`);
+            }
+            break;
+
+        default:    // odd characteristics work as if for a normal line
+            this.transferNormal("->ID");
+            break;
+        } // switch this.C
     }
 
     /**************************************/
@@ -787,159 +782,155 @@ class Processor {
         /* Executes a transfer from any source to the MQ or PN registers (D=24,
         26, respectively). There are some slight differences between D=24 and
         D=26 when copying two-word registers with characteristic=0 */
-        let mnem = (dest == regMQ ? "MQ" : "PN");
+        let ib = 0;                 // intermediate bus (written to AR for TVA/AVA)
+        let lb = 0;                 // late bus: dest value (read from AR for TVA/AVA)
+        let word = 0;               // original source word
+        let tva = 0;                // transfer via AR (for tracing only)
+        let mnem = (dest == regMQ ? "->MQ" : "->PN");
 
-        this.suppressMinus0 = false;
-        this.transferDriver(() => {
-            let ib = 0;                 // intermediate bus (written to AR for TVA/AVA)
-            let lb = 0;                 // late bus: dest value (read from AR for TVA/AVA)
-            let word = 0;               // original source word
-            let tva = 0;                // transfer via AR (for tracing only)
-
-            switch (this.C.value) {
-            case 0: // TR
-                word = this.readSource();
-                switch (this.S.value) {
-                case 24:    // MQ
-                case 25:    // ID
-                    if (!this.C1.value || this.drum.CE) {
-                        this.drum.write(dest, lb = word & Util.absWordMask);
-                    } else {
-                        this.drum.write(dest, lb = word);
-                    }
-                    break;
-                case 26:    // PN
-                    if (dest == regPN) {        // PN -> PN
-                        if (!this.C1.value || this.drum.CE) {
-                            lb = (word & Util.absWordMask) | this.IP.value;
-                            this.drum.write(dest, lb = this.complementSingle(lb));
-                        } else {
-                            this.drum.write(dest, lb = this.complementDoubleOdd(word));
-                        }
-                    } else {                    // PN -> MQ works like ID/MQ -> MQ
-                        if (!this.C1.value || this.drum.CE) {
-                            this.drum.write(dest, lb = word & Util.absWordMask);
-                        } else {
-                            this.drum.write(dest, lb = word);
-                        }
-                    }
-                    break;
-                default:    // S = 0..23 or 27..31
-                    if (!this.C1.value || this.drum.CE) {
-                        this.drum.write(dest, lb = word & Util.absWordMask);
-                        if (word & Util.wordSignMask) {
-                            this.IP.flip();     // reverse IP if word is negative
-                        }
-                    } else {                    // odd word and DP
-                        this.drum.write(dest, lb = word);
-                    }
-                    break;
-                } // switch this.S
-
-                if (this.tracing) {
-                    this.traceTransfer(mnem, tva, word, ib, lb, `: IP=${this.IP.value}`);
-                }
-                break;
-
-            case 1: // AD
-                if (dest != regPN) {
-                    this.transformNormal(mnem);
+        switch (this.C.value) {
+        case 0: // TR
+            word = this.readSource();
+            switch (this.S.value) {
+            case 24:    // MQ
+            case 25:    // ID
+                if (!this.C1.value || this.drum.CE) {
+                    this.drum.write(dest, lb = word & Util.absWordMask);
                 } else {
-                    word = this.readSource();
-                    if (!this.C1.value || this.drum.CE) {       // SP operation or even word
-                        lb = this.complementSingle(word);
-                    } else {                                    // DP odd word
-                        lb = this.complementDoubleOdd(word);
-                        if (word == 0 && this.suppressMinus0) {
-                            this.drum.setPN0T1Bit(0);                   // suppress -0
-                        }
-                    }
-
-                    this.drum.write(regPN, lb);
-                    if (this.tracing) {
-                        this.traceTransfer(mnem, 0, word, ib, lb, lb==0 && this.suppressMinus0 ? " [mz]" : "");
-                    }
+                    this.drum.write(dest, lb = word);
                 }
                 break;
-
-            case 2: // TVA
-                word = this.readSource();
-                switch (this.S.value) {
-                case 24:    // MQ
-                case 25:    // ID
-                case 26:    // PN
-                    tva = 1;
-                    if (this.drum.CE) {                         // even word time
-                        this.drum.write(dest, lb = 0);          // clear dest-even
-                        this.drum.write(regAR, ib = word & Util.absWordMask);
+            case 26:    // PN
+                if (dest == regPN) {    // PN -> PN
+                    if (!this.C1.value || this.drum.CE) {
+                        lb = (word & Util.absWordMask) | this.IP.value;
+                        this.drum.write(dest, lb = this.complementSingle(lb));
                     } else {
-                        this.drum.write(dest, lb = this.drum.read(regAR));      // copy AR to dest-odd
-                        if (this.C1.value) {                    // double-precision
-                            this.drum.write(regAR, ib = word);
-                        } else {
-                            this.drum.write(regAR, ib = word & Util.absWordMask);
-                        }
+                        this.drum.write(dest, lb = this.complementDoubleOdd(word));
                     }
-                    break;
-                case 28:    // AR
-                case 29:    // 20.IR
-                case 30:    // 20/.21
-                case 31:    // 20.21
+                } else {                // PN -> MQ works like ID/MQ -> MQ
                     if (!this.C1.value || this.drum.CE) {
                         this.drum.write(dest, lb = word & Util.absWordMask);
                     } else {
                         this.drum.write(dest, lb = word);
                     }
-                    break;
-                default:    // S = 0..23 or 27
-                    tva = 1;
-                    if (this.drum.CE) {         // even word time
-                        this.drum.write(dest, lb = 0);          // clear even side of dest
+                }
+                break;
+            default:    // S = 0..23 or 27..31
+                if (!this.C1.value || this.drum.CE) {
+                    this.drum.write(dest, lb = word & Util.absWordMask);
+                    if (word & Util.wordSignMask) {
+                        this.IP.flip(); // reverse IP if word is negative
+                    }
+                } else {                // odd word and DP
+                    this.drum.write(dest, lb = word);
+                }
+                break;
+            } // switch this.S
+
+            if (this.tracing) {
+                this.traceTransfer(mnem, tva, word, ib, lb, `: IP=${this.IP.value}`);
+            }
+            break;
+
+        case 1: // AD
+            if (dest != regPN) {
+                this.transferNormal(mnem);
+            } else {
+                word = this.readSource();
+                if (!this.C1.value || this.drum.CE) {   // SP operation or even word
+                    lb = this.complementSingle(word);
+                } else {                                // DP odd word
+                    lb = this.complementDoubleOdd(word);
+                    if (word == 0 && this.suppressMinus0) {
+                        this.drum.setPN0T1Bit(0);       // suppress -0
+                    }
+                }
+
+                this.drum.write(regPN, lb);
+                if (this.tracing) {
+                    this.traceTransfer(mnem, 0, word, ib, lb, lb==0 && this.suppressMinus0 ? " [mz]" : "");
+                }
+            }
+            break;
+
+        case 2: // TVA
+            word = this.readSource();
+            switch (this.S.value) {
+            case 24:    // MQ
+            case 25:    // ID
+            case 26:    // PN
+                tva = 1;
+                if (this.drum.CE) {                     // even word time
+                    this.drum.write(dest, lb = 0);      // clear dest-even
+                    this.drum.write(regAR, ib = word & Util.absWordMask);
+                } else {
+                    this.drum.write(dest, lb = this.drum.read(regAR));  // copy AR to dest-odd
+                    if (this.C1.value) {                // double-precision
+                        this.drum.write(regAR, ib = word);
+                    } else {
+                        this.drum.write(regAR, ib = word & Util.absWordMask);
+                    }
+                }
+                break;
+            case 28:    // AR
+            case 29:    // 20.IR
+            case 30:    // 20/.21
+            case 31:    // 20.21
+                if (!this.C1.value || this.drum.CE) {
+                    this.drum.write(dest, lb = word & Util.absWordMask);
+                } else {
+                    this.drum.write(dest, lb = word);
+                }
+                break;
+            default:    // S = 0..23 or 27
+                tva = 1;
+                if (this.drum.CE) {     // even word time
+                    this.drum.write(dest, lb = 0);      // clear even side of dest
+                    this.drum.write(regAR, ib = word & Util.absWordMask);
+                    if (word & Util.wordSignMask) {
+                        this.IP.flip(); // reverse IP if word is negative
+                    }
+                } else {
+                    this.drum.write(dest, lb = this.drum.read(regAR)); // copy AR to dest-odd
+                    if (this.C1.value) {                // double-precision
+                        this.drum.write(regAR, ib = word);
+                    } else {
                         this.drum.write(regAR, ib = word & Util.absWordMask);
                         if (word & Util.wordSignMask) {
-                            this.IP.flip();     // reverse IP if word is negative
-                        }
-                    } else {
-                        this.drum.write(dest, lb = this.drum.read(regAR)); // copy AR to dest-odd
-                        if (this.C1.value) {                    // double-precision
-                            this.drum.write(regAR, ib = word);
-                        } else {
-                            this.drum.write(regAR, ib = word & Util.absWordMask);
-                            if (word & Util.wordSignMask) {
-                                this.IP.flip();     // reverse IP if word is negative
-                            }
+                            this.IP.flip(); // reverse IP if word is negative
                         }
                     }
-                    break;
-                } // switch this.S
+                }
+                break;
+            } // switch this.S
 
+            if (this.tracing) {
+                this.traceTransfer(mnem, tva, word, ib, lb, `: IP=${this.IP.value}`);
+            }
+            break;
+
+        case 3: // SU
+            if (dest != regPN) {
+                this.transferNormal(mnem);
+            } else {
+                word = this.readSource();
+                if (!this.C1.value || this.drum.CE) {   // SP operation or even word
+                    lb = this.complementSingle(word ^ 1);       // change sign bit
+                } else {                // DP odd word
+                    lb = this.complementDoubleOdd(word);
+                    if (word == 0 && this.suppressMinus0) {
+                        this.drum.setPN0T1Bit(0);               // suppress -0
+                    }
+                }
+
+                this.drum.write(regPN, lb);
                 if (this.tracing) {
-                    this.traceTransfer(mnem, tva, word, ib, lb, `: IP=${this.IP.value}`);
+                    this.traceTransfer(mnem, 0, word, ib, lb, lb==0 && this.suppressMinus0 ? " [mz]" : "");
                 }
-                break;
-
-            case 3: // SU
-                if (dest != regPN) {
-                    this.transformNormal(mnem);
-                } else {
-                    word = this.readSource();
-                    if (!this.C1.value || this.drum.CE) {       // SP operation or even word
-                        lb = this.complementSingle(word ^ 1);           // change sign bit
-                    } else {                // DP odd word
-                        lb = this.complementDoubleOdd(word);
-                        if (word == 0 && this.suppressMinus0) {
-                            this.drum.setPN0T1Bit(0);                   // suppress -0
-                        }
-                    }
-
-                    this.drum.write(regPN, lb);
-                    if (this.tracing) {
-                        this.traceTransfer(mnem, 0, word, ib, lb, lb==0 && this.suppressMinus0 ? " [mz]" : "");
-                    }
-                }
-                break;
-            } // switch this.C
-        });
+            }
+            break;
+        } // switch this.C
     }
 
     /**************************************/
@@ -958,50 +949,46 @@ class Processor {
         This only happens when transferring or adding to AR or PN, and only for
         CH=1,3). The following has the equivalent effect. See the Theory of
         Operation manual, page 34, paragraph C-10t, and drawing 27 */
+        let lb = 0;                         // late bus: dest value written to AR
+        let word = this.readSource();       // original source word
 
-        this.suppressMinus0 = false;
-        this.transferDriver(() => {
-            let lb = 0;                         // late bus: dest value written to AR
-            let word = this.readSource();       // original source word
+        switch (this.C.value) {
+        case 0: // TR
+            lb = word;
+            break;
 
-            switch (this.C.value) {
-            case 0: // TR
-                lb = word;
-                break;
-
-            case 1: // AD
-                if (!this.C1.value || this.drum.CE) {           // SP operation or even word
-                    lb = this.complementSingle(word);
-                } else {                // DP odd word
-                    lb = this.complementDoubleOdd(word);
-                    this.suppressMinus0 = this.suppressMinus0 && word == 0;
-                }
-                break;
-
-            case 2: // AV
-                if (!this.C1.value || this.drum.CE) {           // SP operation or even word
-                    lb = word & Util.absWordMask;
-                } else {                // DP odd word
-                    lb = word;
-                }
-                break;
-
-            case 3: // SU
-                if (!this.C1.value || this.drum.CE) {           // SP operation or even word
-                    lb = this.complementSingle(word ^ 1);               // change sign bit
-                } else {                // DP odd word
-                    lb = this.complementDoubleOdd(word);
-                    this.suppressMinus0 = this.suppressMinus0 && word == 0;
-                }
-                break;
-            } // switch this.C
-
-            lb = this.addSingle(0, lb, this.suppressMinus0);
-            this.drum.write(regAR, lb);
-            if (this.tracing) {
-                this.traceTransfer("AR", 0, word, 0, lb, null);
+        case 1: // AD
+            if (!this.C1.value || this.drum.CE) {       // SP operation or even word
+                lb = this.complementSingle(word);
+            } else {                // DP odd word
+                lb = this.complementDoubleOdd(word);
+                this.suppressMinus0 = this.suppressMinus0 && word == 0;
             }
-        });
+            break;
+
+        case 2: // AV
+            if (!this.C1.value || this.drum.CE) {       // SP operation or even word
+                lb = word & Util.absWordMask;
+            } else {                // DP odd word
+                lb = word;
+            }
+            break;
+
+        case 3: // SU
+            if (!this.C1.value || this.drum.CE) {       // SP operation or even word
+                lb = this.complementSingle(word ^ 1);           // change sign bit
+            } else {                // DP odd word
+                lb = this.complementDoubleOdd(word);
+                this.suppressMinus0 = this.suppressMinus0 && word == 0;
+            }
+            break;
+        } // switch this.C
+
+        lb = this.addSingle(0, lb, this.suppressMinus0);
+        this.drum.write(regAR, lb);
+        if (this.tracing) {
+            this.traceTransfer("->AR", 0, word, 0, lb, null);
+        }
     }
 
     /**************************************/
@@ -1016,64 +1003,60 @@ class Processor {
         This only happens when transferring or adding to AR or PN, and only for
         CH=1,3). The following has the equivalent effect. See the Theory of
         Operation manual, page 34, paragraph C-10t, and drawing 27 */
+        let a = this.drum.read(regAR);  // original value of AR (augend)
+        let ib = 0;                     // effective addend
+        let lb = 0;                     // sum to be written to AR
+        let word = this.readSource();   // original value of addend
 
-        this.suppressMinus0 = false;
-        this.transferDriver(() => {
-            let a = this.drum.read(regAR);      // original value of AR (augend)
-            let ib = 0;                         // effective addend
-            let lb = 0;                         // sum to be written to AR
-            let word = this.readSource();       // original value of addend
+        switch (this.C.value) {
+        case 0: // TR
+            ib = word;
+            break;
 
-            switch (this.C.value) {
-            case 0: // TR
-                ib = word;
-                break;
-
-            case 1: // AD
-                if (!this.C1.value || this.drum.CE) {   // SP operation or even word
-                    ib = this.complementSingle(word);
-                } else {                                // DP odd word
-                    this.suppressMinus0 = this.suppressMinus0 && word == 0;
-                    ib = this.complementDoubleOdd(word);
-                }
-                break;
-
-            case 2: // AV
-                if (!this.C1.value || this.drum.CE) {   // SP operation or even word
-                    ib = word & Util.absWordMask;
-                } else {                // DP odd word
-                    ib = this.complementDoubleOdd(word);
-                }
-                break;
-
-            case 3: // SU
-                if (!this.C1.value || this.drum.CE) {   // SP operation or even word
-                    ib = this.complementSingle(word ^ 1);       // change sign bit
-                } else {                // DP odd word
-                    this.suppressMinus0 = this.suppressMinus0 && word == 0;
-                    ib = this.complementDoubleOdd(word);
-                }
-                break;
-            } // switch this.C
-
-            lb = this.addSingle(a, ib, this.suppressMinus0);
-            if (this.overflowed) {
-                this.FO.value = 1;
+        case 1: // AD
+            if (!this.C1.value || this.drum.CE) {       // SP operation or even word
+                ib = this.complementSingle(word);
+            } else {                                    // DP odd word
+                this.suppressMinus0 = this.suppressMinus0 && word == 0;
+                ib = this.complementDoubleOdd(word);
             }
+            break;
 
-            this.drum.write(regAR, lb);
-            if (this.tracing) {
-                let loc = this.drum.L.value;
-                console.log("              AR+ %s=%s %d> %s + AR=%s => %s FO=%d%s%s",
-                        Util.formatDrumLoc(this.S.value, loc, true),
-                        Util.g15SignedHex(word), this.C.value,
-                        Util.g15SignedHex(ib),
-                        Util.g15SignedHex(a),
-                        Util.g15SignedHex(lb),
-                        this.FO.value, (this.overflowed ? "*" : " "),
-                        (this.suppressMinus0 ? " [mz]" : ""));
+        case 2: // AV
+            if (!this.C1.value || this.drum.CE) {       // SP operation or even word
+                ib = word & Util.absWordMask;
+            } else {                // DP odd word
+                ib = this.complementDoubleOdd(word);
             }
-        });
+            break;
+
+        case 3: // SU
+            if (!this.C1.value || this.drum.CE) {       // SP operation or even word
+                ib = this.complementSingle(word ^ 1);           // change sign bit
+            } else {                // DP odd word
+                this.suppressMinus0 = this.suppressMinus0 && word == 0;
+                ib = this.complementDoubleOdd(word);
+            }
+            break;
+        } // switch this.C
+
+        lb = this.addSingle(a, ib, this.suppressMinus0);
+        if (this.overflowed) {
+            this.FO.value = 1;
+        }
+
+        this.drum.write(regAR, lb);
+        if (this.tracing) {
+            let loc = this.drum.L.value;
+            console.log("              AR+ %s=%s %d> %s + AR=%s => %s FO=%d%s%s",
+                    Util.formatDrumLoc(this.S.value, loc, true),
+                    Util.g15SignedHex(word), this.C.value,
+                    Util.g15SignedHex(ib),
+                    Util.g15SignedHex(a),
+                    Util.g15SignedHex(lb),
+                    this.FO.value, (this.overflowed ? "*" : " "),
+                    (this.suppressMinus0 ? " [mz]" : ""));
+        }
     }
 
     /**************************************/
@@ -1104,77 +1087,64 @@ class Processor {
         This only happens when transferring or adding to AR or PN, and only for
         CH=1,3). The following has the equivalent effect. See the Theory of
         Operation manual, page 34, paragraph C-10t */
+        let isEven = (this.drum.CE);        // at even word
+        let pw = this.drum.read(regPN);     // current PN word
+        let word = this.readSource();       // current source word
 
-        this.pnAddCarry = 0;            // carry bit from even word to odd word
-        this.pnAddendSign = 0;          // raw sign result from even word addition
-        this.pnAugendSign = 0;          // sign of augend (PN)
-        this.pnSign = 0;                // final sign to be applied to PN
+        if (!this.C1.value || isEven) { // even word or not DP
+            switch (this.C.value) {
+            case 0: // TR
+                pw = this.addDoubleEven(pw, word);
+                break;
+            case 1: // AD
+                pw = this.addDoubleEven(pw, this.complementSingle(word));
+                break;
+            case 2: // AV       // since it's absolute value, no complementing is necessary
+                pw = this.addDoubleEven(pw, word & Util.absWordMask);
+                break;
+            case 3: // SU
+                pw = this.addDoubleEven(pw, this.complementSingle(word ^ 1)); // change sign bit
+                break;
+            }
 
-        if (this.tracing) {
-            this.traceRegisters();
+            this.drum.write(regPN, pw);
+        } else {                        // DP odd word
+            switch (this.C.value) {
+            case 0: // TR
+                pw = this.addDoubleOdd(pw, word);
+                break;
+            case 1: // AD
+                this.suppressMinus0 = this.suppressMinus0 && word == 0;
+                word = this.complementDoubleOdd(word);
+                pw = this.addDoubleOdd(pw, word, this.suppressMinus0);
+                break;
+            case 2: // AV       // since it's absolute value, no complementing is necessary
+                pw = this.addDoubleOdd(pw, word);
+                break;
+            case 3: // SU
+                this.suppressMinus0 = this.suppressMinus0 && word == 0;
+                word = this.complementDoubleOdd(word);
+                pw = this.addDoubleOdd(pw, word, this.suppressMinus0);
+                break;
+            }
+
+            if (this.overflowed) {
+                this.FO.value = 1;
+            }
+
+            this.drum.write(regPN, pw);
+
+            // Apply the final sign of the addition to the even word of PN
+            this.drum.setPN0T1Bit(this.pnSign);
         }
 
-        this.suppressMinus0 = false;
-        this.transferDriver(() => {
-            let isEven = (this.drum.CE);        // at even word
-            let pw = this.drum.read(regPN);     // current PN word
-            let word = this.readSource();       // current source word
-
-            if (!this.C1.value || isEven) {     // even word or not DP
-                switch (this.C.value) {
-                case 0: // TR
-                    pw = this.addDoubleEven(pw, word);
-                    break;
-                case 1: // AD
-                    pw = this.addDoubleEven(pw, this.complementSingle(word));
-                    break;
-                case 2: // AV           // since it's absolute value, no complementing is necessary
-                    pw = this.addDoubleEven(pw, word & Util.absWordMask);
-                    break;
-                case 3: // SU
-                    pw = this.addDoubleEven(pw, this.complementSingle(word ^ 1)); // change sign bit
-                    break;
-                }
-
-                this.drum.write(regPN, pw);
-            } else {                            // DP odd word
-                switch (this.C.value) {
-                case 0: // TR
-                    pw = this.addDoubleOdd(pw, word);
-                    break;
-                case 1: // AD
-                    this.suppressMinus0 = this.suppressMinus0 && word == 0;
-                    word = this.complementDoubleOdd(word);
-                    pw = this.addDoubleOdd(pw, word, this.suppressMinus0);
-                    break;
-                case 2: // AV           // since it's absolute value, no complementing is necessary
-                    pw = this.addDoubleOdd(pw, word);
-                    break;
-                case 3: // SU
-                    this.suppressMinus0 = this.suppressMinus0 && word == 0;
-                    word = this.complementDoubleOdd(word);
-                    pw = this.addDoubleOdd(pw, word, this.suppressMinus0);
-                    break;
-                }
-
-                if (this.overflowed) {
-                    this.FO.value = 1;
-                }
-
-                this.drum.write(regPN, pw);
-
-                // Apply the final sign of the addition to the even word of PN
-                this.drum.setPN0T1Bit(this.pnSign);
-            }
-
-            if (this.tracing) {
-                this.traceRegisters("PN+");
-            }
-        });
+        if (this.tracing) {
+            this.traceRegisters("PN+");
+        }
     }
 
     /**************************************/
-    multiply() {
+    async multiply() {
         /* Multiplies the contents of the ID register by the contents of the
         MQ register, developing the double-precision product in the PN register.
         The command should be coded as immediate and be in an odd location so
@@ -1194,7 +1164,7 @@ class Processor {
         this.pnSign = 0;
 
         if (this.DI.value) {
-            this.drum.waitUntil(this.T.value);
+            await this.drum.waitUntil(this.T.value);
         }
 
         if (!this.drum.CE) {
@@ -1222,7 +1192,7 @@ class Processor {
                 }
             }
 
-            this.drum.waitFor(1);
+            await this.drum.waitFor(1);
         } while (--count > 0);
 
         if (this.tracing) {
@@ -1231,7 +1201,7 @@ class Processor {
     }
 
     /**************************************/
-    divide() {
+    async divide() {
         /* Divides PN by ID leaving the double-precision quotient in MQ and
         remainder in PN. This command must be coded as immediate and be in an
         odd location so that transfer starts on an even word. The C (characteristic)
@@ -1291,7 +1261,7 @@ class Processor {
         this.pnSign = 0;
 
         if (this.DI.value) {
-            this.drum.waitUntil(this.T.value);
+            await this.drum.waitUntil(this.T.value);
         }
 
         if (!this.drum.CE) {
@@ -1369,7 +1339,7 @@ class Processor {
             }
 
             this.drum.write(regPN, pn);
-            this.drum.waitFor(1);
+            await this.drum.waitFor(1);
         } while (--count > 0);
 
         if (this.mqShiftCarry) {                // quotient overflow
@@ -1385,7 +1355,7 @@ class Processor {
     }
 
     /**************************************/
-    shiftMQLeftIDRight() {
+    async shiftMQLeftIDRight() {
         /* Shifts MQ left and ID right by one bit for every two word times.
         The command should be coded as immediate and be in an odd location so
         that transfer starts on an even word. The C1 (double-precision) bit in
@@ -1399,7 +1369,7 @@ class Processor {
         this.mqShiftCarry = this.drum.getMQ0T29Bit();
 
         if (this.DI.value) {
-            this.drum.waitUntil(this.T.value);
+            await this.drum.waitUntil(this.T.value);
         }
 
         if (!this.drum.CE) {
@@ -1425,7 +1395,7 @@ class Processor {
                 }
             }
 
-            this.drum.waitFor(1);
+            await this.drum.waitFor(1);
             --count;
         }
 
@@ -1435,7 +1405,7 @@ class Processor {
     }
 
     /**************************************/
-    normalizeMQ() {
+    async normalizeMQ() {
         /* Shifts the MQ register left as necessary so that the high-order bit
         of the odd word (MQ:1) is a 1. If the characteristic is 0, AR is
         incremented by 1 for every shift. Transfer is terminated whenever the
@@ -1451,7 +1421,7 @@ class Processor {
         this.mqShiftCarry = this.drum.getMQ0T29Bit();
 
         if (this.DI.value) {
-            this.drum.waitUntil(this.T.value);
+            await this.drum.waitUntil(this.T.value);
         }
 
         if (!this.drum.CE) {
@@ -1474,7 +1444,7 @@ class Processor {
                 }
             }
 
-            this.drum.waitFor(1);
+            await this.drum.waitFor(1);
             --count;
         }
 
@@ -1492,17 +1462,17 @@ class Processor {
     async receiveInputCode(code) {
         /* Receives the next I/O code from an input device and either stores
         it onto the drum or acts on its control function */
-        const autoReload = this.AS.value && (this.OC.value & 0b1100) == 0b1100;
+        const autoReload = this.AS.value && (this.OC.value & 0b1100) == 0b1100; // SLOW IN only
         let eob = false;                // end-of-block flag
         let marker = 0;                 // auto-reload marker code
 
-        this.drum.ioStartTiming();
-
-        if ((this.OC.value & 0b01111) == 0) {
-            eob = true;                         // canceled or invalid call
+        if ((this.OC.value & 0b01100) != 0b01100) {
+            eob = true;                         // canceled or not SLOW IN
         } else {
             if (code & IOCodes.ioDataMask) {    // it's a data frame
+                await this.drum.ioStart(`RIC data ${code.toString(2)}`);
                 marker = await this.drum.ioPrecessCodeTo23(code, 4);
+                this.drum.ioStop(`RIC data ${code.toString(2)}`);
             } else {
                 switch(code & 0b00111) {
                 case IOCodes.ioCodeMinus:       // minus: set sign FF
@@ -1510,23 +1480,29 @@ class Processor {
                     break;
                 case IOCodes.ioCodeCR:          // carriage return: shift sign into word
                 case IOCodes.ioCodeTab:         // tab: shift sign into word
+                    await this.drum.ioStart(`RIC CR/TAB ${code.toString(2)}`);
                     marker = await this.drum.ioPrecessCodeTo23(this.OS.value, 1);
+                    this.drum.ioStop(`RIC CR/TAB ${code.toString(2)}`);
                     this.OS.value = 0;
                     break;
                 case IOCodes.ioCodeStop:        // end/stop
                     eob = true;
-                    // no break: Stop implies Reload (if not TypeIn - see receiveKeyboardCode())
+                    // no break: Stop implies Reload -- if not TYPE IN -- see receiveKeyboardCode()
                 case IOCodes.ioCodeReload:      // reload
                     if (!autoReload) {
-                        await this.ioPromise;
+                        await this.ioPrecession;
+                        await this.drum.ioStart(`RIC Stop/Reload ${code.toString(2)}`);
                         await this.drum.ioCopy23ToMZ(false);
-                        this.ioPromise = this.drum.ioPrecessMZTo19();
+                        this.drum.ioStop(`RIC Stop/Reload ${code.toString(2)}`);
+                        this.ioPrecession = this.drum.ioPrecessMZTo19();    // uses separate drum timing
                     }
                     break;
                 case IOCodes.ioCodePeriod:      // period: ignored
                     break;
                 case IOCodes.ioCodeWait:        // wait: insert a 0 digit on input
+                    await this.drum.ioStart(`RIC Period/Wait ${code.toString(2)}`);
                     marker = await this.drum.ioPrecessCodeTo23(0, 4);
+                    this.drum.ioStop(`RIC Period/Wait ${code.toString(2)}`);
                     break;
                 default:                        // treat everything else as space & ignore
                     break;
@@ -1535,10 +1511,17 @@ class Processor {
 
             // Check if automatic reload is enabled and line 23 is full
             if (autoReload && marker == 1) {
-                await this.ioPromise;
-                await this.drum.ioCopy23ToMZ();
-                await this.drum.ioPrecessMZTo19();
+                marker = 0;
+                await this.ioPrecession;
+                await this.drum.ioStart(`RIC AUTO Reload ${code.toString(2)}`);
+                await this.drum.ioCopy23ToMZ(true);
+                this.drum.ioStop(`RIC AUTO Reload ${code.toString(2)}`);
+                this.ioPrecession = this.drum.ioPrecessMZTo19();            // uses separate drum timing
             }
+        }
+
+        if (eob) {
+            await this.ioPrecession;            // wait for final line 19 precession to complete
         }
 
         return eob;
@@ -1549,22 +1532,34 @@ class Processor {
         /* Executes the typewriter keyboard command specified by:
             * If the code is negative, then the ASCII value of "code"
             * If the code is 0b10000-0b10111 (keyboard 1-7), then sets
-                the command line to the value of that code */
+              the command line to the value of that code
+        Returns 0 if the command is accepted and 0 if rejected */
+        let result = 0;                 // assume valid input for now
 
         switch (code) {
         case -0x41: case -0x61:         // A - Type out AR
-            this.typeAR();
+            if (this.OC.value == IOCodes.ioCmdReady) {
+                this.typeAR();                  // async -- no wait
+            } else {
+                result = 1;                     // reject -- I/O busy
+            }
             break;
         case -0x42: case -0x62:         // B - Back up paper tape one block
-            await this.reversePaperTapePhase1();
+            if (this.OC.value == IOCodes.ioCmdReady) {
+                this.reversePaperTapePhase1();  // async -- no wait
+            } else {
+                result = 1;                     // reject -- I/O busy
+            }
             break;
         case -0x43: case -0x63:         // C - Select command line
             this.setCommandLine(0);
             break;
         case -0x46: case -0x66:         // F - Set first word of command line
+            // This should properly be done at word-time 0, but the Processor
+            // should be stopped at this point, anyway.
             this.stop();
-            this.drum.waitUntil(0);
-            this.drum.throttle();
+            this.CG.value = 0;
+            this.CQ.value = 0;
             this.N.value = 0;
             this.drum.CM.value &= Util.wordMask & ~0b11111_11111_0;     // clear any mark
             break;
@@ -1572,33 +1567,39 @@ class Processor {
             this.step();
             break;
         case -0x4D: case -0x6D:         // M - Mark place
-            this.drum.waitUntil(107);
-            this.drum.throttle();
+            // This is properly done at word-time 107, but the Processor
+            // should be stopped at this point, anyway.
             this.drum.write(0, this.drum.CM.value ^ Util.wordMask);
             this.drum.write(1, this.drum.read(regAR));
             break;
         case -0x50: case -0x70:         // P - Start paper tape reader
             this.stop();
-            this.drum.waitUntil(0);
-            this.drum.throttle();
             this.N.value = 0;
             this.setCommandLine(7);
-            await this.readPaperTape();
+            if (this.OC.value == IOCodes.ioCmdReady) {
+                this.readPaperTape();           // async -- no wait
+            } else {
+                result = 1;                     // reject -- I/O busy
+            }
             break;
         case -0x51: case -0x71:         // Q - Permit type in
             if (this.OC.value == IOCodes.ioCmdReady) {
                 this.enableTypeIn();
+            } else {
+                result = 1;                     // reject -- I/O busy
             }
             break;
         case -0x52: case -0x72:         // R - Return to marked place
-            this.drum.waitUntil(107);
-            this.drum.throttle();
+            // This is properly done at word-time 107, but the Processor
+            // should  be stopped at this point, anyway.
             this.drum.CM.value = this.drum.read(0) ^ Util.wordMask;
             this.drum.write(regAR, this.drum.read(1));
             break;
         case -0x54: case -0x74:         // T - Copy command location to AR high-order bits
-            this.drum.write(regAR, (this.N.value << 21) | ((this.N.value ? 0 : 1) << 28) |
-                (this.drum.read(regAR) & 0b0_0000000_1_1111111_11_11111_11111_1));
+            // See Theory of Operation, E-10c, p.67 for the weirdness.
+            this.drum.write(regAR,
+                (this.drum.read(regAR) & 0b0_0000000_1_1111111_11_11111_11111_1) |
+                ((this.drum.L.value < Util.longLineSize-1 ? this.N.value : 0b10010100) << 21));
             break;
         case 0b10000:                   // 0 - Set command line
         case 0b10001:                   // 1
@@ -1613,32 +1614,39 @@ class Processor {
         case IOCodes.ioCodeStop:        // S - Cancel I/O
             this.cancelIO();
             break;
+        default:
+            result = 1;                 // invalid keystroke
         }
+
+        return result;
     }
 
     /**************************************/
     async receiveKeyboardCode(code) {
-        /* Processes a keyboard code sent from ControlPanel. Codes are ignored
+        /* Processes a keyboard code sent from Typewriter. Codes are ignored
         if the system has not yet been reset. If the code is negative, it is
         the ASCII code for a control command used with the ENABLE switch.
         Otherwise it is an I/O data/control code to be processed as TYPE IN
         (D=31, S=12) input. Note that the "S" key can be used for both purposes
-        depending on the state of this.enableSwitch. If the ENABLE switch is
-        not on and TYPE IN is not active, the keystroke is ignored */
+        depending on the state of this.enableSwitch. Returns 0 if the input is
+        accepted and 0 if rejected. If the ENABLE switch is not on and TYPE IN
+        is not active, the keystroke is ignored and 1 is returned */
+        let result = 1;                 // assume it's going to be rejected
 
-        if (!this.poweredOn) {
-            return;
-        }
-
-        if (this.enableSwitch) {                                // Control command
-            await this.executeKeyboardCommand(code);
+        if (!this.poweredOn) {                                  // ignore the keyboard if powered off
+            result = 1;
+        } else if (this.enableSwitch) {                         // Control command
+            result = await this.executeKeyboardCommand(code);
         } else if (this.OC.value == IOCodes.ioCmdTypeIn) {      // Input during TYPE IN
             if (code == IOCodes.ioCodeStop) {                   // check for cancel
                 this.finishIO();                                // no reload with STOP from Typewriter
+                result = 0;                                     // accept the keystroke
             } else if (code > 0) {
-                await this.receiveInputCode(code);
+                result = await this.receiveInputCode(code);
             }
         }
+
+        return result;
     }
 
     /**************************************/
@@ -1661,6 +1669,7 @@ class Processor {
             break;
         case 0b001:     // end/stop
             code = IOCodes.ioCodeStop;
+            await this.drum.ioWaitFor(Util.longLineSize);       // no digit precession
             break;
         case 0b010:     // carriage return - precess and discard the sign bit
             [code, zeroed] = await precessor(1);
@@ -1672,12 +1681,15 @@ class Processor {
             break;
         case 0b011:     // period
             code = IOCodes.ioCodePeriod;
+            await this.drum.ioWaitFor(Util.longLineSize);       // no digit precession
             break;
         case 0b100:     // sign - generates either a SPACE (00000) or MINUS (00001) code
             code = this.OS.value;
+            await this.drum.ioWaitFor(Util.longLineSize);       // no digit precession
             break;
         case 0b101:     // reload
             code = IOCodes.ioCodeReload;
+            await this.drum.ioWaitFor(Util.longLineSize);       // no digit precession
             break;
         case 0b110:     // tab - precess and discard the sign bit
             [code, zeroed] = await precessor(1);
@@ -1704,159 +1716,217 @@ class Processor {
     async punchLine19() {
         /* Punches the contents of line 19, starting with the four high-order
         bits of of word 107, and precessing the line with each character until
-        the line is all zeroes. One character is output every two word times */
+        the line is all zeroes. One character is output every two drum cycles.
+        The first cycle gets the format character; the second gets the data */
         let code = 0;                   // output character code
         let fmt = 0;                    // format code
         let line19Empty = false;        // line 19 is now empty
         let punching = true;            // true until STOP or I/O cancel
+        let reloadMZ = false;           // true if long-line -> MZ reload needed
         let zeroed = false;             // precessor function reports line 19 all zeroes
-
-        const punchPeriod = Util.drumCycleTime*2;
 
         this.OC.value = IOCodes.ioCmdPunch19;
         this.activeIODevice = this.devices.paperTapePunch;
-
-        this.drum.ioStartTiming();
-        let outTime = this.drum.ioTime + punchPeriod;
+        this.devices.paperTapePunch.makeBusy(true);
+        await this.drum.ioStart("PUNCH 19");
 
         // Output an initial SPACE code (a quirk of the Slow-Out logic)
+        ////await this.drum.ioWaitUntil(0);                         // sync to T0 on the drum
+        ////await this.drum.ioWaitFor(Util.longLineSize);           // 1 drum-cycle delay for dummy format fetch
+        ////await this.drum.ioWaitFor(Util.longLineSize);           // 1 drum-cycle delay for dummy code fetch
         this.devices.paperTapePunch.write(IOCodes.ioCodeSpace);
-        await this.ioTimer.delayUntil(outTime);
-        outTime += punchPeriod;
 
         // Start a MZ reload cycle.
         do {
-            fmt = await this.drum.ioPrecessLongLineToMZ(2, 3);  // get initial 3-bit format code
+            reloadMZ = true;
 
-            // The character cycle.
+            // The character cycle. Precessing the format code always starts at
+            // T0, but only takes 4 word-times. Precessing the data code from
+            // line 19 will always start at T0, which will finish the format
+            // code's drum  cycle, and itself will take a full drum cycle, so we
+            // are assured that each character cycle will take two drum cycles
+            // for proper timing.
             do {
-                this.OS.value = this.drum.ioDetect19Sign107();
-                [code, zeroed] = await this.formatOutputCharacter(fmt, this.boundIOPrecess19ToCode);
-                if (zeroed) {
-                    line19Empty = true;
+                if (!this.canceledIO) {
+                    if (this.tracing) {     // >>>>> DEBUG ONLY <<<<<
+                        this.traceIO("PUNCH 19 precess format");
+                    }
+
+                    if (reloadMZ) {
+                        reloadMZ = false;
+                        fmt = await this.drum.ioPrecessLongLineToMZ(2, 3);  // get initial format code for line 19
+                    } else {
+                        fmt = await this.drum.ioPrecessMZToCode(3);         // get next 3-bit format code from MZ
+                    }
                 }
 
-                switch (code) {
-                case IOCodes.ioCodeStop:
-                    if (line19Empty) {
-                        punching = false;
-                    } else {
-                        code = IOCodes.ioCodeReload;
+                if (!this.canceledIO) {
+                    if (this.tracing) {     // >>>>> DEBUG ONLY <<<<<
+                        this.traceIO("PUNCH 19 precess L19 digit");
                     }
-                    break;
+
+                    this.OS.value = this.drum.ioDetect19Sign107();          // detect sign before precession
+                    [code, zeroed] = await this.formatOutputCharacter(fmt, this.boundIOPrecess19ToCode);
+                    if (zeroed) {
+                        line19Empty = true;
+                    }
+
+                    switch (code) {
+                    case IOCodes.ioCodeStop:
+                        if (line19Empty) {
+                            punching = false;
+                        } else {
+                            code = IOCodes.ioCodeReload;
+                        }
+                        break;
+                    }
                 }
 
                 if (this.canceledIO) {
-                    punching = false;
+                    punching = false;                                   // I/O canceled
                 } else {
-                    this.devices.paperTapePunch.write(code);    // no await
-                    await this.ioTimer.delayUntil(outTime);
-                    outTime += punchPeriod;
-
-                    // The following is specifically intended to aid in punching
-                    // blank leader. It tries to simulate what happens when a second
-                    // Punch Line 19 is executed while a prior one is still in progress.
+                    this.devices.paperTapePunch.write(code);
+                    // The following forces a format reload when a second PUNCH
+                    // 19 command is executed while a prior one is still in
+                    // progress. It is specifically intended to aid in punching
+                    // blank leader. See Technical Applications Memo 33.
                     if (this.duplicateIO) {
                         this.duplicateIO = false;
-                        code = IOCodes.ioCodeReload;                    // trigger a reload to restart the I/O
-                    } else {
-                        fmt = await this.drum.ioPrecessMZToCode(3);     // get next 3-bit format code
+                        code = IOCodes.ioCodeReload;                    // trigger a reload to restart the format
                     }
                 }
             } while (code != IOCodes.ioCodeReload && punching);
         } while (punching);
 
+        this.drum.ioStop("PUNCH 19");
         this.finishIO();
+        this.devices.paperTapePunch.makeBusy(false);
     }
 
     /**************************************/
     async typeAR() {
-        /* Types the contents of AR, starting with the four high-order
-        bits of the word, and precessing the word with each character */
-        let arBitCount = 1;             // account for the sign bit
+        /* Types the contents of AR, starting with the four high-order bits of
+        the word, and precessing the word with each character.
+        One character is output every four drum cycles. One character is output
+        every four drum cycles: the first two are timing delays, one for format
+        code, one for data code */
         let code = 0;                   // output character code
         let fmt = 0;                    // format code
         let printing = true;            // true until STOP or I/O cancel
+        let reloadMZ = false;           // true if long-line -> MZ reload needed
         let suppressing = false;        // zero suppression in force
         let zeroed = false;             // (ignored for AR typeout)
 
-        const printPeriod = Util.drumCycleTime*4;
-
         this.OC.value = IOCodes.ioCmdTypeAR;
         this.activeIODevice = this.devices.typewriter;
+        await this.drum.ioStart("TYPE AR");
 
-        this.drum.ioStartTiming();
-        let outTime = this.drum.ioTime + printPeriod;
+        // Initial 1 drum-cycle delay, Typewriter only, see TOO drawing 55
+        await this.drum.ioWaitFor(Util.longLineSize);
 
         // Start a MZ reload cycle.
         do {
-            fmt = await this.drum.ioPrecessLongLineToMZ(3, 3);  // get initial format code
-            suppressing = (this.punchSwitch != 1);
+            reloadMZ = true;
+            suppressing = (this.punchSwitch != 1);                      // no zero-suppression if punch switch on
 
-            // The character cycle.
+            // The character cycle. Precessing the format code always starts at
+            // T0, but only takes 4 word-times. Precessing the data code from AR
+            // will always start at T0, which will finish the format code's drum
+            // cycle, and itself will take a full drum cycle. Finally, two extra
+            // extra drum cycles are needed to slow the output to typewriter
+            // speed, about 8.6 cps, so we are assured that each character cycle
+            // will take four drum cycles for proper timing.
             do {
-                this.OS.value = this.drum.AR.value & Util.wordSignMask; // detect AR sign before precession
-                [code, zeroed] = await this.formatOutputCharacter(fmt, this.boundIOPrecessARToCode);
+                if (!this.canceledIO) {
+                    if (this.tracing) {     // >>>>> DEBUG ONLY <<<<<
+                        this.traceIO("TYPE AR precess format");
+                    }
 
-                // It appears from the Theory of Operation manual that once all bits have
-                // been processed from AR, an automatic stop occurs at the next digit fetch.
-                if ((code & IOCodes.ioDataMask) == IOCodes.ioDataMask) { // a digit coming from the drum
-                    if (arBitCount >= Util.wordBits) {
-                        printing = false;       // AR completely processed
-                        break;                  // out of inner do loop & exit
+                    if (reloadMZ) {
+                        reloadMZ = false;
+                        fmt = await this.drum.ioPrecessLongLineToMZ(3, 3);  // get initial format code for AR
+                    } else {
+                        fmt = await this.drum.ioPrecessMZToCode(3);         // get next 3-bit format code from MZ
                     }
                 }
 
-                switch (code) {
-                case IOCodes.ioDataMask:        // digit zero
-                    arBitCount += 4;
-                    if (suppressing) {
-                        code = IOCodes.ioCodeSpace;
+                if (!this.canceledIO) {
+                    if (this.tracing) {     // >>>>> DEBUG ONLY <<<<<
+                        this.traceIO("TYPE AR precess AR digit");
                     }
-                    break;
-                case IOCodes.ioCodeCR:
-                case IOCodes.ioCodeTab:
-                    suppressing = (this.punchSwitch != 1);      // establish suppression for next word
-                    break;
-                case IOCodes.ioCodeSpace:       // used for +sign
-                case IOCodes.ioCodeMinus:
-                case IOCodes.ioCodeReload:
-                case IOCodes.ioCodeWait:
-                    // does not affect suppression
-                    break;
-                case IOCodes.ioCodeStop:
-                    printing = false;
-                    break;
-                case IOCodes.ioCodePeriod:
-                    suppressing = false;
-                    break;
-                default:                        // all non-zero digit codes turn off suppression
-                    arBitCount += 4;
-                    suppressing = false;
-                    break;
+
+                    this.OS.value = this.drum.AR.value & Util.wordSignMask; // detect sign before precession
+                    [code, zeroed] = await this.formatOutputCharacter(fmt, this.boundIOPrecessARToCode);
+                    // Unlike TYPE 19, TYPE AR is terminated by the first END format
+                    // code encountered, which causes no reload of the format to MZ.
+
+                    switch (code) {
+                    case IOCodes.ioDataMask:        // digit zero
+                        if (suppressing) {
+                            code = IOCodes.ioCodeSpace;
+                        }
+                        break;
+                    case IOCodes.ioCodeCR:
+                    case IOCodes.ioCodeTab:
+                        suppressing = (this.punchSwitch != 1);      // establish suppression for next char
+                        break;
+                    case IOCodes.ioCodeSpace:       // used for +sign
+                    case IOCodes.ioCodeMinus:
+                    case IOCodes.ioCodeReload:
+                    case IOCodes.ioCodeWait:
+                        // does not affect suppression
+                        break;
+                    case IOCodes.ioCodeStop:
+                        printing = false;
+                        break;
+                    case IOCodes.ioCodePeriod:
+                        suppressing = false;
+                        break;
+                    default:                        // all non-zero digit codes turn off suppression
+                        suppressing = false;
+                        break;
+                    }
                 }
 
                 // Pause printing while the ENABLE switch is on
                 while (this.enableSwitch && !this.canceledIO) {
-                    await this.ioTimer.delayUntil(outTime);
-                    outTime += printPeriod;
+                    await this.drum.ioWaitFor(Util.longLineSize);       // idle for a drum cycle
+                }
+
+                if (!this.canceledIO) {
+                    if (this.tracing) {             // >>>>> DEBUG ONLY <<<<<
+                        this.traceIO(`TYPE AR delay 2 drum cycles: format=${fmt}, code=${code}`);
+                    }
+
+                    await this.drum.ioWaitFor(Util.longLineSize*2);         // delay two extra drum cycles
                 }
 
                 if (this.canceledIO) {
-                    printing = false;   // I/O canceled
+                    printing = false;           // I/O canceled
                 } else {
-                    this.devices.typewriter.write(code);        // no await
+                    this.devices.typewriter.write(code);
                     if (this.punchSwitch == 1) {
                         this.devices.paperTapePunch.write(code);
                     }
 
-                    await this.ioTimer.delayUntil(outTime);
-                    outTime += printPeriod;
-                    fmt = await this.drum.ioPrecessMZToCode(3); // get next 3-bit format code
+                    // The following forces a format reload when a second TYPE
+                    // AR command is executed while a prior one is in progress.
+                    if (this.duplicateIO) {
+                        this.duplicateIO = false;
+                        code = IOCodes.ioCodeReload;                    // trigger a reload to restart the format
+                    }
                 }
             } while (code != IOCodes.ioCodeReload && printing);
         } while (printing);
 
+        this.traceIO("TYPE AR finished");
+        if (this.canceledIO) {
+            // Canceling an I/O causes a 4-word precession of line 19, see TOO p.92 & dwg 60.
+            this.traceIO("TYPE AR canceled precess L19 4 words");
+            await this.drum.ioPrecess19ToMZ();
+        }
+
+        this.drum.ioStop("TYPE AR");
         this.finishIO();
     }
 
@@ -1864,84 +1934,125 @@ class Processor {
     async typeLine19() {
         /* Types the contents of line 19, starting with the four high-order
         bits of word 107, and precessing the line with each character until
-        the line is all zeroes. One character is output every four word times */
+        the line is all zeroes. One character is output every four drum cycles:
+        the first two are timing delays, one for format code, one for data code */
         let code = 0;                   // output character code
         let fmt = 0;                    // format code
         let line19Empty = false;        // line 19 is now all zeroes
         let printing = true;            // true until STOP or I/O cancel
+        let reloadMZ = false;           // true if long line -> MZ reload needed
         let suppressing = false;        // zero suppression in force
         let zeroed = false;             // precessor function reports line 19 all zeroes
 
-        const printPeriod = Util.drumCycleTime*4;
-
         this.OC.value = IOCodes.ioCmdType19;
         this.activeIODevice = this.devices.typewriter;
+        await this.drum.ioStart("TYPE 19");
 
-        this.drum.ioStartTiming();
-        let outTime = this.drum.ioTime + printPeriod;
+        // Initial 1 drum-cycle delay, Typewriter only, see TOO drawing 55
+        await this.drum.ioWaitFor(Util.longLineSize);
 
         // Start a MZ reload cycle.
         do {
-            fmt = await this.drum.ioPrecessLongLineToMZ(2, 3);  // get initial format code
-            suppressing = (this.punchSwitch != 1);
+            reloadMZ = true;
+            suppressing = (this.punchSwitch != 1);                      // no zero-suppression if punch switch on
 
-            // The character cycle.
+            // The character cycle. Precessing the format code always starts at
+            // T0, but only takes 4 word-times. Precessing the data code from 19
+            // will always start at T0, which will finish the format code's drum
+            // cycle, and itself will take a full drum cycle. Finally, two extra
+            // extra drum cycles are needed to slow the output to typewriter
+            // speed, about 8.6 cps, so we are assured that each character cycle
+            // will take four drum cycles for proper timing.
             do {
-                this.OS.value = this.drum.ioDetect19Sign107();
-                [code, zeroed] = await this.formatOutputCharacter(fmt, this.boundIOPrecess19ToCode);
-                if (zeroed) {
-                    line19Empty = true;
+                if (!this.canceledIO) {
+                    if (this.tracing) {     // >>>>> DEBUG ONLY <<<<<
+                        this.traceIO("TYPE 19 precess format");
+                    }
+
+                    if (reloadMZ) {
+                        reloadMZ = false;
+                        fmt = await this.drum.ioPrecessLongLineToMZ(2, 3);  // get initial format code for line 19
+                    } else {
+                        fmt = await this.drum.ioPrecessMZToCode(3);         // get next 3-bit format code from MZ
+                    }
                 }
 
-                switch (code) {
-                case IOCodes.ioDataMask:        // digit zero
-                    if (suppressing) {
-                        code = IOCodes.ioCodeSpace;
+                if (!this.canceledIO) {
+                    if (this.tracing) {     // >>>>> DEBUG ONLY <<<<<
+                        this.traceIO("TYPE 19 precess L19 digit");
                     }
-                    break;
-                case IOCodes.ioCodeCR:
-                case IOCodes.ioCodeTab:
-                    suppressing = (this.punchSwitch != 1);      // establish suppression for next word
-                    break;
-                case IOCodes.ioCodeSpace:
-                case IOCodes.ioCodeMinus:
-                case IOCodes.ioCodeReload:
-                case IOCodes.ioCodeWait:
-                    // does not affect suppression
-                    break;
-                case IOCodes.ioCodeStop:
-                    if (line19Empty) {
-                        printing = false;
-                    } else {
-                        code = IOCodes.ioCodeReload;
+
+                    this.OS.value = this.drum.ioDetect19Sign107();
+                    [code, zeroed] = await this.formatOutputCharacter(fmt, this.boundIOPrecess19ToCode);
+                    if (zeroed) {
+                        line19Empty = true;
                     }
-                    break;
-                default:                        // all non-zero digit codes and
-                    suppressing = false;        // Period turn off suppression
-                    break;
+
+                    switch (code) {
+                    case IOCodes.ioDataMask:        // digit zero
+                        if (suppressing) {
+                            code = IOCodes.ioCodeSpace;
+                        }
+                        break;
+                    case IOCodes.ioCodeCR:
+                    case IOCodes.ioCodeTab:
+                        suppressing = (this.punchSwitch != 1);      // establish suppression for next char
+                        break;
+                    case IOCodes.ioCodeSpace:
+                    case IOCodes.ioCodeMinus:
+                    case IOCodes.ioCodeReload:
+                    case IOCodes.ioCodeWait:
+                        // does not affect suppression
+                        break;
+                    case IOCodes.ioCodeStop:
+                        if (line19Empty) {
+                            printing = false;
+                        } else {
+                            code = IOCodes.ioCodeReload;
+                        }
+                        break;
+                    case IOCodes.ioCodePeriod:
+                        suppressing = false;
+                        break;
+                    default:                        // all non-zero digit codes turn off suppression
+                        suppressing = false;
+                        break;
+                    }
                 }
 
                 // Pause printing while the ENABLE switch is on
                 while (this.enableSwitch && !this.canceledIO) {
-                    await this.ioTimer.delayUntil(outTime);
-                    outTime += printPeriod;
+                    await this.drum.ioWaitFor(Util.longLineSize);       // idle for a drum cycle
+                }
+
+                if (!this.canceledIO) {
+                    if (this.tracing) {             // >>>>> DEBUG ONLY <<<<<
+                        this.traceIO(`TYPE 19 delay 2 drum cycles: format=${fmt}, code=${code}`);
+                    }
+
+                    await this.drum.ioWaitFor(Util.longLineSize*2);         // delay two extra drum cycles
                 }
 
                 if (this.canceledIO) {
-                    printing = false;   // I/O canceled
+                    printing = false;           // I/O canceled
                 } else {
                     this.devices.typewriter.write(code);
                     if (this.punchSwitch == 1) {
                         this.devices.paperTapePunch.write(code);
                     }
 
-                    await this.ioTimer.delayUntil(outTime);
-                    outTime += printPeriod;
-                    fmt = await this.drum.ioPrecessMZToCode(3); // get next 3-bit format code
+                    // The following forces a format reload when a second TYPE
+                    // 19 command is executed while a prior one is in progress.
+                    if (this.duplicateIO) {
+                        this.duplicateIO = false;
+                        code = IOCodes.ioCodeReload;                    // trigger a reload to restart the format
+                    }
                 }
             } while (code != IOCodes.ioCodeReload && printing);
         } while (printing);
 
+        this.traceIO("TYPE 19 finished");
+        this.drum.ioStop("TYPE 19");
         this.finishIO();
     }
 
@@ -1949,14 +2060,15 @@ class Processor {
     async readPaperTape() {
         /* Reads one block from the Paper Tape Reader to line 19 via line 23 */
 
+        console.debug(`>>> PT READ, OC=${this.OC.value.toString(2).padStart(5, "0")}`);
         this.OC.value = IOCodes.ioCmdPTRead;
         this.activeIODevice = this.devices.paperTapeReader;
-        this.ioPromise = Promise.resolve();
         if (await this.devices.paperTapeReader.read()) {
             this.hungIO = true;         // no tape or buffer overrun -- leave I/O hanging
-            return;
+            return true;
         } else {
             this.finishIO();
+            return false;
         }
     }
 
@@ -2005,13 +2117,12 @@ class Processor {
     }
 
     /**************************************/
-    async enableTypeIn() {
+    enableTypeIn() {
         /* Enables input for one block from the Typewriter keyboard to line 19
         via line 23. finishIO() is handled by receiveKeyboardCode() */
 
         this.OC.value = IOCodes.ioCmdTypeIn;
         this.activeIODevice = this.devices.typewriter;
-        this.ioPromise = Promise.resolve();
     }
 
     /**************************************/
@@ -2030,12 +2141,13 @@ class Processor {
         their operations. If the I/O is hung, no device is listening, so the
         I/O is simply terminated */
 
+        console.debug(`>>> CANCEL IO <<< OC=${this.OC.value.toString(2).padStart(5, "0")}`);
         if (this.activeIODevice) {
             if (this.hungIO) {
                 this.finishIO();
             } else {
-                this.canceledIO = true;
                 this.activeIODevice.cancel();
+                this.canceledIO = true;
             }
         }
     }
@@ -2045,37 +2157,48 @@ class Processor {
         /* Terminates an I/O operation, resetting state and setting Ready.
         Note that if no I/O is in progress, calling this has no effect */
 
+        console.debug(`>>> FINISH IO <<< OC=${this.OC.value.toString(2).padStart(5, "0")}`);
+        if (this.drum.ioActive) {
+            debugger;
+        }
+
         this.OC.value = IOCodes.ioCmdReady;     // set I/O Ready state
         this.AS.value = 0;
         this.OS.value = 0;
-        this.activeIODevice = null;
         this.canceledIO = false;
+        this.activeIODevice = null;
         this.duplicateIO = false;
         this.hungIO = false;
     }
 
     /**************************************/
-    initiateIO(sCode) {
+    async initiateIO(sCode) {
         /* Initiates the I/O operation specified by sCode */
 
         // If an I/O is already in progress and this is neither a cancel request
         // nor the same I/O code, cancel the I/O.
-        if (this.OC.value != IOCodes.ioCmdReady && sCode != 0) {
+        if (this.OC.value != IOCodes.ioCmdReady && sCode != IOCodes.ioCmdCancel) {
             if (this.OC.value == sCode) {
-                this.transferDriver(this.transformNothing);
-                this.duplicateIO = true;// same I/O as the one in progress, so
-                return;                 // just ignore the request
+                this.warning(`>>Duplicate IO OC=${this.OC.value.toString(2)}, S=${sCode.toString(2)}`);
+                this.duplicateIO = true;        // same I/O as the one in progress, so signal the device
             } else {
-                this.warning(`D=31 S=${sCode}: initiateIO with I/O active, OC=${this.OC.value.toString(16)}`);
-                sCode |= this.OC.value; // S is always OR-ed into OC, not copied
-                this.cancelIO();        // cancel the in-progress I/O -- not what the G-15 did, though
+                this.warning(`>>InitiateIO with I/O active: S=${sCode.toString(2)}, OC=${this.OC.value.toString(2)}`);
+                sCode |= this.OC.value;         // S is always OR-ed into OC, not copied
+                //this.cancelIO();                // cancel the in-progress I/O and let it hang -- not what the G-15 did, though
             }
+
+            // Just finish Transfer state for the command and otherwise ignore it
+            await this.transferDriver(this.transferNothing);
+            return;
         }
 
+        console.debug(`>>> INIT IO <<< S=${sCode.toString(2).padStart(5, "0")}, OC=${this.OC.value.toString(2).padStart(5, "0")}`);
         if (this.C1.value) {
             this.AS.value = 1;          // set automatic line 23 reload
             if ((sCode & 0b1100) == 0b1100) {   // SLOW IN commands
-                this.drum.ioInitialize23ForReload();
+                await this.drum.ioStart(`INIT AUTO RELOAD S=${sCode.toString(2)}`);
+                await this.drum.ioInitialize23ForAutoReload();
+                this.drum.ioStop(`INIT AUTO RELOAD S=${sCode.toString(2)}`);
             }
         }
 
@@ -2110,23 +2233,23 @@ class Processor {
             break;
 
         case IOCodes.ioCmdPTRev1:       // 0110 paper tape reverse, phase 1
-            this.reversePaperTapePhase1();
+            this.reversePaperTapePhase1();      // async -- no wait
             break;
 
         case IOCodes.ioCmdPTRev2:       // 0111 paper tape reverse, phase 2
-            this.reversePaperTapePhase2();
+            this.reversePaperTapePhase2();      // async -- no wait
             break;
 
         case IOCodes.ioCmdTypeAR:       // 1000 type AR
-            this.typeAR();
+            this.typeAR();                      // async -- no wait
             break;
 
         case IOCodes.ioCmdType19:       // 1001 type line 19
-            this.typeLine19();
+            this.typeLine19();                  // async -- no wait
             break;
 
         case IOCodes.ioCmdPunch19:      // 1010 paper tape punch line 19
-            this.punchLine19();
+            this.punchLine19();                 // async -- no wait
             break;
 
         case IOCodes.ioCmdCardPunch19:  // 1011 card punch line 19
@@ -2149,7 +2272,7 @@ class Processor {
             break;
 
         case IOCodes.ioCmdPTRead:       // 1111 paper tape read
-            this.readPaperTape();
+            this.readPaperTape();               // async -- no wait
             break;
 
         default:
@@ -2157,7 +2280,7 @@ class Processor {
             break;
         }
 
-        this.transferDriver(this.transformNothing);
+        await this.transferDriver(this.transferNothing);
 
     }
 
@@ -2167,7 +2290,55 @@ class Processor {
     *******************************************************************/
 
     /**************************************/
-    returnExit() {
+    async ringMyChime() {
+        /* Implements Ring Bell and friends, D=31, S=17 */
+        let wordTimes = Drum.computeDrumCount(this.drum.L.value, this.T.value);
+
+        this.context.controlPanel.ringBell(wordTimes == 0 ? Util.longLineSize : wordTimes);
+
+        switch (this.C.value ) {
+        case 1:     // ring bell and test control panel PUNCH switch
+            await this.transferDriver(this.transferNothing);
+            if (this.punchSwitch == 1) {
+                this.CQ.value = 1;      // next command from N+1
+            }
+            break;
+        case 2:     // ring bell & start INPUT REGISTER
+            this.warning("Start INPUT REGISTER not implemented");
+            await this.transferDriver(this.transferNothing);
+            break;
+        case 3:     // ring bell & stop INPUT REGISTER
+            this.warning("Stop INPUT REGISTER not implemented");
+            await this.transferDriver(this.transferNothing);
+            break;
+        default:
+            await this.transferDriver(this.transferNothing);
+            break;
+        }
+    }
+
+    /**************************************/
+    async transferToOR() {
+        /* Transfers M20.ID to the Output Register. The OR is a customizable
+        output interface and is not currently implemented. This routine simply
+        stores the result in a dummy register at present. This routine will
+        require modification if/when an actual output interface is implemented */
+
+        await this.transferDriver(() => {
+            let m20 = this.drum.read(20);
+            let id  = this.drum.read(regID);
+            this.OR.value = m20 & ID;
+            if (this.tracing) {
+                console.log("      M20&ID=>OR: L=%s: M20=%s, ID.%s=%s => %s",
+                        Util.formatDrumLoc(20, this.drum.L.value, true),
+                        Util.g15SignedHex(m20), this.drum.L2,
+                        Util.g15SignedHex(id), Util.g15SignedHex(this.OR.value));
+            }
+        });
+    }
+
+    /**************************************/
+    async returnExit() {
         /* Handles the messy details of D=31, S=20, Select Command Line and
         Return Exit. See G-15 Technical Applications Memorandum 4 and 41, and
         the Programmer's Reference Manual, p.56-58 */
@@ -2204,7 +2375,7 @@ class Processor {
             this.N.value = mark;
         }
 
-        this.transferDriver(this.transformNothing);
+        await this.transferDriver(this.transferNothing);
         if (this.tracing) {
             const dL = Util.lineHex[loc];
             const cm = Util.g15SignedHex(this.drum.CM.value);
@@ -2219,91 +2390,181 @@ class Processor {
     }
 
     /**************************************/
-    specialCommand() {
+    async markExit() {
+        /* Implements D=31, S=21, Select Command Line and Mark Exit.
+        Sets the mark in T2-T13 of CM. Transfer state for this command takes
+        only one word time regardless of this.C1 or this.DI,  so
+        this.transferDriver() is not used. Note that if the command is
+        immediate (DI=0), transfer starts and ends at L+1.
+        See the Programmer's Reference Manual, p.56-58 and TOO, p.52  */
+        let mark = 0;
+
+        this.setCommandLine((this.C1.value << 2) | this.C.value);
+        if (!this.DI.value) {   // immediate execution
+            mark = this.drum.L.value;
+        } else {                // deferred execution
+            mark = (this.T.value + Util.longLineSize) % Util.longLineSize;
+        }
+
+        this.drum.CM.value = (this.drum.CM.value & 0b1_1111111_1_1111111_00_00000_00000_1) |
+                             (mark << 1);
+        if (this.tracing) {
+            let loc = Util.lineHex[this.drum.L.value];
+            let m = Util.lineHex[mark];
+            let cm = Util.g15SignedHex(this.drum.CM.value);
+            console.log(`             MRK: L=${loc}: CM=${cm}, MARK=${m} => %s`,
+                        Util.formatDrumLoc(this.cmdLine, this.N.value, true));
+        }
+
+        await this.drum.waitFor(1);    // always a single word-time for Transfer
+    }
+
+    /**************************************/
+    async clearDPRegisters() {
+        /* Implements clear MQ/ID/PN/IP, etc., D=31, S=23 */
+
+        this.mqShiftCarry = 0;
+        this.pnAddCarry = 0;
+        this.pnAddendSign = 0;
+        this.pnAugendSign = 0;
+        this.pnSign = 0;
+        if (this.tracing) {
+            this.traceRegisters();
+        }
+
+        switch (this.C.value) {
+        case 0:                     // clear MQ/ID/PN/IP
+            this.IP.value = 0;
+            await this.transferDriver(() => {
+                this.drum.write(regMQ, 0);
+                this.drum.write(regID, 0);
+                this.drum.write(regPN, 0);
+            });
+            if (this.tracing) {
+                this.traceRegisters("CLR");
+            }
+            break;
+        case 3:                     // PN.M2 -> ID, PN.M2/ -> PN
+            await this.transferDriver(() => {
+                let m2 = this.drum.read(2);
+                let pn = this.drum.read(regPN);
+                let id = this.drum.read(regID);
+                let i2 = pn & m2;
+                let p2 = pn & ~m2;
+                this.drum.write(regID, i2);
+                this.drum.write(regPN, p2);
+                if (this.tracing) {
+                    console.log("               PN&M2=>ID: L=%s: M2=%s,  PN=%s, ID=%s => %s",
+                            Util.formatDrumLoc(regPN, this.drum.L.value, true),
+                            Util.g15SignedHex(m2), Util.g15SignedHex(pn),
+                            Util.g15SignedHex(id), Util.g15SignedHex(i2));
+                    console.log("              PN&~M2=>PN: L=%s: M2=%s, ~M2=%s, PN=%s => %s",
+                            Util.formatDrumLoc(regPN, this.drum.L.value, true),
+                            Util.g15SignedHex(m2), Util.g15SignedHex(~m2),
+                            Util.g15SignedHex(pn), Util.g15SignedHex(p2));
+                }
+            });
+            break;
+        }
+    }
+
+    /**************************************/
+    async testReady() {
+        /* Implements Test I/O Ready and variants, D=31, S=28 */
+
+        switch (this.C.value) {
+        case 0:                     // test I/O subsystem ready
+            await this.transferDriver(this.transferNothing);
+            if (this.OC.value == IOCodes.ioCmdReady) {
+                this.CQ.value = 1;
+                const drumLoc = Util.formatDrumLoc(this.cmdLine, this.drum.L.value, true);      // <<< DEBUG >>>
+                console.debug(`>>> TEST READY <<< ${this.drum.drumTime.toFixed().padStart(9)}: ${drumLoc}`);
+            }
+            break;
+        case 1:                     // test Input Register ready
+            this.warning("TEST INPUT REGISTER READY not implemented");
+            await this.transferDriver(this.transferNothing);
+            break;
+        case 2:                     // test Output Register ready
+            this.warning("TEST OUTPUT REGISTER READY not implemented");
+            await this.transferDriver(this.transferNothing);
+            break;
+        case 3:                     // test Differential Analyzer off
+            this.warning("TEST DIFFERENTIAL ANALYZER OFF not implemented");
+            await this.transferDriver(this.transferNothing);
+            this.CQ.value = 1;      // DA not implemented, always off
+            break;
+        }
+    }
+
+    /**************************************/
+    async specialOddsAndSods() {
+        /* Implements miscellaneous special commands, D=31, S=31 */
+
+        switch (this.C.value) {
+        case 0:                         // next command from AR
+            await this.transferDriver(this.transferNothing);
+            this.CG.value = 1;
+            break;
+        case 1:                         // copy number track, OR into line 18
+            await this.transferDriver(() => {
+                let m18 = this.drum.read(18);
+                let cn =  this.drum.readCN();
+                let ored = m18 | cn;
+                this.drum.write(18, ored);
+                if (this.tracing) {
+                    console.log("         M18|=CN: L=%s: M18=%s | CN=%s => %s",
+                            Util.formatDrumLoc(this.cmdLine, this.drum.L.value, true),
+                            Util.g15SignedHex(m18), Util.g15SignedHex(cn), Util.g15SignedHex(ored));
+                }
+            });
+            break;
+        case 2:                         // Logical OR line 20 into line 18
+            await this.transferDriver(() => {
+                let m18 = this.drum.read(18);
+                let m20 = this.drum.readCN();
+                let orSum = m18 | m20;
+                this.drum.write(18, orSum);
+                if (this.tracing) {
+                    console.log("        M18|=M20: L=%s: M18=%s | M20=%s => %s",
+                            Util.formatDrumLoc(this.cmdLine, this.drum.L.value, true),
+                            Util.g15SignedHex(m18), Util.g15SignedHex(M20), Util.g15SignedHex(orSum));
+                }
+            });
+            break;
+        }
+    }
+
+    /**************************************/
+    async specialCommand() {
         /* Executes a special command for D=31. The specific command is
         determined by the source (S=0-31) and characteristic */
 
         switch(this.S.value) {
         case 16:        // halt
             this.stop();
-            this.transferDriver(this.transformNothing);
+            await this.transferDriver(this.transferNothing);
             break;
 
         case 17:        // ring bell & friends
-        {
-            let wordTimes = this.T.value - this.drum.L.value;
-            if (wordTimes <= 0) {
-                wordTimes += Util.longLineSize
-            }
-
-            this.bellTiming = wordTimes;        // sensed and reset by ControlPanel
-        }
-            this.transferDriver(() => {
-                switch (this.C.value ) {
-                case 1:     // ring bell and test control panel PUNCH switch
-                    if (this.punchSwitch == 1) {
-                        this.CQ.value = 1;  // next command from N+1
-                    }
-                    break;
-                case 2:     // ring bell & start INPUT REGISTER
-                    // INPUT REGISTER not implemented (no warning)
-                    break;
-                case 3:     // ring bell & stop INPUT REGISTER
-                    // INPUT REGISTER not implemented (no warning)
-                    break;
-                }
-            });
+            await this.ringMyChime();
             break;
 
         case 18:        // transfer M20.ID to output register
-            this.transferDriver(() => {
-                let m20 = this.drum.read(20);
-                let id  = this.drum.read(regID);
-                this.OR.value = m20 & ID;
-                if (this.tracing) {
-                    console.log("      M20&ID=>OR: L=%s: M20=%s, ID.%s=%s => %s",
-                            Util.formatDrumLoc(20, this.drum.L.value, true),
-                            Util.g15SignedHex(m20), this.drum.L.value%2,
-                            Util.g15SignedHex(id), Util.g15SignedHex(this.OR.value));
-                }
-            });
+            await this.transferToOR();
             break;
 
         case 19:        // start/stop DA-1
-            this.warning(`D=31 S=${this.S.value} Start/Stop DA-1 not implemented`);
-            this.transferDriver(this.transformNothing);
+            this.warning(`D=31 S=19 Start/Stop DA-1 not implemented`);
+            await this.transferDriver(this.transferNothing);
             break;
 
         case 20:        // select command line & return exit
-            this.returnExit();
+            await this.returnExit();
             break;
 
         case 21:        // select command line & mark exit
-            this.setCommandLine((this.C1.value << 2) | this.C.value);
-            {
-                // Set the mark in T2-T13 of CM. Transfer state for his command
-                // takes only one word time regardless of this.C1 or this.DI, so
-                // don't use this.transferDriver(). Note that if the command is
-                // immediate (DI=0), transfer starts and ends at L+1.
-                let mark = 0;
-                if (!this.DI.value) {   // immediate execution
-                    mark = this.drum.L.value;
-                } else {                // deferred execution
-                    mark = (this.T.value + Util.longLineSize) % Util.longLineSize;
-                    this.drum.waitUntil(this.T.value);  // ignore this.C1 (DP bit)
-                }
-
-                this.drum.CM.value = (this.drum.CM.value & 0b1_1111111_1_1111111_00_00000_00000_1) |
-                                     (mark << 1);
-            if (this.tracing) {
-                let loc = Util.lineHex[this.drum.L.value];
-                    let m = Util.lineHex[mark];
-                let cm = Util.g15SignedHex(this.drum.CM.value);
-                    console.log(`             MRK: L=${loc}: CM=${cm}, MARK=${m} => %s`,
-                                Util.formatDrumLoc(this.cmdLine, this.N.value, true));
-                }
-            }
-            this.drum.waitFor(1);       // always a single word-time for Transfer
+            await this.markExit();
             break;
 
         case 22:        // sign of AR to TEST
@@ -2316,95 +2577,31 @@ class Processor {
                         Util.formatDrumLoc(20, this.drum.L.value, true),
                         Util.g15SignedHex(this.drum.read(regAR)), this.CQ.value);
             }
-            this.transferDriver(this.transformNothing);
+            await this.transferDriver(this.transferNothing);
             break;
 
         case 23:        // clear MQ/ID/PN/IP, etc.
-            this.mqShiftCarry = 0;
-            this.pnAddCarry = 0;
-            this.pnAddendSign = 0;
-            this.pnAugendSign = 0;
-            this.pnSign = 0;
-            if (this.tracing) {
-                this.traceRegisters();
-            }
-
-            switch (this.C.value) {
-            case 0:                     // clear MQ/ID/PN/IP
-                this.IP.value = 0;
-                this.transferDriver(() => {
-                    this.drum.write(regMQ, 0);
-                    this.drum.write(regID, 0);
-                    this.drum.write(regPN, 0);
-                });
-                if (this.tracing) {
-                    this.traceRegisters("CLR");
-                }
-                break;
-            case 3:                     // PN.M2 -> ID, PN.M2/ -> PN
-                this.transferDriver(() => {
-                    let m2 = this.drum.read(2);
-                    let pn = this.drum.read(regPN);
-                    let id = this.drum.read(regID);
-                    let i2 = pn & m2;
-                    let p2 = pn & ~m2;
-                    this.drum.write(regID, i2);
-                    this.drum.write(regPN, p2);
-                    if (this.tracing) {
-                        console.log("               PN&M2=>ID: L=%s: M2=%s,  PN=%s, ID=%s => %s",
-                                Util.formatDrumLoc(regPN, this.drum.L.value, true),
-                                Util.g15SignedHex(m2), Util.g15SignedHex(pn),
-                                Util.g15SignedHex(id), Util.g15SignedHex(i2));
-                        console.log("              PN&~M2=>PN: L=%s: M2=%s, ~M2=%s, PN=%s => %s",
-                                Util.formatDrumLoc(regPN, this.drum.L.value, true),
-                                Util.g15SignedHex(m2), Util.g15SignedHex(~m2),
-                                Util.g15SignedHex(pn), Util.g15SignedHex(p2));
-                    }
-                });
-                break;
-            }
+            await this.clearDPRegisters();
             break;
 
         case 24:        // multiply
-            this.multiply();
+            await this.multiply();
             break;
 
         case 25:        // divide
-            this.divide();
+            await this.divide();
             break;
 
         case 26:        // shift MQ left and ID right
-            this.shiftMQLeftIDRight();
+            await this.shiftMQLeftIDRight();
             break;
 
         case 27:        // normalize MQ
-            this.normalizeMQ();
+            await this.normalizeMQ();
             break;
 
         case 28:        // ready, etc. to TEST
-            switch (this.C.value) {
-            case 0:                     // test I/O subsystem ready
-                this.transferDriver(() => {
-                    if (this.OC.value == IOCodes.ioCmdReady) {
-                        this.CQ.value = 1;
-                    }
-                });
-                break;
-            case 1:                     // test Input Register ready
-                this.warning("TEST INPUT REGISTER READY not implemented");
-                this.transferDriver(this.transformNothing);
-                break;
-            case 2:                     // test Output Register ready
-                this.warning("TEST OUTPUT REGISTER READY not implemented");
-                this.transferDriver(this.transformNothing);
-                break;
-            case 3:                     // test Differential Analyzer off
-                this.warning("TEST DIFFERENTIAL ANALYZER OFF not implemented");
-                this.transferDriver(() => {
-                    this.CQ.value = 1;                          // DA not implemented, always off
-                });
-                break;
-            }
+            await this.testReady();
             break;
 
         case 29:        // test for overflow
@@ -2414,57 +2611,24 @@ class Processor {
                         this.FO.value, this.FO.value | this.CQ.value);
             }
 
-            this.transferDriver(() => {
-                if (this.FO.value) {
-                    this.CQ.value = 1;  // next command from N+1
-                    this.FO.value = 0;  // test resets overflow condition
-                }
-            });
+            await this.transferDriver(this.transferNothing);
+            if (this.FO.value) {
+                this.CQ.value = 1;      // next command from N+1
+                this.FO.value = 0;      // test resets overflow condition
+            }
             break;
 
         case 30:        // magnetic tape write file code
             this.warning(`D=31 S=${this.S.value} Mag Tape Write File Code not implemented`);
-            this.transferDriver(this.transformNothing);
+            await this.transferDriver(this.transferNothing);
             break;
 
         case 31:        // odds & sods
-            switch (this.C.value) {
-            case 0:                     // next command from AR
-                this.transferDriver(() => {
-                    this.CG.value = 1;
-                });
-                break;
-            case 1:                     // copy number track, OR into line 18
-                this.transferDriver(() => {
-                    let m18 = this.drum.read(18);
-                    let cn =  this.drum.readCN();
-                    let ored = m18 | cn;
-                    this.drum.write(18, ored);
-                    if (this.tracing) {
-                        console.log("         M18|=CN: L=%s: M18=%s | CN=%s => %s",
-                                Util.formatDrumLoc(this.cmdLine, this.drum.L.value, true),
-                                Util.g15SignedHex(m18), Util.g15SignedHex(cn), Util.g15SignedHex(ored));
-                    }
-                });
-                break;
-            case 2:                     // OR line 20 into line 18
-                this.transferDriver(() => {
-                    let m18 = this.drum.read(18);
-                    let m20 = this.drum.readCN();
-                    let ored = m18 | m20;
-                    this.drum.write(18, ored);
-                    if (this.tracing) {
-                        console.log("        M18|=M20: L=%s: M18=%s | M20=%s => %s",
-                                Util.formatDrumLoc(this.cmdLine, this.drum.L.value, true),
-                                Util.g15SignedHex(m18), Util.g15SignedHex(M20), Util.g15SignedHex(ored));
-                    }
-                });
-                break;
-            }
+            await this.specialOddsAndSods();
             break;
 
-        default:
-            this.initiateIO(this.S.value);
+        default:        // cases 0-15: I/O
+            await this.initiateIO(this.S.value);
             break;
         }
     }
@@ -2475,20 +2639,21 @@ class Processor {
     *******************************************************************/
 
     /**************************************/
-    readCommand() {
+    async readCommand() {
         /* Reads the next command into the command register (CM) and sets up the
         processor state to execute that command */
         let cmd = 0;                    // command word
-        let loc = this.N.value;         // word-time of next command
+        let wt = Drum.computeDrumCount(this.drum.L.value, this.N.value);
 
-        if (this.CQ.value) {            // check the result of a prior TEST
-            loc = (loc+1) % Util.longLineSize;
+        if (this.CQ.value) {            // check result of the prior TEST
             this.CQ.value = 0;
+            ++wt;                       // Delay RC by one word-time
         }
 
-        this.drum.waitUntil(loc);
-        this.lastRCWordTime = this.drum.wordTimeCount;
-        this.cmdLoc.value = loc;
+        await this.drum.waitFor(wt);    // delay to the command location
+
+        wt = this.cmdLoc.value = this.drum.L.value;     // for convience and the Diag Panel
+        this.lastRCWordTime = this.drum.drumTime;
         this.isNCAR = this.CG.value;    // used only by tracing
         if (this.CG.value) {            // next command from AR
             cmd = this.drum.read(regAR);
@@ -2521,7 +2686,7 @@ class Processor {
         // they are 20 word-times too low. The following code adjusts T and N
         // so that (hopefully) they will behave as the hardware would have.
 
-        if (loc == 107) {
+        if (wt == Util.longLineSize-1) {
             this.warning("Execute command from L=107");
             this.N.value = (this.N.value - 20 + Util.longLineSize) % Util.longLineSize;
             // Unless it's MUL, DIV, SHIFT, or NORM (D=31, S=24-27), adjust T as well
@@ -2537,14 +2702,17 @@ class Processor {
         // Transition from read-command to transfer state
         this.RC.value = 0;                      // end of read-command state
         this.TR.value = 1;                      // start of transfer state
-        this.drum.waitFor(1);                   // advance past command word
-        if (this.DI.value) {                    // deferred commands delay at least one word before transfer
-            this.drum.waitFor(1);
+
+        // Advance drum past the command.
+        if (this.DI.value) {
+            await this.drum.waitFor(2); // deferred commands delay at least one word before transfer
+        } else {
+            await this.drum.waitFor(1);
         }
     }
 
     /**************************************/
-    transfer() {
+    async transfer() {
         /* Executes the command currently loaded into the command register (CM) */
 
         this.dpCarry = 0;               // prevent odd-word corruption when transfer
@@ -2575,7 +2743,7 @@ class Processor {
         case 21:
         case 22:
         case 23:
-            this.transferNormal();      // dispense with the low-hanging fruit
+            await this.transferDriver(this.transferNormal);     // dispense with the low-hanging fruit
 
             /********** DEBUG -- Halt if we start executing zero words at location 0
                         Special test for timing the 4-word memory-clear program. **********
@@ -2585,30 +2753,48 @@ class Processor {
             }
             /*******************************************************************/
 
+            // >>>>> Special test for looping on word 0 of a line <<<<< //
+            if (this.cmdLoc.value == 0 && this.N.value == 0) {
+                debugger;
+            }
+
             break;
         case 24:
-            this.transferToMQPN(regMQ);
+            this.suppressMinus0 = false;
+            await this.transferDriver(this.transferToMQPN, regMQ);
             break;
         case 25:
-            this.transferToID();
+            await this.transferDriver(this.transferToID);
             break;
         case 26:
-            this.transferToMQPN(regPN)
+            this.suppressMinus0 = false;
+            await this.transferDriver(this.transferToMQPN, regPN);
             break;
         case 27:        // TEST for non-zero
-            this.transferToTEST();
+            await this.transferDriver(this.transferToTEST);
             break;
         case 28:        // copy to AR
-            this.transferToAR();
+            this.suppressMinus0 = false;
+            await this.transferDriver(this.transferToAR);
             break;
         case 29:        // add to AR
-            this.addToAR();
+            this.suppressMinus0 = false;
+            await this.transferDriver(this.addToAR);
             break;
         case 30:        // add to PN
-            this.addToPN();
+            this.pnAddCarry = 0;        // carry bit from even word to odd word
+            this.pnAddendSign = 0;      // raw sign result from even word addition
+            this.pnAugendSign = 0;      // sign of augend (PN)
+            this.pnSign = 0;            // final sign to be applied to PN
+            this.suppressMinus0 = false;
+            if (this.tracing) {
+                this.traceRegisters();
+            }
+
+            await this.transferDriver(this.addToPN);
             break;
         case 31:
-            this.specialCommand();
+            await this.specialCommand();
             break;
         } // switch this.D.value
 
@@ -2623,20 +2809,23 @@ class Processor {
 
     /**************************************/
     async run() {
-        /* Main execution control loop for the processor. Attempts to throttle
-        performance to approximately that of a real G-15. The drum manages the
+        /* Main execution control loop for the processor. The drum manages the
         system timing, updating its L and eTime properties as calls on its
-        waitFor() and waitUntil() methods are made. We await drum.throttle()
-        after every instruction completes to determine if drum.eTime exceeds the
-        current slice time limit, in which case it delays until real time
-        catches up to emulation time. We continue to run until a halt condition
-        is detected */
+        waitFor() and waitUntil() methods are made. The drum also throttles
+        performance to approximately that of a real G-15. We continue to run
+        until a halt condition is detected */
 
-        this.drum.startTiming();
+        this.drum.procStart();
         do {                            // run until halted
             if (this.RC.value) {        // enter READ COMMAND state
-                this.readCommand();
+
+                this.debugCQState = this.CQ.value;      // >>>>> DEBUG TEMP ONLY <<<<<
+
+                await this.readCommand();
                 if (this.tracing) {
+
+                    if (this.D.value != 31 || this.S.value != 28 || this.debugCQState) // >>>>> DEBUG SUPPRESS TRACING TEST READY <<<<< //
+
                     this.traceState();  // DEBUG ONLY
                 }
 
@@ -2655,8 +2844,7 @@ class Processor {
                     }
                 }
             } else if (this.TR.value) { // enter TRANSFER (execute) state
-                this.transfer();
-                await this.drum.throttle();
+                await this.transfer();
                 this.CZ.value = 1;      // disable stepping
             } else {
                 this.warning("State neither RC nor TR");
@@ -2665,7 +2853,7 @@ class Processor {
             }
         } while (!this.CH.value || !this.CZ.value);
 
-        this.drum.stopTiming();
+        this.drum.procStop();
         this.updateLampGlow(1);
     }
 
@@ -2774,20 +2962,20 @@ class Processor {
             this.OC.value = IOCodes.ioCmdReady;
 
             // Load the Number Track, CN
-            this.drum.startTiming();
             if (!await this.readPaperTape()) {
-                this.drum.waitUntil(0);         // number track data to line 19
+                this.drum.procStart();
+                await this.drum.waitUntil(0);
                 for (let x=0; x<Util.longLineSize; ++x) {
                     this.drum.writeCN(this.drum.read(19));
-                    this.drum.waitFor(1);
+                    await this.drum.waitFor(1);
                 }
+                this.drum.procStop();
             }
 
             // Load the next block from paper tape
             this.setCommandLine(7);             // execute code from line 23
             this.N.value = 0;
             await this.readPaperTape();         // read a bootstrap loader, ignore any hang
-            this.drum.stopTiming();
         }
     }
 
@@ -2866,7 +3054,7 @@ class Processor {
         this.FO.value = 1;                              // set the overflow FF
         this.IP.value = 1;                              // set the DP sign FF
         for (let m=0; m<24; ++m) {
-            for (let loc=107; loc>=0; --loc) {
+            for (let loc=Util.longLineSize-1; loc>=0; --loc) {
                 int(m, loc, (m << 16) + loc);
             }
         }
@@ -2875,7 +3063,7 @@ class Processor {
         // routine described by Jim Hornung in his blog (original version).
 
         //  M     L  D/I   T    N  C   S   D  C1  BP
-        asm(23,   0,  1,   2,  05, 0, 29, 28);          // ZERO: clear AR (accumulator)
+        asm(23,   0,  1,   2,   5, 0, 29, 28);          // ZERO: clear AR (accumulator)
         asm(23,   1,  0,  12,  15, 2, 23, 23);          // SWAP: precess line 23 via AR starting at L=106 thru L=3 (after first time will be L=3 thru L=3)
         asm(23,   2,  0,  16,  10, 0, 27, 29);          // CLEAR: smear zeroes to current line
         asm(23,   3,  0,   6,  10, 0, 26, 31);          // INCR: shift ID/MQ by 3 bits (6 word-times), incrementing AR by 3

@@ -24,6 +24,7 @@ class PaperTapePunch {
 
     static bufferLimit = 0x40000;       // maximum output that will be buffered (about 4 hours worth)
     static viewMax = 60;                // characters retained in the tape view (originally 90)
+    static interpunct = "\u00B7";       // middle-dot for plank frames in the PTView box
     static tapeCodes = [
         " ", "-", "C", "T", "S", "/", ".", "~", " ", "-", "C", "T", "S", "/", ".", "~",
         "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "u", "v", "w", "x", "y", "z"];
@@ -54,9 +55,9 @@ class PaperTapePunch {
         /* Initializes (and if necessary, creates) the punch unit state */
 
         this.ready = true;              // punch is ready for output
-        this.busy = false;              // an I/O is in progress
         this.canceled = false;          // current I/O canceled
 
+        this.makeBusy(false);
         this.setPunchEmpty();
     }
 
@@ -150,12 +151,25 @@ class PaperTapePunch {
     }
 
     /**************************************/
+    makeBusy(busy) {
+        /* Makes the punch busy (I/O in progress) or not busy (idle) */
+
+        this.busy = busy;
+        if (busy) {
+            this.canceled = false;
+            this.$$("PTCaption").classList.add("active");
+        } else {
+            this.$$("PTCaption").classList.remove("active");
+        }
+    }
+
+    /**************************************/
     cancel() {
         /* Cancels the I/O currently in process */
 
         if (this.busy) {
-            this.busy = false;
-            //this.canceled = true;     // currently affects nothing
+            this.makeBusy(false);
+            this.canceled = true;       // currently affects nothing
         }
     }
 
@@ -163,7 +177,7 @@ class PaperTapePunch {
     write(code) {
         /* Writes one character code to the punch. The physical punch device
         (a standard Flexowriter tape punch unit) could output in excess of 18
-        characters per second, but the timing was controlled by the processor,
+        characters per second, but the timing was controlled by the Processor,
         which sent codes to the device at a rate of one every two drum cycles,
         about 17.2 characters per second */
         let char = PaperTapePunch.tapeCodes[code];
@@ -178,6 +192,9 @@ class PaperTapePunch {
             case IOCodes.ioCodeStop:
                 this.buffer += "\n\n";
                 break;
+            case IOCodes.ioCodeSpace:
+                char = PaperTapePunch.interpunct;
+                break;
             }
 
             // Update the tape view control
@@ -189,8 +206,6 @@ class PaperTapePunch {
             } else {
                 this.tapeView.value = view.slice(1-PaperTapePunch.viewMax) + char;
             }
-
-            //this.tapeView.setSelectionRange(viewLength-1, viewLength);
         }
     }
 

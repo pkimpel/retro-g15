@@ -23,6 +23,9 @@ import {openPopup} from "./PopupUtil.js";
 class Typewriter {
 
     static cursorChar = "_";            // end-of-line cursor indicator
+    static invKeyChar = "\u2592";       // flashed to indicate invalid key press
+    static pillowChar = "\u2588";       // EOL overprint character
+    static invKeyFlashTime = 150;       // keyboard lock flash time, ms
     static maxScrollLines = 10000;      // max lines retained in "paper" area
     static maxCols = 132;               // maximum number of columns per line
     static printCodes = [
@@ -46,7 +49,7 @@ class Typewriter {
         this.paperDoc.title = this.doc.title + " Paper";
         this.paper = this.paperDoc.getElementById("Paper");
         this.tabStop = [6,11,16,21,26,31,36,41,46,51,56,61,66,71,76,81,86,
-                        91,96,101,106,111,116,121,126,131];
+                        91,96,101,106,111,116,121,126];
 
         this.boundMenuClick = this.menuClick.bind(this);
         this.boundPanelKeydown = this.panelKeydown.bind(this);
@@ -66,6 +69,7 @@ class Typewriter {
     clear() {
         /* Initializes (and if necessary, creates) the typewriter unit state */
 
+        this.busy = false;              // typewriter is busy with input
         this.ready = true;              // typewriter is ready for output
         this.printerLine = 0;
         this.printerCol = 0;
@@ -77,6 +81,7 @@ class Typewriter {
     cancel() {
         /* Cancels any TypeIn I/O currently in process */
 
+        this.busy = false;
         this.processor.cancelTypeIn();
     }
 
@@ -86,20 +91,40 @@ class Typewriter {
     *******************************************************************/
 
     /**************************************/
-    panelKeydown(ev) {
+    flashInvalidKey() {
+        /* Temporarily flashes the cursor character to indicate the keyboard
+        is locked */
+        const paper = this.paper;
+
+        paper.lastChild.nodeValue =
+                paper.lastChild.nodeValue.slice(0, -1) + Typewriter.invKeyChar;
+        setTimeout(() => {
+            paper.lastChild.nodeValue =
+                    paper.lastChild.nodeValue.slice(0, -1) + Typewriter.cursorChar;
+        }, Typewriter.invKeyFlashTime);
+    }
+
+    /**************************************/
+    async panelKeydown(ev) {
         /* Handles the keydown event from FrontPanel. Processes data input from
         the keyboard, Enable switch command codes, and Escape (for toggling the
         Enable switch) */
         let code = ev.key.charCodeAt(0) & 0x7F;
         let key = ev.key;
         let p = this.processor;         // local copy of Processor reference
+        let result = 0;                 // assume it's a valid keystroke
 
-        if (ev.ctrlKey || ev.altKey || ev.metaKey) {
+        if (this.busy) {
+            this.flashInvalidKey();
+            return;                     // typing too fast -- discard keystroke
+        } else if (ev.ctrlKey || ev.altKey || ev.metaKey) {
+            this.flashInvalidKey();
             return;                     // ignore this keystroke, allow default action
         }
 
+        this.busy = true;
         switch (key) {
-        case "-": case "/":
+        case "-": case "/": case ".":
         case "0": case "1": case "2": case "3": case "4":
         case "5": case "6": case "7": case "8": case "9":
         case "S": case "s":
@@ -108,7 +133,7 @@ class Typewriter {
             ev.preventDefault();
             ev.stopPropagation();
             this.printChar(key);
-            p.receiveKeyboardCode(IOCodes.ioCodeFilter[code]);
+            result = await p.receiveKeyboardCode(IOCodes.ioCodeFilter[code]);
             break;
         case "A": case "a":
         case "B": case "b":
@@ -123,19 +148,19 @@ class Typewriter {
             ev.preventDefault();
             ev.stopPropagation();
             this.printChar(key);
-            p.receiveKeyboardCode(-code);
+            result = await p.receiveKeyboardCode(-code);
             break;
         case "Enter":
             ev.preventDefault();
             ev.stopPropagation();
             this.printNewLine();
-            p.receiveKeyboardCode(IOCodes.ioCodeCR);
+            result = await p.receiveKeyboardCode(IOCodes.ioCodeCR);
             break;
         case "Tab":
             ev.preventDefault();
             ev.stopPropagation();
             this.printTab();
-            p.receiveKeyboardCode(IOCodes.ioCodeTab);
+            result = await p.receiveKeyboardCode(IOCodes.ioCodeTab);
             break;
         case "Escape":
             ev.preventDefault();
@@ -147,10 +172,12 @@ class Typewriter {
             }
             break;
         case "Backspace":
+            result = 1;                 // invalid keystroke
             ev.preventDefault();
             ev.stopPropagation();
             break;
         default:
+            result = 1;                 // invalid keystroke
             switch (ev.location) {
             case KeyboardEvent.DOM_KEY_LOCATION_STANDARD:
             case KeyboardEvent.DOM_KEY_LOCATION_NUMPAD:
@@ -162,6 +189,11 @@ class Typewriter {
                 break;
             }
             break;
+        }
+
+        this.busy = false;
+        if (result) {
+            this.flashInvalidKey();
         }
     }
 
@@ -223,27 +255,27 @@ class Typewriter {
         let len = line.length;
 
         if (len < 1) {                  // first char on line
-            this.paper.lastChild.nodeValue = char + Typewriter.cursorChar;
+            this.paper.lastChild.nodeValue = `${char}${Typewriter.cursorChar}`;
             this.printerCol = 1;
             this.paper.scrollTop = this.paper.scrollHeight;     // scroll line into view
-        } else if (len <= Typewriter.maxCols) { // normal char
+        } else if (len < Typewriter.maxCols) {  // normal char
             this.paper.lastChild.nodeValue =
                     `${line.substring(0, len-1)}${char}${Typewriter.cursorChar}`;
             ++this.printerCol;
         } else {                        // right margin overflow -- overprint last col
-             this.paper.lastChild.nodeValue = line.substring(0, Typewriter.maxCols-1) +
-                    "\u2588" + Typewriter.cursorChar;
+            this.paper.lastChild.nodeValue =
+                    `${line.substring(0, Typewriter.maxCols-1)}${Typewriter.pillowChar}{Typewriter.cursorChar}`;
         }
     }
 
     /**************************************/
     printTab() {
         /* Simulates tabulation by inserting an appropriate number of spaces */
-        let tabCol = Typewriter.maxCols;        // tabulation column (defaults to end of carriage)
+        let tabCol = Typewriter.maxCols-1;      // tabulation column (defaults to end of carriage)
 
         for (let x=0; x<this.tabStop.length; ++x) {
             if (this.tabStop[x] > this.printerCol) {
-                tabCol = this.tabStop[x];
+                tabCol = Math.min(this.tabStop[x], tabCol);
                 break; // out of for loop
             }
         } // for x
@@ -256,10 +288,9 @@ class Typewriter {
     /**************************************/
     write(code) {
         /* Writes one character code to the typewriter. The physical typewriter
-        device (a standard Flexowriter tape punch unit) could output in excess
-        of 8 characters per second, but the timing was controlled by the
-        processor, which sent codes to the device at a rate of one every four
-        drum cycles, about 8.6 characters per second */
+        device could print in excess of 8 characters per second, but the timing
+        was controlled by the Processor, which sent codes to the device at a
+        rate of one every four drum cycles, about 8.6 characters per second */
 
         switch (code) {
         case IOCodes.ioCodeCR:

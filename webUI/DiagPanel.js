@@ -46,6 +46,7 @@ class DiagPanel {
         this.boundShutDown = this.shutDown.bind(this);
         this.boundDumpLine = this.dumpLine.bind(this);
         this.boundBPSetChange = this.bpSetChange.bind(this);
+        this.boundChangeRPM = this.changeRPM.bind(this);
         this.boundSetAudioLines = (ev) => {
             this.context.devices.sound.lines = this.$$("AudioLines").value.trim();
         };
@@ -87,7 +88,7 @@ class DiagPanel {
         word-times and total run time on the panel */
         const drum = this.context.processor.drum; // local copy of Drum reference
 
-        this.wordTimeOffset = drum.wordTimeCount;
+        this.wordTimeOffset = drum.drumTime;
         this.runTimeOffset = drum.runTime;
     }
 
@@ -224,6 +225,20 @@ class DiagPanel {
     }
 
     /**************************************/
+    changeRPM(ev) {
+        /* Changes the drum speed */
+        const newRPM = parseInt(ev.target.value, 10);
+
+        if (!newRPM) {
+            ev.target.classList.add("error");
+        } else {
+            Util.setTiming(newRPM);
+            ev.target.value = Util.drumRPM;
+            ev.target.classList.remove("error");
+        }
+    }
+
+    /**************************************/
     updatePanel() {
         /* Updates the panel registers and flip-flops from processor state */
         const p = this.context.processor;       // local copy of Processor reference
@@ -235,8 +250,8 @@ class DiagPanel {
             rt += now;
         }
 
-        let wt = (drum.wordTimeCount-this.wordTimeOffset).toString();
-        for (let x=wt.length-3; x>0; x-=3) {
+        let wt = (drum.drumTime-this.wordTimeOffset).toString();
+        for (let x=wt.length-3; x>0; x-=3) {    // format number with thousands separators
             wt = `${wt.substring(0, x)},${wt.substring(x)}`;
         }
 
@@ -364,6 +379,11 @@ class DiagPanel {
         this.window.addEventListener("unload", this.boundShutDown);
 
         this.$$("AudioLines").value = this.context.devices.sound.lines.join(",");
+        if (Util.nonStandardRPM) {
+            this.$$("RPMDiv").style.display = "block";
+            this.$$("RPM").value = Util.drumRPM;
+            this.$$("RPM").addEventListener("change", this.boundChangeRPM);
+        }
 
         this.updatePanel();
         if (!this.intervalToken) {
@@ -387,6 +407,8 @@ class DiagPanel {
         this.$$("BPBtn").removeEventListener("click", this.boundProcBP);
         this.$$("GoBtn").removeEventListener("click", this.boundProcGo);
         this.$$("StopBtn").removeEventListener("click", this.boundProcStop);
+        this.$$("RPMDiv").style.display = "none";
+        this.$$("RPM").removeEventListener("change", this.boundChangeRPM);
         this.$$("AudioLines").removeEventListener("keyup", this.boundSetAudioLines);
         if (this.intervalToken) {       // if the display auto-update is running
             this.window.clearInterval(this.intervalToken);  // kill it

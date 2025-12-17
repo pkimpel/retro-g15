@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <title>Bendix G-15 Drum Timing Study</title>
+<!--
+/***********************************************************************
+* g15/webUI/prototypes Drum-TimingStudy.html
+************************************************************************
+* Copyright (c) 2025, Paul Kimpel.
+* Licensed under the MIT License, see
+*       http://www.opensource.org/licenses/mit-license.php
+************************************************************************
+* Bendix G-15 emulator test of computing word-time counts between a
+* starting drum word-time (L) and a destination (T).
+227-5631-0_IBM_1620_Customer_Engineering_Instructional_System_Diagrams_1962.pdf
+************************************************************************
+* 2025-11-09  P.Kimpel
+*   Original version.
+***********************************************************************/
+-->
+    <meta name="Author" content="Paul Kimpel">
+
+<style>
+BODY {
+    font-family:        Arial, Helvetica, sans serif;
+    font-size:          9pt;}
+TABLE {
+    border-collapse:    collapse;
+    border-spacing:     0}
+INPUT {
+    font-size:          medium}
+#ResultTable {
+    margin-left:5em}
+#ResultTable TH {
+    vertical-align:     bottom}
+#ResultBody TD {
+    font-family:        DejaVu Sans Mono, Consolas, monospace;
+    padding:            4px;
+    text-align:         right}
+.center {
+    text-align:         center}
+.rj {
+    text-align:         right}
+.invalidCode {
+    background-color:   #CCF}
+</style>
+
+<script>
+"use strict";
+
+window.addEventListener("load", (ev) => {
+    const longLineSize = 108;
+    const cmMask = 0x7F;                // capacity of the 7-bit CM register
+    ////const cmOverflow = cmMask+1;  // overflow point on the 7-bit CM register
+
+    const body = document.getElementById("ResultBody");
+    const LValue = document.getElementById("LValue");
+
+    function computeDrumCount(L, T) {
+        /* Computes and returns the number of word-times the drum must traverse
+        from word-time L to word-time T. If L=T, returns zero. This works a
+        little weird, because the word-time is a 7-bit number and the G-15
+        counted to the T by computing the difference between L and T in an
+        unsigned 7-bit field in the Command Register (CM), then incrementing
+        that field until it overflowed at 128. If the count would cross words
+        107->0, however, the register would be incremented by an additional 20
+        to account for the fact that a 7-bit register counts up to 127, but on
+        the drum, the word following 107 is 0, not 108 (which is 128-20).
+        In some cases, adding the 20 would overflow the CM field immediately,
+        which would stop the traversal at that point */
+        const cm = ((~T & cmMask) + L) & cmMask;
+
+        if (L + cmMask - cm < longLineSize) {  // The easy case... does not cross 107->0
+          return cmMask - cm;
+        } else {                                // Traversal crosses 107->0
+            if (cm+20 < cmMask && L + cmMask - (cm+20) > longLineSize) {
+                // Adding 20 does not overflow CM, so compute word-times.
+                return cmMask - (cm+20) & cmMask;
+            } else {
+                // Adding 20 does overflow CM, so traversal will stop at WT 0.
+                return longLineSize - L;
+            }
+        }
+    }
+
+    function generateResults(ev) {
+        const L = parseInt(ev.target.value, 10) ?? "0";
+
+        ev.target.blur();               // remove focus from text box to allow scrolling
+        if (L < 0 || L >= longLineSize) {
+            alert("L cannot be < 0 or > 107");
+            ev.target.select();
+            ev.target.focus();
+            return;
+        }
+
+        while (body.firstChild) {
+            body.removeChild(body.firstChild);
+        }
+
+        for (let T=0; T<128; ++T) {
+            const cm = (cmMask-T+L) & cmMask;
+            const count = computeDrumCount(L, T);
+            const row = document.createElement("tr");
+            let cell = null;
+
+            cell = document.createElement("td");
+            cell.textContent = L;
+            row.appendChild(cell);
+
+            cell = document.createElement("td");
+            cell.textContent = T;
+            row.appendChild(cell)
+
+            cell = document.createElement("td");
+            cell.textContent = cm;
+            row.appendChild(cell);
+
+            cell = document.createElement("td");
+            cell.textContent = (cmMask-cm);
+            row.appendChild(cell);
+
+            cell = document.createElement("td");
+            cell.textContent = count;
+            row.appendChild(cell);
+
+            cell = document.createElement("td");
+            cell.textContent = (L + count) % longLineSize;
+            row.appendChild(cell);
+
+            body.appendChild(row);
+        }
+    }
+
+    /**********************************/
+
+    LValue.addEventListener("change", generateResults);
+    LValue.value = "";
+    LValue.focus();
+
+}, {once: true});
+</script>
+</head>
+
+<body>
+<h2>retro-g15 Drum Timing Study</h2>
+<p>
+    <input id=LValue type=text class=rj size=4 maxlength=3>
+    Enter the start location (L)
+</p>
+
+<table id=ResultTable border=1 cellspacing=0 cellpadding=2>
+    <thead>
+        <tr>
+            <th>L
+            <th>T
+            <th>CM
+            <th>raw<br>count
+            <th>true<br>count
+            <th>L*
+    <tbody id=ResultBody>
+</table>
+
+</body>
+</html>

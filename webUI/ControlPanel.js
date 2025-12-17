@@ -25,6 +25,11 @@ import {ToggleSwitch} from "./ToggleSwitch.js";
 
 class ControlPanel {
 
+// Static class properties
+
+    static displayRefreshPeriod = 50;                   // ms
+    static bellRecycleTime = Util.drumCycleTime*3;      // minimum bell ring frequency
+
     /**************************************/
     constructor(context) {
         /* Constructs the G15 control panel controls and wires up their events.
@@ -183,11 +188,6 @@ class ControlPanel {
         this.lampNCAR.set(p.CG.glow);
         this.lampTest.set(p.CQ.glow);
         this.lampAS.set(p.AS.glow);
-
-        if (p.bellTiming) {
-            this.ringBell(p.bellTiming);
-            p.bellTiming = 0;
-        }
     }
 
     /**************************************/
@@ -339,7 +339,7 @@ class ControlPanel {
             this.$$("DCPowerLampFX").classList.add("powerUp");
 
             await timer.set(1500);                      // wait for the DC power supplies...
-            systemClick.volume = 1;
+            systemClick.volume = 0.25;
             systemClick.currentTime = 0;
             systemClick.play();
             await timer.set(2000);
@@ -359,9 +359,3 @@ class ControlPanel {
     }
 
 } // class ControlPanel
-
-
-// Static class properties
-
-ControlPanel.displayRefreshPeriod = 50; // ms
-ControlPanel.bellRecycleTime = Util.drumCycleTime*3;

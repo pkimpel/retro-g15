@@ -22,6 +22,14 @@ import * as PPRTapeImage from "./resources/PPRTapeImage.js";
 
 class PaperTapeReader {
 
+    // Static properties
+
+    static defaultSpeed = 200;          // frames/sec
+    static startStopFrames = 35;        // 3.5 inches of tape
+    static tapeThickness = 0.003937;    // inch (0.100mm)
+    static tapeWords = 2500;            // max words in a tape cartridge (about 150 feet of tape)
+    static tapeFrames = PaperTapeReader*Util.wordBits/4; // max frames in a tape cartridge
+
     constructor(context) {
         /* Initializes and wires up events for the Paper Tape Reader.
         "context" is an object passing other objects and callback functions from
@@ -39,7 +47,6 @@ class PaperTapeReader {
 
         this.framePeriod = 0;                           // reader speed, ms/frame
         this.startStopTime = 0;                         // reader start/stop time, ms
-        this.setSpeed(PaperTapeReader.defaultSpeed);    // frames/sec
 
         this.clear();                                   // creates additional instance variables
 
@@ -62,6 +69,7 @@ class PaperTapeReader {
         this.buffer = "";               // reader input buffer (paper-tape reel)
         this.bufLength = 0;             // current input buffer length (characters)
         this.bufIndex = 0;              // 0-relative offset to next character to be read
+        this.nextStartStamp = 0;        // earliest time next read can start
 
         this.makeBusy(false);
         this.setBlockNr(0);
@@ -69,10 +77,11 @@ class PaperTapeReader {
     }
 
     /**************************************/
-    setSpeed(framesPerSec) {
-        /* Configures the reader for a specified speed in frames/sec */
+    setReaderSpeed() {
+        /* Configures the reader to match the current drum rotational speed */
+        const timingFactor = Util.drumRPM/Util.defaultRPM;
 
-        this.speed = framesPerSec;
+        this.speed = Math.min(PaperTapeReader.defaultSpeed*timingFactor, 2000); // frames/sec
         this.framePeriod = 1000/this.speed;                                     // ms/frame
         this.startStopTime = this.framePeriod*PaperTapeReader.startStopFrames;  // ms
     }
@@ -178,8 +187,6 @@ class PaperTapeReader {
         if (this.busy) {
             this.canceled = true;
         }
-
-        this.makeBusy(false);
     }
 
     /**************************************/
@@ -188,25 +195,39 @@ class PaperTapeReader {
         Processor's I/O subsystem. Reads until a STOP code or the end of the tape
         buffer is encountered. Simply bypasses any invalid tape image characters
         and comments as if they did not exist. Returns true if an attempt is
-        made to read past the end of the buffer, leaving the I/O hanging */
+        made to read past the end of the buffer, leaving the I/O hanging.
+        Delays for the reader startup time, but not for the stop time, so that
+        the I/O can finish as soon as possible. Takes the stop time into account
+        at the beginning of the next read, if necessary */
         let bufLength = this.bufLength; // current buffer length
         let bypass = false;             // bypass comment text after "#"
         let c = "";                     // current character
         let code = 0;                   // current G-15 internal code
         let eob = false;                // end-of-block flag
-        let nextFrameStamp = performance.now() + this.startStopTime;    // simulate startup time
-        let precessionComplete = Promise.resolve();
+        let nextFrameStamp = performance.now();         // time of next character frame
+        let precessionComplete = Promise.resolve();     // signals drum is ready for next char
+        let result = false;             // true if reader left hung at end-of-buffer
         let x = this.bufIndex;          // current buffer index
 
         this.canceled = false;
         this.makeBusy(true);
         this.setBlockNr(this.blockNr+1);
+        this.setReaderSpeed();
 
+        // Simulate the reader start/stop time.
+        if (this.nextStartStamp > nextFrameStamp) {
+            nextFrameStamp = this.nextStartStamp + this.startStopTime;  // reader is still stopping
+        } else {
+            nextFrameStamp += this.startStopTime;                       // reader is ready to start
+        }
+
+        // Read the next block.
         do {
             this.tapeSupplyBar.value = bufLength-x;
             if (x >= bufLength) {       // end of buffer
-                this.bufIndex = x;
-                return true;            // just quit and leave the I/O hanging
+                this.canceled = false;
+                result = eob = true;    // just quit and leave the I/O hanging
+                break;
             } else {
                 c = this.buffer.charAt(x);
                 ++x;
@@ -228,11 +249,12 @@ class PaperTapeReader {
                         nextFrameStamp += this.framePeriod;
 
                         // Wait for any line 23 precession to complete.
-                        if (await precessionComplete) {
-                            eob = true;                 // some error detected by Processor -- quit
-                        } else if (this.canceled) {
+                        if (this.canceled) {
+                            await precessionComplete;
                             this.canceled = false;
                             eob = true;                 // definitely canceled -- quit
+                        } else if (await precessionComplete) {
+                            eob = true;                 // some error detected by Processor -- quit
                         } else {
                             // Send the tape code to the Processor.
                             precessionComplete = this.processor.receiveInputCode(code);
@@ -248,8 +270,8 @@ class PaperTapeReader {
 
         this.bufIndex = x;
         this.makeBusy(false);
-        await this.timer.set(this.startStopTime);       // simulate stop time
-        return false;
+        this.nextStartStamp = this.startStopTime + nextFrameStamp;      // simulate reader stop time
+        return result;
     }
 
     /**************************************/
@@ -279,11 +301,14 @@ class PaperTapeReader {
 
         this.canceled = false;
         this.makeBusy(true);
+        this.setReaderSpeed();
 
         do {
             if (x <= 0) {
                 this.bufIndex = 0;      // reset the buffer index to beginning
                 this.setBlockNr(0);
+                this.makeBusy(false);
+                this.canceled = false;
                 return true;            // and just quit, leaving the I/O hanging
             } else {
                 --x;                    // examine prior character
@@ -312,7 +337,7 @@ class PaperTapeReader {
 
     /**************************************/
     fastRewind() {
-        /* Rewinds the tape image immediately */
+        /* Rewinds the tape image instantaineously */
 
         if (!this.busy && !this.rewinding) {
             this.bufIndex = 0;
@@ -362,9 +387,3 @@ class PaperTapeReader {
         this.$$("PRUnloadCaption").removeEventListener("click", this.boundUnloadButtonClick);
     }
 }
-
-
-// Static properties
-
-PaperTapeReader.defaultSpeed = 250;     // frames/sec
-PaperTapeReader.startStopFrames = 35;   // 3.5 inches of tape

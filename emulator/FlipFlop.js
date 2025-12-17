@@ -18,6 +18,11 @@ import * as Util from "./Util.js";
 
 class FlipFlop {
 
+    // Static class properties
+
+    static neonPersistence = 7;         // persistence of neon bulb glow [ms]   // was 15
+
+
     constructor(clock, invisible) {
         /* Constructor for the generic FlipFlop class. "clock" is a reference to
         the object that maintains the emulation clock, which must support the
@@ -86,8 +91,3 @@ class FlipFlop {
     }
 
 } // class FlipFlop
-
-
-// Static class properties
-
-FlipFlop.neonPersistence = 15;          // persistence of neon bulb glow [ms] // ** was 7 ** \\

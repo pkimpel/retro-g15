@@ -15,7 +15,7 @@ BODY {
     width:              calc(100% - 24px);
     margin:             0;
     padding:            4px;
-    background-color:   #FFC}
+    background-color:   #FFD}
 
 DIV.diagCaption {
     position:           absolute;
@@ -271,6 +271,14 @@ DIV.diagCaptionRight SPAN:nth-child(1) {
     left:               8px;
     right:              180px}
 
+#RPMDiv {
+    position:           absolute;
+    display:            none;
+    bottom:             32px;
+    right:              8px}
+#RPM {
+    text-align:         right}
+
 #AudioDiv {
     position:           absolute;
     bottom:             8px;
@@ -280,3 +288,5 @@ DIV.diagCaptionRight SPAN:nth-child(1) {
     white-space:        pre;
     font-family:        Lucida Sans Typewriter, Consolas, Courier New, monospace;
     font-size:          8pt}
+.error {
+    border:             2px solid red}

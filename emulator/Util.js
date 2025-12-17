@@ -26,6 +26,8 @@ export const two28 = 0x10000000;                // 2**28 for complementing word 
 export const two29 = 0x20000000;                // 2**29 for complementing full-word values
 
 export const defaultRPM = 1800;                 // default drum revolution speed, rev/min
+export const maxRPM = defaultRPM*100;           // maximum drum revolution speed, rev/min
+export let nonStandardRPM = false;              // true if RPM has been changed from default
 export let drumRPM = defaultRPM;                // drum revolution speed, rev/minute
 
 // The following are constants once the drum RPM is determined.
@@ -141,12 +143,20 @@ export function disassembleCommand(cmd) {
 export function setTiming(newRPM=defaultRPM) {
     /* Computes the drum timing factors from the specified drumRPM (default=1800) */
 
-    if (newRPM >= defaultRPM) {
+    if (newRPM >= 0 && newRPM <= maxRPM) {
         drumRPM = newRPM;                       // drum revolution speed, rev/minute
         wordTime = 60000/drumRPM/drumLineSize;  // one word time on the drum [124 words/rev], ms
         bitTime = wordTime/wordBits;            // one bit time on the drum, ms
         drumCycleTime = wordTime*longLineSize;  // one drum cycle (108 words), ms
     }
+}
+
+/**************************************/
+export function enableNonStandardTiming(newRPM) {
+    /* Enables non-standrd emulator timing (called by G15.js initialization */
+
+    nonStandardRPM = true;
+    setTiming(newRPM);
 }
 
 

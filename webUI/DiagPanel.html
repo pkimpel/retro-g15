@@ -38,14 +38,14 @@
     <div id=ControlDiv>
         <div id=DrumLocBox class=diagRegister></div>
         <div id=CmdLocBox class=diagRegister></div>
-        <div id=CDBox class=diagRegister></div>
-        <div id=RCBox class=diagLampBox></div>
-        <div id=TRBox class=diagLampBox></div>
-        <div id=CHBox class=diagLampBox></div>
-        <div id=CGBox class=diagLampBox></div>
-        <div id=CQBox class=diagLampBox></div>
-        <div id=CSBox class=diagLampBox></div>
-        <div id=FOBox class=diagLampBox></div>
+        <div id=CDBox class=diagRegister title="Drum Command Line"></div>
+        <div id=RCBox class=diagLampBox  title="Read Command State"></div>
+        <div id=TRBox class=diagLampBox  title="Transfer State"></div>
+        <div id=CHBox class=diagLampBox  title="Halt FF"></div>
+        <div id=CGBox class=diagLampBox  title="Next Command from AR FF"></div>
+        <div id=CQBox class=diagLampBox  title="Test FF"></div>
+        <div id=CSBox class=diagLampBox  title="TVA FF"></div>
+        <div id=FOBox class=diagLampBox  title="Overflow FF"></div>
     </div>
 
     <div id=CmdDiv>
@@ -104,9 +104,15 @@
 
 <div id=ButtonDiv>
     <button id=StepBtn type=button>Step</button>
+    &nbsp;&nbsp;&nbsp;
     <button id=BPBtn type=button>BP</button>
     <button id=StopBtn type=button>Stop</button>
     <button id=GoBtn type=button>GO</button>
+</div>
+
+<div id=RPMDiv>
+    <strong>RPM:</strong>
+    <input id=RPM type=text size=15>
 </div>
 
 <div id=AudioDiv>
