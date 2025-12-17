@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>G-15 I/O Format Encoder/Decoder</title>
+<!--
+/***********************************************************************
+* retro-g15/software/tools Format-Encoder.html
+************************************************************************
+* Copyright (c) 2025, Paul Kimpel.
+* Licensed under the MIT License, see
+*       http://www.opensource.org/licenses/mit-license.php
+************************************************************************
+* Encoder/Decoder script for Bendix G-15 I/O format strings.
+*
+* To encode a format, place the ASCII format codes in the "Codes" text
+* box on the page and click the "Encode" button. Use the codes defined
+* in Drawing 50 (PDF page 154) of the TOO:
+* http://bitsavers.org/pdf/bendix/g-15/60121600_G15_Theory_Of_Operation_Nov64.pdf
+* Spaces in the string of codes are ignored; invalid format codes will
+* result in an error alert. The encoded format will appear as G-15 hex
+* in the four text boxes of the "Words" row. The full string is encoded,
+* including any codes after an "E" (End) code.
+*
+* To decode a format, place the encoded format words in the four text
+* boxes of the "Words" row using G-15 hex notation (0-9, u-z) and click
+* the "Decode" button. The sign can be entered anywhere in the box.
+* Spaces and invalid hex characters are ignored. Valid hex characters
+* are case-insensitive. The decoded ASCII string will appear in the
+* text box of the "Codes" row. Decoding stops when the first "E" (End)
+* code is encountered.
+*
+* The disasssembler is written in Javascript embedded within an HTML
+* web page. To use, load the assembler into a browser, e.g., from
+* https://www.phkimpel.us/Bendix-G15/software/tools/Format-Encoder.html.
+*
+************************************************************************
+* 2026-12-16  P.Kimpel
+*   Original version, cloned from retro-g15 tools/software/
+*   Paper-Tape-Disassembler.html.
+***********************************************************************/
+-->
+<meta name="Author" content="Paul Kimpel">
+<meta http-equiv="Content-Script-Type" content="text/javascript">
+<meta http-equiv="Content-Style-Type" content="text/css">
+
+<style>
+HTML {
+    height:             100%}
+
+BODY {
+    position:           relative;
+    font-family:        Arial, Helvetica, sans-serif;
+    height:             calc(100% - 3ex);
+    margin:             8px}
+
+DIV.heading {
+    margin-top:         12px;
+    margin-bottom:      6px;
+    font-weight:        bold}
+
+LABEL {
+    font-size:          smaller}
+
+.center {
+    text-align:         center}
+.data {
+    font-family:        Consolas, Courier New, Courier, monospace;
+    font-size:          12pt}
+.rj {
+    text-align:         right}
+</style>
+</head>
+
+<body>
+<div class=heading>
+    Bendix G-15 I/O Format Encoder/Decoder
+</div>
+
+<div id=OptionsDiv>
+    <div>
+        <table id=EncoderTable>
+        <tr>
+            <td>Codes
+            <td>
+                <input id=FormatCodes class=data type=text size=38 maxlength=38>
+            <td>
+                <button id=EncodeBtn type=button title="Encode ASCII codes to binary format words"
+                        >Encode</button>
+        <tr>
+            <td>Words
+            <td>
+                <input id=FormatHex0 class="data rj" type=text size=8 maxlength=8>
+                <input id=FormatHex1 class="data rj" type=text size=8 maxlength=8>
+                <input id=FormatHex2 class="data rj" type=text size=8 maxlength=8>
+                <input id=FormatHex3 class="data rj" type=text size=8 maxlength=8>
+            <td>
+                <button id=DecodeBtn type=button title="Decode binary format words to ASCII codes"
+                        >Decode</button>
+        </table>
+    </div>
+</div>
+
+<script>
+"use strict";
+
+window.addEventListener("load", function() {
+
+    const hexRex = /[abcdefABCDEF]/g;   // standard hex characters
+
+    const wordBits = 29;                // bits per G-15 word
+    const wordBytes = 4;                // bytes per G-15 word (32 bits holding 29 bits)
+    const longLineSize = 108;           // words per long drum line
+    const fastLineSize = 4;             // words per fast drum line
+
+    const wordMask = 0x1FFFFFFF;        // 29 bits
+    const absWordMask = 0x1FFFFFFE;     // all but the sign bit
+    const wordSignMask = 0x01;          // sign bit mask
+    const two28 = 0x10000000;           // 2**28 for complementing word values
+
+    const formatMaxCodes = 38;          // max codes allowed in a format
+    const formatCodeBits = 3;           // bits in an encoded format code
+    const formatFillerBits = 2;         // number of bits needed to make format a full 4 words
+
+    const MZ = [0, 0, 0, 0];            // storage for the encoded format
+
+    const formatChars = "DECPSRTW";     // binary format codes to ASCII codes
+    const formatCodes = {               // ASCII format codes to binary codes
+        "D": 0b000,     // Digit
+        "E": 0b001,     // End/Stop
+        "C": 0b010,     // Carriage Return
+        "P": 0b011,     // Period (".")
+        "S": 0b100,     // Sign
+        "R": 0b101,     // Reload
+        "T": 0b110,     // Tab
+        "W": 0b111};    // Wait
+
+
+    /*******************************************************************
+    * Miscellaneous Utility Functions                                  *
+    *******************************************************************/
+
+    /**************************************/
+    function $$(id) {
+        return document.getElementById(id);
+    }
+
+    /**************************************/
+    function g15Hex(v) {
+        /* Converts the value "v" to a hexidecimal string using the G-15
+        convention. This is not a particularly efficient way to do this */
+
+        return v.toString(16).toLowerCase().replace(hexRex, (c) => {
+            switch (c) {
+            case "a":
+                return "u";
+            case "b":
+                return "v";
+            case "c":
+                return "w";
+            case "d":
+                return "x";
+            case "e":
+                return "y";
+            case "f":
+                return "z";
+            default:
+                return "?";
+            }
+        });
+    }
+
+    /**************************************/
+    function g15SignedHex(v) {
+        /* Formats the value of "v" as signed G-15 hex */
+
+        return g15Hex(v >> 1).padStart(7, "0") + (v & wordSignMask ? "-" : " ");
+    }
+
+    /**************************************/
+    function g15Binary(hex) {
+        /* Converts the string "hex" from G-15 hex codes to a 29-bit binary word */
+        let sign = 0;
+        let word = 0;
+
+        for (let c of hex) {
+           switch (c.toLowerCase()) {
+           case "0": case "1": case "2": case "3": case "4":
+           case "5": case "6": case "7": case "8": case "9":
+               word = ((word << 4) & wordMask) | (c.charCodeAt(0) - ("0").charCodeAt(0));
+               break;
+           case "u": case "v": case "w": case "x": case "y": case "z":
+               word = ((word << 4) & wordMask) | (c.charCodeAt(0) - ("u").charCodeAt(0) + 10);
+               break;
+           case "-":
+               sign = 1;
+               break;
+           }
+        }
+
+        return ((word << 1) | sign) & wordMask;
+    }
+
+    /**************************************/
+    function ioPrecessCodeToMZ(code, bits) {
+        /* Stores the value of "code" into the low-order "bits" of MZ
+        word 0, precessing the original contents of MZ to higher word
+        numbers and returning the high-order "bits" number of bits from
+        MZ word 3 */
+        let keepBits = wordBits - bits;
+        let keepMask = wordMask >> bits;
+        let codeMask = wordMask >> keepBits;
+        let carry = code & codeMask;
+
+        for (let x=0; x<fastLineSize; ++x) {
+            let word = MZ[x] & wordMask;
+            MZ[x] = ((word & keepMask) << bits) | carry;
+            carry = word >> keepBits;
+        }
+
+        return carry;
+    }
+
+    /**************************************/
+    function ioPrecessMZToCode(bits) {
+        /* Precesses the original contents of MZ by "bits" bits to higher
+        word numbers, inserting zero in the "bits" low-order bits of word 0,
+        and returning the original "bits" high order bits of word 3 */
+        let keepBits = wordBits - bits;
+        let keepMask = wordMask >> bits;
+        let code = 0;
+        let word = 0;
+
+        for (let x=0; x<fastLineSize; ++x) {
+            word = MZ[x] & wordMask;
+            MZ[x] = ((word & keepMask) << bits) | code;
+            code = word >> keepBits;
+        }
+
+        return code;
+    }
+
+    /**************************************/
+    function encodeFormat(ev) {
+        /* Click handler for the EncodeBtn button to convert ASCII format codes
+        to a four-word binary G-15 format string */
+        let codes = $$("FormatCodes").value.trim().replaceAll(" ", "").toUpperCase();
+        let codesLen = codes.length;
+
+        MZ.fill(0);                     // clear the encoded format storage
+        if (codesLen > formatMaxCodes) {
+            codes = codes.substring(0, formatMaxCodes);
+            codesLen = formatMaxCodes;
+        }
+
+        for (let code of codes) {
+            if (code in formatCodes) {
+                ioPrecessCodeToMZ(formatCodes[code], formatCodeBits);
+            } else {
+                alert(`Invalid ASCII format code \"${code}\" -- encoding aborted.`);
+                return;
+            }
+        }
+
+        for (let x=codesLen+1; x<=formatMaxCodes; ++x) {
+            ioPrecessCodeToMZ(0, formatCodeBits);
+        }
+
+        ioPrecessCodeToMZ(0, formatFillerBits);
+        for (let x=0; x<fastLineSize; ++x) {
+            $$(`FormatHex${x}`).value = g15SignedHex(MZ[x]);
+        }
+    }
+
+    /**************************************/
+    function decodeFormat(ev) {
+        /* Click handler for the DecodeBtn button to convert a four-word binary
+        G-15 format string to ASCII format codes */
+        let codes = "";
+
+        for (let x=0; x<fastLineSize; ++x) {
+            MZ[x] = g15Binary($$(`FormatHex${x}`).value);
+        }
+
+        for (let x=0; x<formatMaxCodes; ++x) {
+            const code = formatChars[ioPrecessMZToCode(formatCodeBits)];
+            codes += code;
+            if (code == "E") {
+                break;
+            }
+        }
+
+        $$("FormatCodes").value = codes;
+    }
+
+
+    /*******************************************************************
+    * Initialization and Termination                                   *
+    *******************************************************************/
+
+    $$("EncodeBtn").addEventListener("click", encodeFormat);
+    $$("DecodeBtn").addEventListener("click", decodeFormat);
+}, false);
+</script>
+
+</body>
+</html>
