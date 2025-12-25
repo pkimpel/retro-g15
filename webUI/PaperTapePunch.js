@@ -24,7 +24,7 @@ class PaperTapePunch {
 
     static bufferLimit = 0x40000;       // maximum output that will be buffered (about 4 hours worth)
     static viewMax = 60;                // characters retained in the tape view (originally 90)
-    static interpunct = "\u00B7";       // middle-dot for plank frames in the PTView box
+    static interpunct = "\u00B7";       // middle-dot for blank frames in the PTView box
     static tapeCodes = [
         " ", "-", "C", "T", "S", "/", ".", "~", " ", "-", "C", "T", "S", "/", ".", "~",
         "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "u", "v", "w", "x", "y", "z"];

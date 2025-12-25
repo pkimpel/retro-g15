@@ -73,7 +73,9 @@ let globalLoad = (ev) => {
     function openDiagPanel(ev) {
         /* Opens the emulator's diagnostic panel in a new sub-window */
 
-        if (!diagPanel) {
+        if (diagPanel) {
+            diagPanel.window?.focus();
+        } else {
             diagPanel = new DiagPanel(context);
         }
     }

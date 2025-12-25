@@ -2342,33 +2342,33 @@ class Processor {
         /* Handles the messy details of D=31, S=20, Select Command Line and
         Return Exit. See G-15 Technical Applications Memorandum 4 and 41, and
         the Programmer's Reference Manual, p.56-58 */
-        let loc = this.drum.L.value;
+        let loc = this.drum.L.value;    // L at start of Transfer
         let n0 = this.N.value;          // original value of N
         let mark = (this.drum.CM.value & 0b11_11111_11111_0) >> 1;
-        let m = mark;
-        let n = n0;
-        let t = this.T.value + this.DI.value;
+        let m = mark;                   // marked word-time
+        let n = n0;                     // adjusted value of N
+        let Lk = this.T.value + this.DI.value;  // end of Transfer + 1
 
         this.setCommandLine((this.C1.value << 2) | this.C.value);
 
         // Adjust the drum locations to account for wrap-around, word 107 -> 0
-        if (t < loc) {
-            t += Util.longLineSize;
+        if (Lk < loc) {
+            Lk += Util.longLineSize;
             m += Util.longLineSize;
             n += Util.longLineSize;
         }
 
-        if (m < t) {m += Util.longLineSize}
-        if (n < t) {n += Util.longLineSize}
+        if (m < Lk) {m += Util.longLineSize}
+        if (n < Lk) {n += Util.longLineSize}
 
         if ((this.computeSwitch == 2 && this.BP.value) || !this.CZ.value) {
             // If the Compute switch is set to BP and the command is marked BP,
             // or if single-stepping is in progress, always return to the marked
             // location and ignore N (Tech Memo 41).
             this.N.value = mark;
-        } else if (t == n) {
+        } else if (Lk == n) {
             // Return to the command's N location unconditionally (Prog.Ref p.57).
-        } else if (t <= n && n <= m) {
+        } else if (Lk <= n && n <= m) {
             // Return to the command's N location unconditionally (Tech Memo 4).
         } else {
             // Otherwise, return to the marked location
@@ -2379,12 +2379,13 @@ class Processor {
         if (this.tracing) {
             const dL = Util.lineHex[loc];
             const cm = Util.g15SignedHex(this.drum.CM.value);
+            const markL = Util.lineHex[mark];
             const mL = Util.lineHex[mark];
             const nL = Util.lineHex[n0];
             const tL = Util.lineHex[this.T.value];
-            const r1 = t == n ? "==" : t < n ? "<" : ">";
+            const r1 = Lk == n ? "==" : Lk < n ? "<" : ">";
             const r2 = n <= m ? "<=" : ">";
-            console.log(`             RET: L=${dL}: CM=${cm} [Tk=${tL} ${r1} N=${nL} ${r2} MARK=${mL}] => %s`,
+            console.log(`             RTN: L=${dL}: CM=${cm}:${markL} [Lk=${tL} ${r1} N=${nL} ${r2} MARK=${mL}] => %s`,
                         Util.formatDrumLoc(this.cmdLine, this.N.value, true));
         }
     }
@@ -2400,10 +2401,10 @@ class Processor {
         let mark = 0;
 
         this.setCommandLine((this.C1.value << 2) | this.C.value);
-        if (!this.DI.value) {   // immediate execution
+        if (this.DI.value) {    // deferred execution
+            mark = this.T.value;
+        } else {                // immediate execution
             mark = this.drum.L.value;
-        } else {                // deferred execution
-            mark = (this.T.value + Util.longLineSize) % Util.longLineSize;
         }
 
         this.drum.CM.value = (this.drum.CM.value & 0b1_1111111_1_1111111_00_00000_00000_1) |
@@ -2819,12 +2820,12 @@ class Processor {
         do {                            // run until halted
             if (this.RC.value) {        // enter READ COMMAND state
 
-                this.debugCQState = this.CQ.value;      // >>>>> DEBUG TEMP ONLY <<<<<
+                ////this.debugCQState = this.CQ.value;      // >>>>> DEBUG TEMP ONLY <<<<<
 
                 await this.readCommand();
                 if (this.tracing) {
 
-                    if (this.D.value != 31 || this.S.value != 28 || this.debugCQState) // >>>>> DEBUG SUPPRESS TRACING TEST READY <<<<< //
+                    ////if (this.D.value != 31 || this.S.value != 28 || this.debugCQState) // >>>>> DEBUG SUPPRESS TRACING TEST READY <<<<< //
 
                     this.traceState();  // DEBUG ONLY
                 }

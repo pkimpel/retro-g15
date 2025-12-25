@@ -34,6 +34,7 @@ export let drumRPM = defaultRPM;                // drum revolution speed, rev/mi
 export let wordTime = 0;                        // one word time on the drum [124 words/rev], ms
 export let bitTime = 0;                         // one bit time on the drum, ms
 export let drumCycleTime = 0;                   // one drum cycle (108 words), ms
+export let timingFactor = 1;                    // global emulator speed factor
 
 const hexRex = /[abcdefABCDEF]/g;               // standard hex characters
 const g15HexXlate = {
@@ -145,6 +146,7 @@ export function setTiming(newRPM=defaultRPM) {
 
     if (newRPM >= 0 && newRPM <= maxRPM) {
         drumRPM = newRPM;                       // drum revolution speed, rev/minute
+        timingFactor = drumRPM/defaultRPM;      // emulator speed factor
         wordTime = 60000/drumRPM/drumLineSize;  // one word time on the drum [124 words/rev], ms
         bitTime = wordTime/wordBits;            // one bit time on the drum, ms
         drumCycleTime = wordTime*longLineSize;  // one drum cycle (108 words), ms

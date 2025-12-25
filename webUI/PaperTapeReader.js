@@ -26,9 +26,17 @@ class PaperTapeReader {
 
     static defaultSpeed = 200;          // frames/sec
     static startStopFrames = 35;        // 3.5 inches of tape
-    static tapeThickness = 0.003937;    // inch (0.100mm)
-    static tapeWords = 2500;            // max words in a tape cartridge (about 150 feet of tape)
-    static tapeFrames = PaperTapeReader*Util.wordBits/4; // max frames in a tape cartridge
+    static tapeThickness = 0.1/25.4;    // 0.100mm = 0.003937in
+    static hubDiameter = 1.0            // diameter of take-up reel hub, inch
+    static hubCircumference = PaperTapeReader.hubDiameter*Math.PI;
+    static hubRPS = 0.565235;           // take-up hub speed, revolutions/sec
+    static tapeWords = 2500;            // max words in a tape cartridge (about 170 feet of tape, see https://en.wikipedia.org/wiki/Bendix_G-15)
+    static framesPerInch = 10;          // frame pitch on the tape
+    static spoolAlpha = Math.PI*(1 + 2*PaperTapeReader.tapeThickness);  // spool diameter growth factor
+    static tapeFrames = PaperTapeReader.tapeWords*Util.wordBits/4; // max frames in a tape cartridge
+
+    static commentRex = /#[^\x0D\x0A]*/g;
+    static newLineRex = /[\x0D\x0A\x0C]+/g;
 
     constructor(context) {
         /* Initializes and wires up events for the Paper Tape Reader.
@@ -77,11 +85,16 @@ class PaperTapeReader {
     }
 
     /**************************************/
-    setReaderSpeed() {
-        /* Configures the reader to match the current drum rotational speed */
-        const timingFactor = Util.drumRPM/Util.defaultRPM;
+    setReaderSpeed(bufIndex) {
+        /* Configures the reader to match the current drum rotational speed and
+        length of tape wound on the take-up hub. "bufIndex" is the offset into
+        the tape buffer */
+        const tapeLen = bufIndex/PaperTapeReader.framesPerInch;                 // in
+        const spoolDiameter = tapeLen/PaperTapeReader.spoolAlpha*2*PaperTapeReader.tapeThickness +
+                PaperTapeReader.hubDiameter;                                    // in
+        const tapeSpeed = Math.PI*spoolDiameter/PaperTapeReader.hubRPS*PaperTapeReader.framesPerInch; // frames/sec
 
-        this.speed = Math.min(PaperTapeReader.defaultSpeed*timingFactor, 2000); // frames/sec
+        this.speed = Math.min(tapeSpeed*Util.timingFactor, 2500);               // frames/sec
         this.framePeriod = 1000/this.speed;                                     // ms/frame
         this.startStopTime = this.framePeriod*PaperTapeReader.startStopFrames;  // ms
     }
@@ -118,6 +131,13 @@ class PaperTapeReader {
     }
 
     /**************************************/
+    stripComments(buf) {
+        /* Strips "#" comments from a text buffer, returning a new buffer */
+
+        return buf.replace(PaperTapeReader.commentRex, "").replace(PaperTapeReader.newLineRex, "");
+    }
+
+    /**************************************/
     fileSelectorChange(ev) {
         /* Handle the <input type=file> onchange event when files are selected. For each
         file, load it and append it to the input buffer of the reader */
@@ -129,19 +149,10 @@ class PaperTapeReader {
             /* Handle the onload event for a Text FileReader */
 
             if (this.bufIndex >= this.bufLength) {
-                this.buffer = ev.target.result;
+                this.buffer = this.stripComments(ev.target.result);
                 this.setBlockNr(0);
             } else {
-                switch (this.buffer.charAt(this.buffer.length-1)) {
-                case "\r":
-                case "\n":
-                case "\f":
-                    break;                  // do nothing -- the last word has a delimiter
-                default:
-                    this.buffer += "\n";    // so the next tape starts on a new line
-                    break;
-                }
-                this.buffer = this.buffer.substring(this.bufIndex) + ev.target.result;
+                this.buffer = this.buffer.substring(this.bufIndex) + this.stripComments(ev.target.result);
             }
 
             this.bufIndex = 0;
@@ -200,7 +211,6 @@ class PaperTapeReader {
         the I/O can finish as soon as possible. Takes the stop time into account
         at the beginning of the next read, if necessary */
         let bufLength = this.bufLength; // current buffer length
-        let bypass = false;             // bypass comment text after "#"
         let c = "";                     // current character
         let code = 0;                   // current G-15 internal code
         let eob = false;                // end-of-block flag
@@ -212,7 +222,7 @@ class PaperTapeReader {
         this.canceled = false;
         this.makeBusy(true);
         this.setBlockNr(this.blockNr+1);
-        this.setReaderSpeed();
+        this.setReaderSpeed(x);
 
         // Simulate the reader start/stop time.
         if (this.nextStartStamp > nextFrameStamp) {
@@ -231,37 +241,30 @@ class PaperTapeReader {
             } else {
                 c = this.buffer.charAt(x);
                 ++x;
-                switch (c) {
-                case "#":
-                    bypass = true;      // start bypassing comment text
-                    break;
-                case "\n":
-                case "\r":
-                    bypass = false;     // end bypassing comment text
-                    break;
-                }
+                code = IOCodes.ioCodeFilter[c.charCodeAt(0) & 0x7F];
+                if (code < 0xFF) {  // not an ignored character
+                    // Wait for the next frame time.
+                    await this.timer.delayUntil(nextFrameStamp);
+                    nextFrameStamp += this.framePeriod;
 
-                if (!bypass) {
-                    code = IOCodes.ioCodeFilter[c.charCodeAt(0) & 0x7F];
-                    if (code < 0xFF) {  // not an ignored character
-                        // Wait for the next frame time.
-                        await this.timer.delayUntil(nextFrameStamp);
-                        nextFrameStamp += this.framePeriod;
-
-                        // Wait for any line 23 precession to complete.
-                        if (this.canceled) {
+                    // Wait for any line 23 precession to complete.
+                    if (this.canceled) {
+                        await precessionComplete;
+                        this.canceled = false;
+                        eob = true;                 // definitely canceled -- quit
+                    } else if (await precessionComplete) {
+                        eob = true;                 // some error detected by Processor -- quit
+                    } else {
+                        // Send the tape code to the Processor.
+                        precessionComplete = this.processor.receiveInputCode(code);
+                        switch (code) {
+                        case IOCodes.ioCodeReload:
+                            this.setReaderSpeed(x);
+                            break;
+                        case IOCodes.ioCodeStop:
                             await precessionComplete;
-                            this.canceled = false;
-                            eob = true;                 // definitely canceled -- quit
-                        } else if (await precessionComplete) {
-                            eob = true;                 // some error detected by Processor -- quit
-                        } else {
-                            // Send the tape code to the Processor.
-                            precessionComplete = this.processor.receiveInputCode(code);
-                            if (code == IOCodes.ioCodeStop) {
-                                await precessionComplete;
-                                eob = true;             // end of block -- quit
-                            }
+                            eob = true;             // end of block -- quit
+                            break;
                         }
                     }
                 }
@@ -301,7 +304,7 @@ class PaperTapeReader {
 
         this.canceled = false;
         this.makeBusy(true);
-        this.setReaderSpeed();
+        this.setReaderSpeed(bufLength-x);
 
         do {
             if (x <= 0) {
