@@ -456,10 +456,10 @@ class Processor {
             }
             break;
         case 27:        // 20.21 + 20/.AR
-            {   let m20 = this.drum.read(20);
-                let m21 = this.drum.read(21);
-                let ar  = this.drum.read(regAR);
-                let val = (m20 & m21) | (~m20 & ar);
+            {   const m20 = this.drum.read(20);
+                const m21 = this.drum.read(21);
+                const ar  = this.drum.read(regAR);
+                const val = (m20 & m21) | (~m20 & ar);
                 if (this.tracing) {
                     console.log("                    S=27: 20&21|~20&AR: L=%s: M20=%s, M21=%s, AR=%s => %s",
                             Util.formatDrumLoc(this.S.value, this.drum.L.value, true),
@@ -476,9 +476,9 @@ class Processor {
             return this.drum.read(20) & this.IR.value;
             break;
         case 30:        // 20/.21
-            {   let m20 = this.drum.read(20);
-                let m21 = this.drum.read(21);
-                let val = ~m20 & m21;
+            {   const m20 = this.drum.read(20);
+                const m21 = this.drum.read(21);
+                const val = ~m20 & m21;
                 if (this.tracing) {
                     console.log("                    S=30: ~20&21: L=%s: M20=%s, M21=%s => %s",
                             Util.formatDrumLoc(this.S.value, this.drum.L.value, true),
@@ -489,9 +489,9 @@ class Processor {
             }
             break;
         case 31:        // 20.21
-            {   let m20 = this.drum.read(20);
-                let m21 = this.drum.read(21);
-                let val = m20 & m21;
+            {   const m20 = this.drum.read(20);
+                const m21 = this.drum.read(21);
+                const val = m20 & m21;
                 if (this.tracing) {
                     console.log("                    S=31: 20&21: L=%s: M20=%s, M21=%s => %s",
                             Util.formatDrumLoc(this.S.value, this.drum.L.value, true),
@@ -2424,17 +2424,17 @@ class Processor {
     async clearDPRegisters() {
         /* Implements clear MQ/ID/PN/IP, etc., D=31, S=23 */
 
-        this.mqShiftCarry = 0;
-        this.pnAddCarry = 0;
-        this.pnAddendSign = 0;
-        this.pnAugendSign = 0;
-        this.pnSign = 0;
         if (this.tracing) {
             this.traceRegisters();
         }
 
         switch (this.C.value) {
         case 0:                     // clear MQ/ID/PN/IP
+            this.mqShiftCarry = 0;
+            this.pnAddCarry = 0;
+            this.pnAddendSign = 0;
+            this.pnAugendSign = 0;
+            this.pnSign = 0;
             this.IP.value = 0;
             await this.transferDriver(() => {
                 this.drum.write(regMQ, 0);
@@ -2447,11 +2447,12 @@ class Processor {
             break;
         case 3:                     // PN.M2 -> ID, PN.M2/ -> PN
             await this.transferDriver(() => {
-                let m2 = this.drum.read(2);
-                let pn = this.drum.read(regPN);
-                let id = this.drum.read(regID);
-                let i2 = pn & m2;
-                let p2 = pn & ~m2;
+                const m2 = this.drum.read(2);
+                const nm2 = ~m2 & Util.wordMask;
+                const pn = this.drum.read(regPN);
+                const id = this.drum.read(regID);
+                const i2 = pn & m2;
+                const p2 = pn & nm2;
                 this.drum.write(regID, i2);
                 this.drum.write(regPN, p2);
                 if (this.tracing) {
@@ -2461,7 +2462,7 @@ class Processor {
                             Util.g15SignedHex(id), Util.g15SignedHex(i2));
                     console.log("              PN&~M2=>PN: L=%s: M2=%s, ~M2=%s, PN=%s => %s",
                             Util.formatDrumLoc(regPN, this.drum.L.value, true),
-                            Util.g15SignedHex(m2), Util.g15SignedHex(~m2),
+                            Util.g15SignedHex(m2), Util.g15SignedHex(nm2),
                             Util.g15SignedHex(pn), Util.g15SignedHex(p2));
                 }
             });
