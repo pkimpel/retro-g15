@@ -24,14 +24,18 @@ class PaperTapeReader {
 
     // Static properties
 
-    static defaultSpeed = 200;          // frames/sec
+    static averageSpeed = 250;          // frames/sec
+    static framesPerInch = 10;          // frame pitch on the tape
+    static midpointDiameter = 11.30;    // spool diameter at midpoint of max-length tape, in
     static startStopFrames = 35;        // 3.5 inches of tape
     static tapeThickness = 0.1/25.4;    // 0.100mm = 0.003937in
     static hubDiameter = 1.0            // diameter of take-up reel hub, inch
     static hubCircumference = PaperTapeReader.hubDiameter*Math.PI;
-    static hubRPS = 0.565235;           // take-up hub speed, revolutions/sec
-    static tapeWords = 2500;            // max words in a tape cartridge (about 170 feet of tape, see https://en.wikipedia.org/wiki/Bendix_G-15)
-    static framesPerInch = 10;          // frame pitch on the tape
+    static hubRPS =                     // take-up hub speed, rev/sec
+             PaperTapeReader.averageSpeed/PaperTapeReader.midpointDiameter/PaperTapeReader.framesPerInch; 
+                    
+    static tapeWords = 2500;            // max words in a tape cartridge, about 170 feet of tape
+                                        // (see https://en.wikipedia.org/wiki/Bendix_G-15)
     static spoolAlpha = Math.PI*(1 + 2*PaperTapeReader.tapeThickness);  // spool diameter growth factor
     static tapeFrames = PaperTapeReader.tapeWords*Util.wordBits/4; // max frames in a tape cartridge
 
@@ -92,7 +96,7 @@ class PaperTapeReader {
         const tapeLen = bufIndex/PaperTapeReader.framesPerInch;                 // in
         const spoolDiameter = tapeLen/PaperTapeReader.spoolAlpha*2*PaperTapeReader.tapeThickness +
                 PaperTapeReader.hubDiameter;                                    // in
-        const tapeSpeed = Math.PI*spoolDiameter/PaperTapeReader.hubRPS*PaperTapeReader.framesPerInch; // frames/sec
+        const tapeSpeed = Math.PI*spoolDiameter*PaperTapeReader.hubRPS*PaperTapeReader.framesPerInch; // frames/sec
 
         this.speed = Math.min(tapeSpeed*Util.timingFactor, 2500);               // frames/sec
         this.framePeriod = 1000/this.speed;                                     // ms/frame

@@ -301,8 +301,6 @@ class Drum {
         this.L and the timing, and will throttle performance as necessary */
         let i = wordTimes;
 
-        const startL = this.L.value;    // <<<<< DEBUG >>>>> //
-
         while (--i >= 0) {
             if (!this.procActive) {             // if proc stopped, just quit
                 debugger;
@@ -316,13 +314,6 @@ class Drum {
                 await this.procSync.wait();
             }
         }
-
-        // <<<<< DEBUG >>>>> //
-        const stopL = (startL + wordTimes) % Util.longLineSize;
-        if (this.L.value != stopL) {
-            console.debug(`>>>waitFor WRONG L: start=${startL}, words=${wordTimes}, stop=${stopL}, L=${this.L.value}`);
-            debugger;
-        }
     }
 
     /**************************************/
@@ -332,18 +323,9 @@ class Drum {
         Word-times must be non-negative and < 128.  */
         const count = Drum.computeDrumCount(this.L.value, wordTime);
 
-        const startL = this.L.value;    // <<<<< DEBUG >>>>> //
-
         if (count > 0) {                // if we're already there, do nothing
             await this.waitFor(count);
         }
-
-        // <<<<< DEBUG >>>>> //
-        if (this.L.value != wordTime) {
-            console.debug(`>>>waitUntil WRONG L: start=${startL}, stop=${wordTime}, L=${this.L.value}`);
-            debugger;
-        }
-
     }
 
     /**************************************/
@@ -502,15 +484,6 @@ class Drum {
     async ioStart(caption) {
         /* Initializes the drum and emulation timing for I/O */
 
-        //console.debug(`--IO Start: ${caption}`);
-        if (this.ioLastWasStart) {
-            console.debug(`>>> ioStart Last Was Start: was=${this.ioLastCaption}, now=${caption}`);
-            debugger;
-        }
-
-        this.ioLastWasStart = true;
-        this.ioLastCaption = caption;
-
         if (this.ioActive || this.ioSync.waiting) {
             console.debug(`<<< ioStart ${caption}: active=${this.ioActive}, waiting=${this.ioSync.waiting}`);
             debugger;
@@ -532,19 +505,6 @@ class Drum {
     /**************************************/
     ioStop(caption) {
         /* Disables drum timing for I/O */
-
-        //console.debug(`--IO Stop:  ${caption}`);
-        if (this.ioLastWasStart) {
-            if (this.ioLastCaption != caption) {
-                console.debug(`>>> ioStop Caption Mismatch: was ${this.ioLastCaption}, now ${caption}`);
-                debugger;
-            }
-        } else {
-            console.debug(`>>> ioStop Last NOT Start: was=${this.ioLastCaption}, now=${caption}`);
-            debugger;
-        }
-
-        this.ioLastWasStart = false;
 
         if (!this.ioActive /*|| this.ioSync.waiting*/) {
             console.debug(`<<< ioStop ${caption}: active=${this.ioActive}, waiting=${this.ioSync.waiting}, Proc active=${this.procActive}, Proc waiting=${this.procSync.waiting}`);
@@ -587,8 +547,6 @@ class Drum {
         update this.L and the timing, and will throttle performance as necessary */
         let i = wordTimes;
 
-        const startL = this.L.value;    // <<<<< DEBUG >>>>> //
-
         while (--i >= 0) {
             if (!this.ioActive) {               // if I/O stopped, just quit
                 debugger;
@@ -604,13 +562,6 @@ class Drum {
                 await this.ioSync.wait();
             }
         }
-
-        // <<<<< DEBUG >>>>> //
-        const stopL = (startL + wordTimes) % Util.longLineSize;
-        if (this.L.value != stopL && !this.ioCanceled) {
-            console.debug(`>>>ioWaitFor WRONG L: start=${startL}, words=${wordTimes}, stop=${stopL}, L=${this.L.value}`);
-            debugger;
-        }
     }
 
     /**************************************/
@@ -620,16 +571,8 @@ class Drum {
         Word-times must be non-negative and < 128 */
         const count = Drum.computeDrumCount(this.L.value, wordTime);
 
-        const startL = this.L.value;    // <<<<< DEBUG >>>>> //
-
         if (count > 0) {                // if we're already there, do nothing
             await this.ioWaitFor(count);
-        }
-
-        // <<<<< DEBUG >>>>> //
-        if (this.L.value != wordTime && !this.ioCanceled) {
-            console.debug(`>>>ioWaitUntil WRONG L: start=${startL}, stop=${wordTime}, L=${this.L.value}, count=${count}`);
-            debugger;
         }
     }
 
@@ -721,9 +664,6 @@ class Drum {
         let code = word >> keepBits;
         if (!this.ioCanceled) {
             this.write(28, (word & keepMask) << bits);
-
-            this.tracePrecession(code, word, `Precess AR:${bits} to Code`);   // <<< DEBUG ONLY >>>
-
             await this.ioWaitFor(1);
         }
         return [code, false];
@@ -802,10 +742,6 @@ class Drum {
             this.ioWriteMZ(((word & keepMask) << bits) | code);
             code = word >> keepBits;
             await this.ioWaitFor(1);
-
-            if (x == Util.fastLineSize-1) {
-                this.tracePrecession(code, word, `Precess MZ:${bits} to Code`);   // <<< DEBUG ONLY >>>
-            }
         }
 
         return code;
@@ -837,11 +773,6 @@ class Drum {
 
             this.ioWriteMZ(((word & keepMask) << bits) | code);
             code = word >> keepBits;
-
-            if (x == Util.fastLineSize-1) {
-                this.tracePrecession(code, word, `Precess L${line}:${bits} to MZ to Code`);   // <<< DEBUG ONLY >>>
-            }
-
             await this.ioWaitFor(1);
         }
 
@@ -918,11 +849,6 @@ class Drum {
 
             this.ioWrite19(newWord);
             code = word >> keepBits;
-
-            if (x == Util.longLineSize-1) {
-                this.tracePrecession(code, word, `Precess 19:${bits} to Code`);   // <<< DEBUG ONLY >>>
-            }
-
             await this.ioWaitFor(1);
         }
 
@@ -938,10 +864,6 @@ class Drum {
 
         await this.ioWaitUntil(0);      // start precession at T0
         for (let x=0; x<Util.longLineSize; ++x) {
-            ////if (this.ioCanceled) {
-            ////    break;
-            ////}
-
             word = this.ioRead19();
             if (word < 0 || word > Util.wordMask) {
                 debugger;
@@ -951,8 +873,6 @@ class Drum {
             this.ioWriteMZ(word);
             await this.ioWaitFor(1);
         }
-
-        this.tracePrecession(0, word, "Precess 19:4 words to MZ");   // <<< DEBUG ONLY >>>
     }
 
     /**************************************/

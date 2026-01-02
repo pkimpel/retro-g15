@@ -1470,9 +1470,9 @@ class Processor {
             eob = true;                         // canceled or not SLOW IN
         } else {
             if (code & IOCodes.ioDataMask) {    // it's a data frame
-                await this.drum.ioStart(`RIC data ${code.toString(2)}`);
+                await this.drum.ioStart("RIC data");
                 marker = await this.drum.ioPrecessCodeTo23(code, 4);
-                this.drum.ioStop(`RIC data ${code.toString(2)}`);
+                this.drum.ioStop("RIC data");
             } else {
                 switch(code & 0b00111) {
                 case IOCodes.ioCodeMinus:       // minus: set sign FF
@@ -1480,9 +1480,9 @@ class Processor {
                     break;
                 case IOCodes.ioCodeCR:          // carriage return: shift sign into word
                 case IOCodes.ioCodeTab:         // tab: shift sign into word
-                    await this.drum.ioStart(`RIC CR/TAB ${code.toString(2)}`);
+                    await this.drum.ioStart("RIC CR/TAB");
                     marker = await this.drum.ioPrecessCodeTo23(this.OS.value, 1);
-                    this.drum.ioStop(`RIC CR/TAB ${code.toString(2)}`);
+                    this.drum.ioStop("RIC CR/TAB");
                     this.OS.value = 0;
                     break;
                 case IOCodes.ioCodeStop:        // end/stop
@@ -1491,18 +1491,18 @@ class Processor {
                 case IOCodes.ioCodeReload:      // reload
                     if (!autoReload) {
                         await this.ioPrecession;
-                        await this.drum.ioStart(`RIC Stop/Reload ${code.toString(2)}`);
+                        await this.drum.ioStart("RIC Stop/Reload");
                         await this.drum.ioCopy23ToMZ(false);
-                        this.drum.ioStop(`RIC Stop/Reload ${code.toString(2)}`);
+                        this.drum.ioStop("RIC Stop/Reload");
                         this.ioPrecession = this.drum.ioPrecessMZTo19();    // uses separate drum timing
                     }
                     break;
                 case IOCodes.ioCodePeriod:      // period: ignored
                     break;
                 case IOCodes.ioCodeWait:        // wait: insert a 0 digit on input
-                    await this.drum.ioStart(`RIC Period/Wait ${code.toString(2)}`);
+                    await this.drum.ioStart("RIC Period/Wait");
                     marker = await this.drum.ioPrecessCodeTo23(0, 4);
-                    this.drum.ioStop(`RIC Period/Wait ${code.toString(2)}`);
+                    this.drum.ioStop("RIC Period/Wait");
                     break;
                 default:                        // treat everything else as space & ignore
                     break;
@@ -1513,9 +1513,9 @@ class Processor {
             if (autoReload && marker == 1) {
                 marker = 0;
                 await this.ioPrecession;
-                await this.drum.ioStart(`RIC AUTO Reload ${code.toString(2)}`);
+                await this.drum.ioStart("RIC AUTO Reload");
                 await this.drum.ioCopy23ToMZ(true);
-                this.drum.ioStop(`RIC AUTO Reload ${code.toString(2)}`);
+                this.drum.ioStop("RIC AUTO Reload");
                 this.ioPrecession = this.drum.ioPrecessMZTo19();            // uses separate drum timing
             }
         }
@@ -1731,9 +1731,6 @@ class Processor {
         await this.drum.ioStart("PUNCH 19");
 
         // Output an initial SPACE code (a quirk of the Slow-Out logic)
-        ////await this.drum.ioWaitUntil(0);                         // sync to T0 on the drum
-        ////await this.drum.ioWaitFor(Util.longLineSize);           // 1 drum-cycle delay for dummy format fetch
-        ////await this.drum.ioWaitFor(Util.longLineSize);           // 1 drum-cycle delay for dummy code fetch
         this.devices.paperTapePunch.write(IOCodes.ioCodeSpace);
 
         // Start a MZ reload cycle.
@@ -1748,10 +1745,6 @@ class Processor {
             // for proper timing.
             do {
                 if (!this.canceledIO) {
-                    if (this.tracing) {     // >>>>> DEBUG ONLY <<<<<
-                        this.traceIO("PUNCH 19 precess format");
-                    }
-
                     if (reloadMZ) {
                         reloadMZ = false;
                         fmt = await this.drum.ioPrecessLongLineToMZ(2, 3);  // get initial format code for line 19
@@ -1761,10 +1754,6 @@ class Processor {
                 }
 
                 if (!this.canceledIO) {
-                    if (this.tracing) {     // >>>>> DEBUG ONLY <<<<<
-                        this.traceIO("PUNCH 19 precess L19 digit");
-                    }
-
                     this.OS.value = this.drum.ioDetect19Sign107();          // detect sign before precession
                     [code, zeroed] = await this.formatOutputCharacter(fmt, this.boundIOPrecess19ToCode);
                     if (zeroed) {
@@ -1838,10 +1827,6 @@ class Processor {
             // will take four drum cycles for proper timing.
             do {
                 if (!this.canceledIO) {
-                    if (this.tracing) {     // >>>>> DEBUG ONLY <<<<<
-                        this.traceIO("TYPE AR precess format");
-                    }
-
                     if (reloadMZ) {
                         reloadMZ = false;
                         fmt = await this.drum.ioPrecessLongLineToMZ(3, 3);  // get initial format code for AR
@@ -1851,10 +1836,6 @@ class Processor {
                 }
 
                 if (!this.canceledIO) {
-                    if (this.tracing) {     // >>>>> DEBUG ONLY <<<<<
-                        this.traceIO("TYPE AR precess AR digit");
-                    }
-
                     this.OS.value = this.drum.AR.value & Util.wordSignMask; // detect sign before precession
                     [code, zeroed] = await this.formatOutputCharacter(fmt, this.boundIOPrecessARToCode);
                     // Unlike TYPE 19, TYPE AR is terminated by the first END format
@@ -1894,10 +1875,6 @@ class Processor {
                 }
 
                 if (!this.canceledIO) {
-                    if (this.tracing) {             // >>>>> DEBUG ONLY <<<<<
-                        this.traceIO(`TYPE AR delay 2 drum cycles: format=${fmt}, code=${code}`);
-                    }
-
                     await this.drum.ioWaitFor(Util.longLineSize*2);         // delay two extra drum cycles
                 }
 
@@ -1919,10 +1896,8 @@ class Processor {
             } while (code != IOCodes.ioCodeReload && printing);
         } while (printing);
 
-        this.traceIO("TYPE AR finished");
         if (this.canceledIO) {
             // Canceling an I/O causes a 4-word precession of line 19, see TOO p.92 & dwg 60.
-            this.traceIO("TYPE AR canceled precess L19 4 words");
             await this.drum.ioPrecess19ToMZ();
         }
 
@@ -1965,10 +1940,6 @@ class Processor {
             // will take four drum cycles for proper timing.
             do {
                 if (!this.canceledIO) {
-                    if (this.tracing) {     // >>>>> DEBUG ONLY <<<<<
-                        this.traceIO("TYPE 19 precess format");
-                    }
-
                     if (reloadMZ) {
                         reloadMZ = false;
                         fmt = await this.drum.ioPrecessLongLineToMZ(2, 3);  // get initial format code for line 19
@@ -1978,10 +1949,6 @@ class Processor {
                 }
 
                 if (!this.canceledIO) {
-                    if (this.tracing) {     // >>>>> DEBUG ONLY <<<<<
-                        this.traceIO("TYPE 19 precess L19 digit");
-                    }
-
                     this.OS.value = this.drum.ioDetect19Sign107();
                     [code, zeroed] = await this.formatOutputCharacter(fmt, this.boundIOPrecess19ToCode);
                     if (zeroed) {
@@ -2026,10 +1993,6 @@ class Processor {
                 }
 
                 if (!this.canceledIO) {
-                    if (this.tracing) {             // >>>>> DEBUG ONLY <<<<<
-                        this.traceIO(`TYPE 19 delay 2 drum cycles: format=${fmt}, code=${code}`);
-                    }
-
                     await this.drum.ioWaitFor(Util.longLineSize*2);         // delay two extra drum cycles
                 }
 
@@ -2051,7 +2014,6 @@ class Processor {
             } while (code != IOCodes.ioCodeReload && printing);
         } while (printing);
 
-        this.traceIO("TYPE 19 finished");
         this.drum.ioStop("TYPE 19");
         this.finishIO();
     }
@@ -2060,7 +2022,6 @@ class Processor {
     async readPaperTape() {
         /* Reads one block from the Paper Tape Reader to line 19 via line 23 */
 
-        console.debug(`>>> PT READ, OC=${this.OC.value.toString(2).padStart(5, "0")}`);
         this.OC.value = IOCodes.ioCmdPTRead;
         this.activeIODevice = this.devices.paperTapeReader;
         if (await this.devices.paperTapeReader.read()) {
@@ -2141,7 +2102,6 @@ class Processor {
         their operations. If the I/O is hung, no device is listening, so the
         I/O is simply terminated */
 
-        console.debug(`>>> CANCEL IO <<< OC=${this.OC.value.toString(2).padStart(5, "0")}`);
         if (this.activeIODevice) {
             if (this.hungIO) {
                 this.finishIO();
@@ -2157,7 +2117,6 @@ class Processor {
         /* Terminates an I/O operation, resetting state and setting Ready.
         Note that if no I/O is in progress, calling this has no effect */
 
-        console.debug(`>>> FINISH IO <<< OC=${this.OC.value.toString(2).padStart(5, "0")}`);
         if (this.drum.ioActive) {
             debugger;
         }
@@ -2184,7 +2143,6 @@ class Processor {
             } else {
                 this.warning(`>>InitiateIO with I/O active: S=${sCode.toString(2)}, OC=${this.OC.value.toString(2)}`);
                 sCode |= this.OC.value;         // S is always OR-ed into OC, not copied
-                //this.cancelIO();                // cancel the in-progress I/O and let it hang -- not what the G-15 did, though
             }
 
             // Just finish Transfer state for the command and otherwise ignore it
@@ -2192,13 +2150,12 @@ class Processor {
             return;
         }
 
-        console.debug(`>>> INIT IO <<< S=${sCode.toString(2).padStart(5, "0")}, OC=${this.OC.value.toString(2).padStart(5, "0")}`);
         if (this.C1.value) {
             this.AS.value = 1;          // set automatic line 23 reload
             if ((sCode & 0b1100) == 0b1100) {   // SLOW IN commands
-                await this.drum.ioStart(`INIT AUTO RELOAD S=${sCode.toString(2)}`);
+                await this.drum.ioStart("INIT AUTO RELOAD");
                 await this.drum.ioInitialize23ForAutoReload();
-                this.drum.ioStop(`INIT AUTO RELOAD S=${sCode.toString(2)}`);
+                this.drum.ioStop("INIT AUTO RELOAD");
             }
         }
 
@@ -2479,8 +2436,6 @@ class Processor {
             await this.transferDriver(this.transferNothing);
             if (this.OC.value == IOCodes.ioCmdReady) {
                 this.CQ.value = 1;
-                const drumLoc = Util.formatDrumLoc(this.cmdLine, this.drum.L.value, true);      // <<< DEBUG >>>
-                console.debug(`>>> TEST READY <<< ${this.drum.drumTime.toFixed().padStart(9)}: ${drumLoc}`);
             }
             break;
         case 1:                     // test Input Register ready
@@ -2755,11 +2710,6 @@ class Processor {
             }
             /*******************************************************************/
 
-            // >>>>> Special test for looping on word 0 of a line <<<<< //
-            if (this.cmdLoc.value == 0 && this.N.value == 0) {
-                debugger;
-            }
-
             break;
         case 24:
             this.suppressMinus0 = false;
@@ -2820,14 +2770,8 @@ class Processor {
         this.drum.procStart();
         do {                            // run until halted
             if (this.RC.value) {        // enter READ COMMAND state
-
-                ////this.debugCQState = this.CQ.value;      // >>>>> DEBUG TEMP ONLY <<<<<
-
                 await this.readCommand();
                 if (this.tracing) {
-
-                    ////if (this.D.value != 31 || this.S.value != 28 || this.debugCQState) // >>>>> DEBUG SUPPRESS TRACING TEST READY <<<<< //
-
                     this.traceState();  // DEBUG ONLY
                 }
 
