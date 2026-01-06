@@ -2107,7 +2107,9 @@ class Processor {
                 this.finishIO();
             } else {
                 this.activeIODevice.cancel();
-                this.canceledIO = true;
+                if (this.OC.value != IOCodes.ioCmdReady) {
+                    this.canceledIO = true;
+                }
             }
         }
     }
