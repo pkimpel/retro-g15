@@ -1463,11 +1463,11 @@ class Processor {
         /* Receives the next I/O code from an input device and either stores
         it onto the drum or acts on its control function */
         const autoReload = this.AS.value && (this.OC.value & 0b1100) == 0b1100; // SLOW IN only
-        let eob = false;                // end-of-block flag
+        let eob = 0;                    // end-of-block flag
         let marker = 0;                 // auto-reload marker code
 
         if ((this.OC.value & 0b01100) != 0b01100) {
-            eob = true;                         // canceled or not SLOW IN
+            eob = 1;                            // canceled or not SLOW IN
         } else {
             if (code & IOCodes.ioDataMask) {    // it's a data frame
                 await this.drum.ioStart("RIC data");
@@ -1486,7 +1486,7 @@ class Processor {
                     this.OS.value = 0;
                     break;
                 case IOCodes.ioCodeStop:        // end/stop
-                    eob = true;
+                    eob = 1;
                     // no break: Stop implies Reload -- if not TYPE IN -- see receiveKeyboardCode()
                 case IOCodes.ioCodeReload:      // reload
                     if (!autoReload) {
@@ -1629,8 +1629,8 @@ class Processor {
         Otherwise it is an I/O data/control code to be processed as TYPE IN
         (D=31, S=12) input. Note that the "S" key can be used for both purposes
         depending on the state of this.enableSwitch. Returns 0 if the input is
-        accepted and 0 if rejected. If the ENABLE switch is not on and TYPE IN
-        is not active, the keystroke is ignored and 1 is returned */
+        accepted and ` if rejected or it's a STOP. If the ENABLE switch is not
+        on and TYPE IN is not active, the keystroke is ignored and 1 is returned */
         let result = 1;                 // assume it's going to be rejected
 
         if (!this.poweredOn) {                                  // ignore the keyboard if powered off
@@ -1640,7 +1640,7 @@ class Processor {
         } else if (this.OC.value == IOCodes.ioCmdTypeIn) {      // Input during TYPE IN
             if (code == IOCodes.ioCodeStop) {                   // check for cancel
                 this.finishIO();                                // no reload with STOP from Typewriter
-                result = 0;                                     // accept the keystroke
+                result = 1;                                     // accept the keystroke as a STOP
             } else if (code > 0) {
                 result = await this.receiveInputCode(code);
             }
@@ -2084,6 +2084,7 @@ class Processor {
 
         this.OC.value = IOCodes.ioCmdTypeIn;
         this.activeIODevice = this.devices.typewriter;
+        this.activeIODevice.read();
     }
 
     /**************************************/

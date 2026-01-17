@@ -28,6 +28,11 @@ class Typewriter {
     static invKeyFlashTime = 150;       // keyboard lock flash time, ms
     static maxScrollLines = 10000;      // max lines retained in "paper" area
     static maxCols = 132;               // maximum number of columns per line
+    static tomPeriod = 1000/8.6;        // keystroke period for Type-O-Matic, ms (8.6/sec)
+
+    static commentRex = /#[^\x0D\x0A]*/g;
+    static newLineRex = /[\x0D\x0A\x0C]+/g;
+
     static printCodes = [
         " ", "-", "\n", "\t", "$", "!", ".", "~", " ", "-", "\n", "\t", "$", "!", ".", "~",
         "0", "1",  "2",  "3", "4", "5", "6", "7", "8", "9",  "u",  "v", "w", "x", "y", "z"];
@@ -40,7 +45,7 @@ class Typewriter {
             processor is the Processor object
             window is the ControlPanel window
         */
-        let $$ = this.$$ = context.$$;
+        const $$ = this.$$ = context.$$;
         this.processor = context.processor;
         this.window = context.window;
         this.doc = this.window.document;
@@ -48,20 +53,35 @@ class Typewriter {
         this.paperDoc = this.platen.contentDocument;
         this.paperDoc.title = this.doc.title + " Paper";
         this.paper = this.paperDoc.getElementById("Paper");
+        this.readEnabled = false;       // true when a TYPE IN is active
         this.tabStop = [6,11,16,21,26,31,36,41,46,51,56,61,66,71,76,81,86,
                         91,96,101,106,111,116,121,126];
+        this.timer = new Util.Timer();
 
         this.boundMenuClick = this.menuClick.bind(this);
         this.boundPanelKeydown = this.panelKeydown.bind(this);
         this.boundPanelKeyup = this.panelKeyup.bind(this);
+        this.boundPanelPaste = this.panelPaste.bind(this);
+        this.boundTOMPanelClick = this.tomPanelClick.bind(this);
+
+        // Keyboard Type-O-Matic buffer controls
+        this.tomBuffer = "";            // Type-O-Matic keystroke buffer
+        this.tomPaused = false;         // true if Type-O-Matic is currently suspended
+        this.tomIndex = 0;              // current offset into the Type-O-Matic buffer
+        this.tomLength = 0;             // current length of the Type-O-Matic text
+        this.tomMeter = $$("TypeOMaticMeterBar");
 
         this.clear();
+        this.closeTypeOMaticPanel();
 
         $$("FrontPanel").addEventListener("keydown", this.boundPanelKeydown, false);
         $$("FrontPanel").addEventListener("keyup", this.boundPanelKeyup, false);
+        $$("FrontPanel").addEventListener("paste", this.boundPanelPaste, true);
         this.paperDoc.addEventListener("keydown", this.boundPanelKeydown, false);
         this.paperDoc.addEventListener("keyup", this.boundPanelKeyup, false);
+        this.paperDoc.addEventListener("paste", this.boundPanelPaste, true);
         $$("TypewriterMenuIcon").addEventListener("click", this.boundMenuClick, false);
+        $$("TypeOMaticPanel").addEventListener("click", this.boundTOMPanelClick, false);
 
     }
 
@@ -82,6 +102,8 @@ class Typewriter {
         /* Cancels any TypeIn I/O currently in process */
 
         this.busy = false;
+        this.readEnabled = false;
+        console.debug(`cancel busy=false`);
         this.processor.cancelTypeIn();
     }
 
@@ -105,35 +127,33 @@ class Typewriter {
     }
 
     /**************************************/
-    async panelKeydown(ev) {
-        /* Handles the keydown event from FrontPanel. Processes data input from
-        the keyboard, Enable switch command codes, and Escape (for toggling the
-        Enable switch) */
-        let code = ev.key.charCodeAt(0) & 0x7F;
-        let key = ev.key;
-        let p = this.processor;         // local copy of Processor reference
+    async processKeystroke(key) {
+        /* Handles keystrokes from the keyboard and Type-O-Matic buffer.
+        Processes data input from the keyboard, Enable switch command codes,
+        and Escape (for toggling the Enable switch). Returns:
+            0 if the keystroke was accepted by the processor
+            1 if the keystroke was a STOP or refused by the processor
+            2 if the keystroke was invalid */
+        const p = this.processor;       // local copy of Processor reference
         let result = 0;                 // assume it's a valid keystroke
 
         if (this.busy) {
-            this.flashInvalidKey();
-            return;                     // typing too fast -- discard keystroke
-        } else if (ev.ctrlKey || ev.altKey || ev.metaKey) {
-            this.flashInvalidKey();
-            return;                     // ignore this keystroke, allow default action
+            this.flashInvalidKey();     // typing too fast -- discard keystroke
+            console.debug(`consoleKeystroke IS BUSY:    key=${key}, result=${result}`);
+            return 2;
         }
 
         this.busy = true;
+        console.debug(`consoleKeystroke busy=true:  key=${key}, result=${result}`);
         switch (key) {
-        case "-": case "/": case ".":
+        case "-": case "/":
         case "0": case "1": case "2": case "3": case "4":
         case "5": case "6": case "7": case "8": case "9":
         case "S": case "s":
         case "U": case "V": case "W": case "X": case "Y": case "Z":
         case "u": case "v": case "w": case "x": case "y": case "z":
-            ev.preventDefault();
-            ev.stopPropagation();
             this.printChar(key);
-            result = await p.receiveKeyboardCode(IOCodes.ioCodeFilter[code]);
+            result = await p.receiveKeyboardCode(IOCodes.ioCodeFilter[key.charCodeAt(0) & 0x7F]);
             break;
         case "A": case "a":
         case "B": case "b":
@@ -145,55 +165,91 @@ class Typewriter {
         case "Q": case "q":
         case "R": case "r":
         case "T": case "t":
-            ev.preventDefault();
-            ev.stopPropagation();
             this.printChar(key);
-            result = await p.receiveKeyboardCode(-code);
+            result = await p.receiveKeyboardCode(-(key.charCodeAt(0) & 0x7F));
             break;
         case "Enter":
-            ev.preventDefault();
-            ev.stopPropagation();
             this.printNewLine();
             result = await p.receiveKeyboardCode(IOCodes.ioCodeCR);
             break;
         case "Tab":
-            ev.preventDefault();
-            ev.stopPropagation();
             this.printTab();
             result = await p.receiveKeyboardCode(IOCodes.ioCodeTab);
             break;
-        case "Escape":
-            ev.preventDefault();
-            ev.stopPropagation();
-            if (!ev.repeating) {
-                p.enableSwitchChange(1);
-                this.$$("EnableSwitchOff").checked = false;
-                this.$$("EnableSwitchOn").checked = true;
-            }
-            break;
-        case "Backspace":
-            result = 1;                 // invalid keystroke
-            ev.preventDefault();
-            ev.stopPropagation();
-            break;
+        case " ":
+        case ".":
+            this.printChar(key);
+            break;                      // just eat spaces and periods, but consider them valid
         default:
-            result = 1;                 // invalid keystroke
-            switch (ev.location) {
-            case KeyboardEvent.DOM_KEY_LOCATION_STANDARD:
-            case KeyboardEvent.DOM_KEY_LOCATION_NUMPAD:
-                if (key.length == 1) {
-                    ev.preventDefault();
-                    ev.stopPropagation();
-                    this.printChar(key);
-                }
-                break;
-            }
+            result = 2;                 // invalid keystroke
             break;
         }
 
         this.busy = false;
+        console.debug(`consoleKeystroke busy=false: key=${key}, result=${result}`);
         if (result) {
             this.flashInvalidKey();
+        }
+
+        return result;
+    }
+
+    /**************************************/
+    async panelKeydown(ev) {
+        /* Handles the keydown event from FrontPanel. If it's an Escape,
+        Backspace or a valid G-15 keystroke, then consume it here. If not,
+        then check if it's from the standard or numpad sections of the keyboard.
+        If so and its "key" value is a single character, print it but otherwise
+        discard that keystroke. In all other cases, simply pass along the
+        keystroke to the next higher level for its default action */
+
+        if (ev.ctrlKey || ev.altKey || ev.metaKey) {
+            this.flashInvalidKey();     // ignore this keystroke, allow default action
+        } else {
+            const key = ev.key;
+            switch (key) {
+            case "Escape":
+                ev.preventDefault();
+                ev.stopPropagation();
+                if (!ev.repeating) {
+                    this.processor.enableSwitchChange(1);
+                    this.$$("EnableSwitchOff").checked = false;
+                    this.$$("EnableSwitchOn").checked = true;
+                }
+                break;
+            case "Backspace":
+                ev.preventDefault();
+                ev.stopPropagation();
+                break;
+            default:
+                const result = await this.processKeystroke(ev.key);
+                switch (result) {
+                case 0:                 // valid keystroke
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    break;
+                case 1:                 // STOP or refused by processor
+                    this.readEnabled = false;
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    break;
+                default:                // invalid keystroke
+                    switch (ev.location) {
+                    case KeyboardEvent.DOM_KEY_LOCATION_STANDARD:
+                    case KeyboardEvent.DOM_KEY_LOCATION_NUMPAD:
+                        if (key.length == 1) {
+                            ev.preventDefault();
+                            ev.stopPropagation();
+                            this.printChar(key);
+                        }
+                        break;
+                    default:
+                        // Otherwise, pass along for default action.
+                        break;
+                    }
+                    break;
+                }
+            }
         }
     }
 
@@ -210,6 +266,144 @@ class Typewriter {
             this.$$("EnableSwitchOff").checked = true;
             this.$$("EnableSwitchOn").checked = false;
             break;
+        }
+    }
+
+    /**************************************/
+    openTypeOMaticPanel() {
+        /* Opens the Type-O-Matic panel */
+
+        this.$$("TypeOMaticPanel").style.display = "block";
+    }
+
+    /**************************************/
+    closeTypeOMaticPanel() {
+        /* Closes the Type-O-Matic panel */
+
+        this.$$("TypeOMaticPanel").style.display = "none";
+    }
+
+    /**************************************/
+    async enableTypeOMatic() {
+        /* Handles submission of virtual keystrokes from the Type-O-Matic buffer */
+        let typing = this.tomIndex < this.tomLength && !this.tomPaused;
+
+        if (!typing) {
+            return;
+        }
+
+        this.openTypeOMaticPanel();
+        let nextKeystrokeStamp = performance.now();
+
+        do {
+            let key = this.tomBuffer[this.tomIndex];
+            switch (key) {
+            case "t":
+                key = "Tab";
+                break;
+            case "c":
+                key = "Enter";
+                break;
+            }
+
+            const result = await this.processKeystroke(key);
+            switch (result) {
+            case 0:                     // keystroke consumed
+            case 2:                     // invalid keystroke
+                nextKeystrokeStamp += Typewriter.tomPeriod;
+                await this.timer.delayUntil(nextKeystrokeStamp);
+                break;
+            case 1:                     // STOP or refused by processor
+                typing = false;
+                this.readEnabled = false;
+                break;
+            default:                    // invalid result (should never happen)
+                throw new Error(`Invalid processKeystroke result: ${result}`);
+                typing = false;
+                break;
+            }
+
+            ++this.tomIndex;
+            this.tomMeter.value = this.tomLength - this.tomIndex;
+            if (this.tomIndex >= this.tomLength) {
+                typing = false;
+                this.closeTypeOMaticPanel()
+            } else if (this.tomPaused) {
+                typing = false;
+            }
+        } while (typing);
+    }
+
+    /**************************************/
+    stripComments(buf) {
+        /* Strips "#" comments from a text buffer, returning a new buffer */
+
+        return buf.replace(Typewriter.commentRex, "")
+                  .replace(Typewriter.newLineRex, "")
+                  .toLowerCase();
+    }
+
+    /**************************************/
+    panelPaste(ev) {
+        /* Event handler for pasting into the FrontPanel. Appends the paste
+        text to this.tomBuffer and opens the Type-O-Matic panel if needed */
+        const text = (ev.clipboardData || window.clipboardData).getData("text");
+
+        ev.preventDefault();
+        ev.stopPropagation();
+
+        if (this.tomIndex >= this.tomLength) {
+            this.tomBuffer = this.stripComments(text);
+        } else {
+            this.tomBuffer = this.tomBuffer.substring(this.tomIndex) + this.stripComments(text);
+        }
+
+        this.tomIndex = 0;
+        this.tomLength = this.tomBuffer.length;
+        this.tomMeter.value = this.tomLength;
+        this.tomMeter.max = this.tomLength;
+        this.openTypeOMaticPanel();
+        if (this.readEnabled) {
+            this.enableTypeOMatic();
+        }
+    }
+
+    /**************************************/
+    tomPanelClick(ev) {
+        /* Event handler for clicks in the Type-O-Matic panel */
+
+        switch (ev.target.id) {
+        case "TypeOMaticPauseBtn":
+            this.tomPaused = !this.tomPaused;
+            if (this.tomPaused) {
+                this.$$("TypeOMaticPauseBtn").textContent = "Resume";
+                this.$$("TypeOMaticPauseBtn").classList.add("paused");
+            } else {
+                this.$$("TypeOMaticPauseBtn").textContent = "Pause";
+                this.$$("TypeOMaticPauseBtn").classList.remove("paused");
+                this.enableTypeOMatic();
+            }
+            break;
+        case "TypeOMaticClearBtn":
+            this.tomIndex = this.tomLength = 0;
+            this.tomBuffer = "";
+            this.tomPaused = false;
+            this.$$("TypeOMaticPauseBtn").textContent = "Pause";
+            this.$$("TypeOMaticPauseBtn").classList.remove("paused");
+            this.closeTypeOMaticPanel();
+            break;
+        }
+    }
+
+    /**************************************/
+    read() {
+        /* Called by Processor when a TYPE IN command is initiated. If the
+        Type-O-Matic buffer is active, initiates the sending of virtual
+        keystrokes from the Type-O-Matic buffer */
+
+        this.readEnabled = true;
+        if (this.tomIndex < this.tomLength && !this.tomPaused) {
+            this.enableTypeOMatic();
         }
     }
 
@@ -264,7 +458,7 @@ class Typewriter {
             ++this.printerCol;
         } else {                        // right margin overflow -- overprint last col
             this.paper.lastChild.nodeValue =
-                    `${line.substring(0, Typewriter.maxCols-1)}${Typewriter.pillowChar}{Typewriter.cursorChar}`;
+                    `${line.substring(0, Typewriter.maxCols-1)}${Typewriter.pillowChar}${Typewriter.cursorChar}`;
         }
     }
 
@@ -409,6 +603,7 @@ class Typewriter {
     shutDown() {
         /* Shuts down the device */
 
+        this.closeTypeOMaticPanel();
         this.$$("FrontPanel").removeEventListener("keydown", this.boundPanelKeydown, false);
         this.$$("FrontPanel").removeEventListener("keyup", this.boundPanelKeyup, false);
         this.paperDoc.removeEventListener("keydown", this.boundPanelKeydown, false);

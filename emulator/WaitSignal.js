@@ -31,6 +31,7 @@ class WaitSignal {
         is a value that is returned to the caller.
         See: https://stackoverflow.com/questions/26150232/resolve-javascript-
         promise-outside-the-promise-constructor-scope */
+
         if (!this.waitPromise) {
             this.waiting = true;
             this.waitPromise = new Promise((resolve, reject) => {

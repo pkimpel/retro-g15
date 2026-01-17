@@ -252,7 +252,7 @@ class ControlPanel {
         let now = performance.now();
 
         if (this.lastBellTime + ControlPanel.bellRecycleTime < now) {
-            let volume = 0.25;              // default maximum volume
+            let volume = 0.50;          // default maximum volume
             if (wordTimes < Util.longLineSize) {
                 volume *= wordTimes/Util.longLineSize;
             }

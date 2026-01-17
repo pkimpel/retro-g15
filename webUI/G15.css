@@ -158,7 +158,7 @@ H1 {
     height:             40px;
     z-index:            12;
     text-align:         center;
-    background-color:   #FFC;
+    background-color:   #FFE;
     border:             1px solid #666;
     box-shadow:         3px 3px 3px black}
 #PTMenu BUTTON {
@@ -437,6 +437,7 @@ H1 {
     color:              black;
     background-color:   #FFE;
     border:             1px solid gray}
+
 #TypewriterMenuIcon {
     position:           absolute;
     top:                4px;
@@ -451,7 +452,7 @@ H1 {
     height:             40px;
     z-index:            12;
     text-align:         center;
-    background-color:   #FFC;
+    background-color:   #FFE;
     border:             1px solid #666;
     box-shadow:         3px 3px 3px #999}
 #TypewriterMenu BUTTON {
@@ -463,3 +464,33 @@ H1 {
     background-color:   white;
     border:             2px solid #666;
     transform:          translate(0, -50%)}
+
+#TypeOMaticPanel {
+    position:           absolute;
+    display:            none;
+    top:                32px;
+    right:              4px;
+    width:              fit-content;
+    height:             fit-content;
+    padding:            4px;
+    z-index:            10;
+    opacity:            0.75;
+    text-align:         center;
+    white-space:        nowrap;
+    font-family:        DejaVuSansWeb;
+    font-weight:        bold;
+    color:              black;
+    background-color:   #FFE;
+    border:             2px solid #080;
+    box-shadow:         3px 3px 3px #999}
+#TypeOMaticMeterBar {
+    width:              24ch;
+    margin-top:         4px;
+    margin-bottom:      4px}
+#TypeOMaticClearBtn, #TypeOMaticPauseBtn {
+    height:             24px;
+    width:              80px;
+    border-color:       #666}
+#TypeOMaticPanel .paused {
+    color:              white;
+    background-color:   red}
