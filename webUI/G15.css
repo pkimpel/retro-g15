@@ -152,24 +152,30 @@ H1 {
 #PTMenu {
     position:           absolute;
     display:            none;
-    top:                -2px;
-    right:              -2px;
-    width:              320px;
-    height:             40px;
+    top:                24px;
+    right:              2px;
+    width:              fit-content;
+    height:             48px;
     z-index:            12;
-    text-align:         center;
+    padding-left:       8px;
+    padding-right:      8px;
     background-color:   #FFE;
     border:             1px solid #666;
-    box-shadow:         3px 3px 3px black}
+    border-radius:      6px;
+    box-shadow:         3px 3px 3px #666}
 #PTMenu BUTTON {
     position:           relative;
     top:                50%;
-    height:             24px;
+    height:             32px;
     font-size:          9pt;
     line-height:        100%;
+    vertical-align:     middle;
     background-color:   white;
-    border:             2px solid #666;
+    border:             2px solid #999;
     transform:          translate(0, -50%)}
+#PTPunchRunBtn.punchingLeader {
+    color:              white;
+    background-color:   red}
 
 #PaperTapeReader {
     position:           absolute;
@@ -177,18 +183,20 @@ H1 {
     left:               8px;
     right:              8px}
 #PRCaption {
-    top:                16px;
+    top:                6px;
     left:               0;
     width:              60px;
     text-align:         left}
-
+#PRFormatSelect {
+    position:           absolute;
+    top:                0;
+    left:               60px}
 #PRFileSelector {
     position:           absolute;
     top:                0;
-    left:               60px;
-    width:              calc(100% - 170px);
+    left:               124px;
+    right:              0;
     color:              white}
-
 #PRRewindCaption {
     display:            none;           /* for now... */
     position:           absolute;
@@ -461,8 +469,9 @@ H1 {
     height:             24px;
     font-size:          9pt;
     line-height:        100%;
+    vertical-align:     middle;
     background-color:   white;
-    border:             2px solid #666;
+    border:             2px solid #999;
     transform:          translate(0, -50%)}
 
 #TypeOMaticPanel {

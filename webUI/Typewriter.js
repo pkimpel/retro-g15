@@ -28,7 +28,7 @@ class Typewriter {
     static invKeyFlashTime = 150;       // keyboard lock flash time, ms
     static maxScrollLines = 10000;      // max lines retained in "paper" area
     static maxCols = 132;               // maximum number of columns per line
-    static tomPeriod = 1000/8.6;        // keystroke period for Type-O-Matic, ms (8.6/sec)
+    static defaultInputRate = 8.6;      // default max typing rate (used by Type-O-Matic)
 
     static commentRex = /#[^\x0D\x0A]*/g;
     static newLineRex = /[\x0D\x0A\x0C]+/g;
@@ -103,7 +103,6 @@ class Typewriter {
 
         this.busy = false;
         this.readEnabled = false;
-        console.debug(`cancel busy=false`);
         this.processor.cancelTypeIn();
     }
 
@@ -139,12 +138,10 @@ class Typewriter {
 
         if (this.busy) {
             this.flashInvalidKey();     // typing too fast -- discard keystroke
-            console.debug(`consoleKeystroke IS BUSY:    key=${key}, result=${result}`);
             return 2;
         }
 
         this.busy = true;
-        console.debug(`consoleKeystroke busy=true:  key=${key}, result=${result}`);
         switch (key) {
         case "-": case "/":
         case "0": case "1": case "2": case "3": case "4":
@@ -186,7 +183,6 @@ class Typewriter {
         }
 
         this.busy = false;
-        console.debug(`consoleKeystroke busy=false: key=${key}, result=${result}`);
         if (result) {
             this.flashInvalidKey();
         }
@@ -217,6 +213,13 @@ class Typewriter {
                     this.$$("EnableSwitchOn").checked = true;
                 }
                 break;
+            case "Tab":                 // special handling for Firefox 147.0.2 and later
+            case "/":
+                ev.preventDefault();
+                ev.stopPropagation();
+                if (await this.processKeystroke(ev.key) == 1) {
+                    this.readEnabled = false;
+                }
             case "Backspace":
                 ev.preventDefault();
                 ev.stopPropagation();
@@ -292,8 +295,9 @@ class Typewriter {
             return;
         }
 
-        this.openTypeOMaticPanel();
+        const tomPeriod = 1000/Math.min(Typewriter.defaultInputRate*Util.timingFactor, 2500); // ms
         let nextKeystrokeStamp = performance.now();
+        this.openTypeOMaticPanel();
 
         do {
             let key = this.tomBuffer[this.tomIndex];
@@ -310,7 +314,7 @@ class Typewriter {
             switch (result) {
             case 0:                     // keystroke consumed
             case 2:                     // invalid keystroke
-                nextKeystrokeStamp += Typewriter.tomPeriod;
+                nextKeystrokeStamp += tomPeriod;
                 await this.timer.delayUntil(nextKeystrokeStamp);
                 break;
             case 1:                     // STOP or refused by processor

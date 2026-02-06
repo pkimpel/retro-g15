@@ -22,8 +22,9 @@ import {openPopup} from "./PopupUtil.js";
 
 class PaperTapePunch {
 
-    static bufferLimit = 0x40000;       // maximum output that will be buffered (about 4 hours worth)
+    static bufferLimit = 0x3FFFF;       // maximum output that will be buffered (about 4 hours worth)
     static viewMax = 60;                // characters retained in the tape view (originally 90)
+    static punchLeaderCount = 75;       // blank frames in a tape leader
     static interpunct = "\u00B7";       // middle-dot for blank frames in the PTView box
     static tapeCodes = [
         " ", "-", "C", "T", "S", "/", ".", "~", " ", "-", "C", "T", "S", "/", ".", "~",
@@ -43,6 +44,7 @@ class PaperTapePunch {
         this.doc = this.window.document;
         this.tapeView = $$("PTView");
         this.boundMenuClick = this.menuClick.bind(this);
+        this.buffer = new Uint8Array(PaperTapePunch.bufferLimit+1);
 
         this.clear();
 
@@ -65,9 +67,87 @@ class PaperTapePunch {
     setPunchEmpty() {
         /* Empties the punch output buffer */
 
-        this.buffer = "";               // punch output buffer
+        this.buffer.fill(0);            // punch output buffer
         this.bufLength = 0;             // current output buffer length (characters)
         this.tapeView.value = "";
+    }
+
+    /**************************************/
+    async punchLeaderFrames() {
+        /* Initiates and terminates punching tape-feed frames */
+        const buf = this.buffer;
+        const timer = new Util.Timer();
+        const framePeriod = Util.drumCycleTime*2;       // about 17.2ms at 1800 RPM
+        let len = this.bufLength;
+        let nextFrameStamp = performance.now();
+
+        this.$$("PTPunchRunBtn").classList.add("punchingLeader");
+        for (let x=PaperTapePunch.punchLeaderCount; x>0; --x) {
+            nextFrameStamp += framePeriod;
+            await timer.delayUntil(nextFrameStamp);
+            if (len >= PaperTapePunch.bufferLimit) {
+                break;
+            } else {
+                this.buffer[len] = IOCodes.ioCodeSpace;
+                ++len;
+
+                // Update the tape view control
+                let view = this.tapeView.value; // current tape view contents
+                if (view.length < PaperTapePunch.viewMax) {
+                    this.tapeView.value = view + PaperTapePunch.interpunct;
+                } else {
+                    this.tapeView.value =
+                            view.slice(1-PaperTapePunch.viewMax) + PaperTapePunch.interpunct;
+                }
+            }
+        }
+
+        this.$$("PTPunchRunBtn").classList.remove("punchingLeader");
+        this.bufLength = len;
+    }
+
+    /**************************************/
+    btoaUint8(bytes, start, end) {
+        /* Converts a Uint8Array directly to base-64 encoding without using
+        window.btoa and returns the base-64 string. "start" is the 0-relative
+        index to the first byte; "end" is the 0-relative index to the ending
+        byte + 1. Adapted from https://gist.github.com/jonleighton/958841 */
+        let b64 = "";
+        const byteLength = end - start;
+        const remainderLength = byteLength % 3;
+        const mainLength = byteLength - remainderLength;
+
+        const encoding = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+        // Main loop deals with bytes in chunks of 3.
+        for (let i=start; i<mainLength; i+=3) {
+            // Combine the three bytes into a single integer.
+            const chunk = (((bytes[i] << 8) | bytes[i+1]) << 8) | bytes[i+2];
+
+            // Extract 6-bit segments from the triplet and convert to the ASCII encoding.
+            b64 += encoding[(chunk & 0xFC0000) >> 18] +
+                   encoding[(chunk &  0x3F000) >> 12] +
+                   encoding[(chunk &    0xFC0) >>  6] +
+                   encoding[chunk &      0x3F];
+        }
+
+        // Deal with any remaining bytes and padding.
+        if (remainderLength == 1) {
+           // Encode the high-order 6 and low-order 2 bits, and add padding.
+           const chunk = bytes[mainLength];
+           b64 += encoding[(chunk & 0xFC) >> 2] +
+                  encoding[(chunk & 0x03) << 4] + "==";
+        } else if (remainderLength == 2) {
+           // Encode the high-order 6 bits of the first byte, plus the low-order
+           // 2 bits of the first byte with the high-order 4 bits of the second
+           // byte, and add padding.
+           const chunk = (bytes[mainLength] << 8) | bytes[mainLength+1];
+           b64 += encoding[(chunk & 0xFC00) >> 10] +
+                  encoding[(chunk &  0x3F0) >> 4] +
+                  encoding[(chunk &    0xF) << 2] + "=";
+        }
+
+        return b64;
     }
 
     /**************************************/
@@ -75,35 +155,99 @@ class PaperTapePunch {
         /* Copies the text contents of the "paper" area of the device, opens a new
         temporary window, and pastes that text into the window so it can be copied
         or saved by the user */
-        var title = "retro-g15 Paper Tape Punch Output";
 
         openPopup(this.window, "./FramePaper.html", "",
                 "scrollbars,resizable,width=500,height=500",
                 this, (ev) => {
-            let doc = ev.target;
-            let win = doc.defaultView;
+            const doc = ev.target;
+            const win = doc.defaultView;
+            const buf = this.buffer;
+            const len = this.bufLength;
+            let text = "";
 
-            doc.title = title;
+            for (let x=0; x<len; ++x) {
+                const code = buf[x];
+                text += PaperTapePunch.tapeCodes[code];
+                switch (code) {
+                case IOCodes.IOCodeReload:
+                    text += "\n";
+                    break;
+                case IOCodes.IOCodeStop:
+                    text += "\n\n";
+                    break;
+                }
+            }
+
+            doc.title = "retro-g15 Paper Tape Punch Output";
             win.moveTo((screen.availWidth-win.outerWidth)/2, (screen.availHeight-win.outerHeight)/2);
-            doc.getElementById("Paper").textContent = this.buffer;
+            doc.getElementById("Paper").textContent = text;
         });
     }
 
     /**************************************/
-    saveTape() {
-        /* Extracts the text of the punch output area, converts it to a
-        DataURL, and constructs a link to cause the URL to be "downloaded" and
-        stored on the local device */
-        let text = this.buffer;
+    saveAsPTI() {
+        /* Converts the punch buffer to PTR format, builds a DataURL, and
+        constructs a link to cause the URL to be "downloaded" to the local
+        device */
+        const buf = this.buffer;
+        const len = this.bufLength;
+        let text = "";
 
-        if (text[text.length-1] != "\n") {      // make sure there's a final new-line
-            text = text & "\n";
+        for (let x=0; x<len; ++x) {
+            const code = buf[x];
+            text += PaperTapePunch.tapeCodes[code];
+            switch (code) {
+            case IOCodes.IOCodeReload:
+                text += "\n";
+                break;
+            case IOCodes.IOCodeStop:
+                text += "\n\n";
+                break;
+            }
+        }
+
+        if (!text.endsWith("\n")) {     // make sure there's a final new-line
+            text += "\n";
         }
 
         const url = `data:text/plain,${encodeURIComponent(text)}`;
         const hiddenLink = this.doc.createElement("a");
+        hiddenLink.setAttribute("download", "retro-g15-Paper-Tape.pti");
+        hiddenLink.setAttribute("href", url);
+        hiddenLink.click();
+    }
 
-        hiddenLink.setAttribute("download", "retro-g15-Paper-Tape.txt");
+    /**************************************/
+    saveAsPTR() {
+        /* Converts the punch buffer to PTR format, builds a DataURL, and
+        constructs a link to cause the URL to be "downloaded" to the local
+        device */
+
+        const url = "data:application/octet-stream;base64," +
+                    this.btoaUint8(this.buffer, 0, this.bufLength);
+        const hiddenLink = this.doc.createElement("a");
+        hiddenLink.setAttribute("download", "retro-g15-Paper-Tape.ptr");
+        hiddenLink.setAttribute("href", url);
+        hiddenLink.click();
+    }
+
+    /**************************************/
+    saveAsPT() {
+        /* Converts the punch buffer to PT format, builds a DataURL, and
+        constructs a link to cause the URL to be "downloaded" to the local
+        device */
+        const buf = this.buffer;
+        const len = this.bufLength;
+        const image = new Uint8Array(len);
+
+        for (let x=0; x<len; ++x) {     // reverse channel bits in each byte
+            image[x] = IOCodes.rev5Bits[buf[x]];
+        }
+
+        const url = "data:application/octet-stream;base64," +
+                    this.btoaUint8(image, 0, len);
+        const hiddenLink = this.doc.createElement("a");
+        hiddenLink.setAttribute("download", "retro-g15-Paper-Tape.pt");
         hiddenLink.setAttribute("href", url);
         hiddenLink.click();
     }
@@ -133,12 +277,29 @@ class PaperTapePunch {
         case "PTUnloadCaption":
             this.menuOpen();
             break;
-        case "PTExtractBtn":
-            this.extractTape();
-            break;
-        case "PTSaveBtn":
+        case "PTPunchRunBtn":
             if (this.ready && !this.busy) {
-                this.saveTape();
+                this.punchLeaderFrames();
+            }
+            break;
+        case "PTSavePTIBtn":
+            if (this.ready && !this.busy) {
+                this.saveAsPTI();
+            }
+            break;
+        case "PTSavePTBtn":
+            if (this.ready && !this.busy) {
+                this.saveAsPT();
+            }
+            break;
+        case "PTSavePTRBtn":
+            if (this.ready && !this.busy) {
+                this.saveAsPTR();
+            }
+            break;
+        case "PTExtractBtn":
+            if (this.ready && !this.busy) {
+                this.extractTape();
             }
             break;
         case "PTClearBtn":
@@ -183,26 +344,16 @@ class PaperTapePunch {
         let char = PaperTapePunch.tapeCodes[code];
 
         if (this.bufLength < PaperTapePunch.bufferLimit) {
-            this.buffer += char;
+            this.buffer[this.bufLength] = code;
             ++this.bufLength;
-            switch (code) {
-            case IOCodes.ioCodeReload:
-                this.buffer += "\n";
-                break;
-            case IOCodes.ioCodeStop:
-                this.buffer += "\n\n";
-                break;
-            case IOCodes.ioCodeSpace:
+            if (code == IOCodes.ioCodeSpace) {
                 char = PaperTapePunch.interpunct;
-                break;
             }
 
             // Update the tape view control
             let view = this.tapeView.value; // current tape view contents
-            let viewLength = view.length;   // current tape view length
-            if (viewLength < PaperTapePunch.viewMax) {
+            if (view.length < PaperTapePunch.viewMax) {
                 this.tapeView.value = view + char;
-                ++viewLength;
             } else {
                 this.tapeView.value = view.slice(1-PaperTapePunch.viewMax) + char;
             }

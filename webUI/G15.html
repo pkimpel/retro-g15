@@ -84,8 +84,20 @@
                 <div id=PTUnloadCaption class=caption>UNLOAD</div>
                 <div id=PTUnloadBtn class=blackButton3></div>
                 <div id=PTMenu>
-                    <button id=PTExtractBtn type=button>Extract</button>&nbsp;
-                    <button id=PTSaveBtn type=button>Save</button>&nbsp;
+                    <button id=PTPunchRunBtn type=button
+                            title="Punch blank tape leader">Punch<br>Run</button>&nbsp;
+                    <button id=PTSavePTIBtn type=button
+                            title="Save as .pti format (text)"
+                            >Save<br>PTI</button>&nbsp;
+                    <button id=PTSavePTBtn type=button
+                            title="Save as .pt format (binary)"
+                            >Save<br>PT</button>&nbsp;
+                    <button id=PTSavePTRBtn type=button
+                            title="Save as .ptr format (binary reversed)"
+                            >Save<br>PTR</button>&nbsp;
+                    <button id=PTExtractBtn type=button
+                            title="Extraact tape image as text to a new window"
+                            >Extract</button>&nbsp;
                     <button id=PTClearBtn type=button>Clear</button>&nbsp;
                     <button id=PTCloseBtn type=button>Close</button>
                 </div>
@@ -93,8 +105,15 @@
 
             <div id=PaperTapeReader>
                 <div id=PRCaption class=caption>READER</div>
-                <input id=PRFileSelector type=file size=60 multiple>
+
                 <div id=PRRewindCaption class=caption>REWIND</div>
+                <select id=PRFormatSelect>
+                    <option value=Auto selected>Auto
+                    <option value=.pti         >.pti
+                    <option value=.ptr         >.ptr
+                    <option value=.pt          >.pt
+                </select>
+                <input id=PRFileSelector type=file size=40 multiple>
                 <div id=PRRewindBtn class=blackButton3></div>
                 <div id=PRUnloadCaption class=caption>UNLOAD</div>
                 <div id=PRUnloadBtn class=blackButton3></div>

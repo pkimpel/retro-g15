@@ -5,9 +5,46 @@
 * Licensed under the MIT License, see
 *       http://www.opensource.org/licenses/mit-license.php
 ************************************************************************
-* Bendix G-15 paper (photo) tape reader.
+* Bendix G-15 paper (photo) tape reader. Defines the paper tape input device.
 *
-* Defines the paper tape input device.
+* There are three paper-tape image formats. The first is ".pti", used by
+* David Green in his collection of G-15 software. See:
+*       https://www.uraone.com/computers/bendixg15/
+* This format represents a tape as ASCII text using mostly the same codes as
+* would be typed on the Typewriter (see below). Letter codes are interpreted
+* case-insensitively.
+*
+* The standard binary image format, ".ptr", has one 8-bit byte per tape frame
+* with the following bit arrangement:
+*
+*       _ _ _ 5 4 3.2 1
+*
+* Paul Pierce's binary image format, ".pt", has one 8-bit byte per tape frame
+* with the following bit arrangement. See:
+*       http://www.piercefuller.com/collect/bendix/
+* These channels are in reverse order compared to the .ptr format.
+*
+*       _ _ _ 1 2 3.4 5
+*
+* The "_" are unused bits and should be zero,. The "." represents the location
+* of the sprocket hole in the tape, and 1-5 are the channel numbers as used in
+* the Bendix documentation.
+*
+* The binary and ASCII codes are as follows:
+*
+*     hex  graphic  description
+*      00   space   (blank tape, ignored)
+*      01     -     minus sign
+*      02     C     carriage return
+*      03     T     tabulate
+*      04     S     stop
+*      05     /     reload (precess line 23 to line 19 and read next block
+*                   (R is also accepted on input for reload)
+*      06     .     period (ignored on input)
+*      07     H     wait
+*   08-0F           (same as corresponding 00-07 codes)
+*   10-19   0-9     decimal digits
+*   1A-1F   u-z     hexadecimal digits (A-F, respectively)
 *
 ************************************************************************
 * 2022-03-15  P.Kimpel
@@ -26,14 +63,14 @@ class PaperTapeReader {
 
     static averageSpeed = 250;          // frames/sec
     static framesPerInch = 10;          // frame pitch on the tape
-    static midpointDiameter = 11.30;    // spool diameter at midpoint of max-length tape, in
+    static midpointDiameter = 3.6;      // spool diameter at midpoint of max-length tape, in
     static startStopFrames = 35;        // 3.5 inches of tape
     static tapeThickness = 0.1/25.4;    // 0.100mm = 0.003937in
     static hubDiameter = 1.0            // diameter of take-up reel hub, inch
     static hubCircumference = PaperTapeReader.hubDiameter*Math.PI;
     static hubRPS =                     // take-up hub speed, rev/sec
-             PaperTapeReader.averageSpeed/PaperTapeReader.midpointDiameter/PaperTapeReader.framesPerInch; 
-                    
+             PaperTapeReader.averageSpeed/PaperTapeReader.hubCircumference/PaperTapeReader.framesPerInch;
+
     static tapeWords = 2500;            // max words in a tape cartridge, about 170 feet of tape
                                         // (see https://en.wikipedia.org/wiki/Bendix_G-15)
     static spoolAlpha = Math.PI*(1 + 2*PaperTapeReader.tapeThickness);  // spool diameter growth factor
@@ -78,7 +115,7 @@ class PaperTapeReader {
         this.rewinding = false;         // tape is currently rewinding
 
         this.blockNr = 0;               // current tape image block number
-        this.buffer = "";               // reader input buffer (paper-tape reel)
+        this.buffer = null;             // reader input buffer (paper-tape reel)
         this.bufLength = 0;             // current input buffer length (characters)
         this.bufIndex = 0;              // 0-relative offset to next character to be read
         this.nextStartStamp = 0;        // earliest time next read can start
@@ -114,6 +151,7 @@ class PaperTapeReader {
         this.bufIndex = 0;
         this.setBlockNr(0);
         this.$$("PRFileSelector").value = null; // reset the control so the same file can be reloaded
+        this.$$("PRFormatSelect").selectedIndex = 0     // default to Auto
     }
 
     /**************************************/
@@ -142,35 +180,139 @@ class PaperTapeReader {
     }
 
     /**************************************/
-    fileSelectorChange(ev) {
-        /* Handle the <input type=file> onchange event when files are selected. For each
-        file, load it and append it to the input buffer of the reader */
-        let tape;
-        let f = ev.target.files;
-        let x;
+    prepareBuffer(imageLength) {
+        /* Prepares this.buffer for more image data by assuring that there is
+        sufficient room, resizing it if necessary. If any existing buffer has
+        been read to its end, the buffer is treated as empty and its existing
+        image data is discarded */
+        let bufIndex = this.bufIndex;
+        let bufLength = this.bufLength;
 
-        let fileLoaderLoad = (ev) => {
-            /* Handle the onload event for a Text FileReader */
+        if (!this.buffer) {
+            this.buffer = new Uint8Array(imageLength);
+            bufIndex = bufLength = 0;
+        } else if (bufIndex >= bufLength) {
+            bufIndex = bufLength = 0;
+            this.setBlockNr(0);
+        }
 
-            if (this.bufIndex >= this.bufLength) {
-                this.buffer = this.stripComments(ev.target.result);
-                this.setBlockNr(0);
-            } else {
-                this.buffer = this.buffer.substring(this.bufIndex) + this.stripComments(ev.target.result);
+        if (this.buffer.length - bufLength < imageLength) {
+            // Not enough room in the current buffer, so resize it
+            const oldBuf = this.buffer;
+            this.buffer = new Uint8Array(bufLength + imageLength);
+            this.buffer.set(oldBuf, 0);
+            bufLength += imageLength;
+        }
+
+        this.bufIndex = bufIndex;
+        this.bufLength = bufLength;
+    }
+
+    /**************************************/
+    loadAsPT(arrayBuffer) {
+        /* Load the image file as binary in .pt format, which yields G-15
+        binary hole patterns after reversing the low-order five bits in each
+        byte */
+        const image = new Uint8Array(arrayBuffer);
+        const imageLength = image.length;
+        let bufLength = this.bufLength;
+
+        console.debug("loadAsPT");
+        this.prepareBuffer(imageLength);
+        bufLength = this.bufLength;
+
+        for (let x=0; x<imageLength; ++x) {
+            this.buffer[bufLength++] = IOCodes.rev5Bits[image[x] & 0b11111];
+        }
+
+        this.bufLength = bufLength;
+        this.$$("PRTapeSupplyBar").max = bufLength;
+        this.$$("PRTapeSupplyBar").value = bufLength - this.bufIndex;
+        this.ready = true;
+    }
+
+    /**************************************/
+    loadAsPTR(arrayBuffer) {
+        /* Load the image file as binary in .ptr format, which directly yields
+        G-15 binary hole patterns */
+        const image = new Uint8Array(arrayBuffer);
+        const imageLength = image.length;
+        let bufLength = this.bufLength;
+
+        console.debug("loadAsPTR");
+        this.prepareBuffer(imageLength);
+        bufLength = this.bufLength;
+
+        for (let x=0; x<imageLength; ++x) {
+            this.buffer[bufLength++] = image[x] & 0b11111;
+        }
+
+        this.bufLength = bufLength;
+        this.$$("PRTapeSupplyBar").max = bufLength;
+        this.$$("PRTapeSupplyBar").value = bufLength - this.bufIndex;
+        this.ready = true;
+    }
+
+    /**************************************/
+    loadAsPTI(image) {
+        /* Load the image file as ASCII text in .pti format and converts it to
+        G-15 binary hole patterns. Simply bypasses any invalid tape image
+        characters and comments as if they did not exist. */
+        const text = this.stripComments(image);
+        const imageLength = text.length;
+        let code = 0;
+
+        console.debug("loadAsPTI");
+        this.prepareBuffer(imageLength);
+        let bufLength = this.bufLength;
+
+        for (const char of text) {
+            code = IOCodes.ioCodeFilter[char.charCodeAt(0) & 0x7F];
+            if (code < 0xFF) {          // not an ignored character
+                this.buffer[bufLength++] = code;
             }
+        }
 
-            this.bufIndex = 0;
-            this.bufLength = this.buffer.length;
-            this.$$("PRTapeSupplyBar").value = this.bufLength;
-            this.$$("PRTapeSupplyBar").max = this.bufLength;
-            this.ready = true;
+        this.bufLength = bufLength;
+        this.$$("PRTapeSupplyBar").max = bufLength;
+        this.$$("PRTapeSupplyBar").value = bufLength - this.bufIndex;
+        this.ready = true;
+    }
+
+    /**************************************/
+    async fileSelectorChange(ev) {
+        /* Handle the <input type=file> onchange event when files are selected.
+        For each file, load it and add it to the input buffer of the reader */
+        const fileList = ev.target.files;
+        const formatSelect = this.$$("PRFormatSelect");
+        const formatIndex = formatSelect.selectedIndex;
+        let tapeFormat = "Auto";
+
+        if (formatIndex > 0) {
+            tapeFormat = formatSelect.options[formatIndex].value;
         }
 
         if (!this.busy && !this.rewinding) {
-            for (x=f.length-1; x>=0; x--) {
-                tape = new FileReader();
-                tape.onload = fileLoaderLoad;
-                tape.readAsText(f[x]);
+            for (const file of fileList) {
+                let readAs = tapeFormat;
+                if (tapeFormat == "Auto") {
+                    const fileName = file.name;
+                    let x = fileName.lastIndexOf(".");
+                    readAs = x < 0 ? ".pti" : fileName.substring(x).toLowerCase();
+                }
+
+                console.debug(`readAs ${readAs}`);
+                switch (readAs) {
+                case ".pt":
+                    this.loadAsPT(await file.arrayBuffer());
+                    break;
+                case ".ptr":
+                    this.loadAsPTR(await file.arrayBuffer());
+                    break;
+                default:
+                    this.loadAsPTI(await file.text());
+                    break;
+                }
             }
         }
     }
@@ -207,16 +349,14 @@ class PaperTapeReader {
     /**************************************/
     async read() {
         /* Initiates the Paper Tape Reader to begin sending frame codes to the
-        Processor's I/O subsystem. Reads until a STOP code or the end of the tape
-        buffer is encountered. Simply bypasses any invalid tape image characters
-        and comments as if they did not exist. Returns true if an attempt is
-        made to read past the end of the buffer, leaving the I/O hanging.
-        Delays for the reader startup time, but not for the stop time, so that
-        the I/O can finish as soon as possible. Takes the stop time into account
-        at the beginning of the next read, if necessary */
+        Processor's I/O subsystem. Reads until a STOP code or the end of the
+        tape buffer is encountered. Returns true if an attempt is made to read
+        past the end of the buffer, leaving the I/O hanging. Delays for the
+        reader startup time, but not for the stop time, so that the I/O can
+        finish as soon as possible. Takes the stop time into account at the
+        beginning of the next read, if necessary */
         let bufLength = this.bufLength; // current buffer length
-        let c = "";                     // current character
-        let code = 0;                   // current G-15 internal code
+        let code = 0;                   // current G-15 tape code
         let eob = false;                // end-of-block flag
         let nextFrameStamp = performance.now();         // time of next character frame
         let precessionComplete = Promise.resolve();     // signals drum is ready for next char
@@ -243,33 +383,31 @@ class PaperTapeReader {
                 result = eob = true;    // just quit and leave the I/O hanging
                 break;
             } else {
-                c = this.buffer.charAt(x);
+                code = this.buffer[x];
                 ++x;
-                code = IOCodes.ioCodeFilter[c.charCodeAt(0) & 0x7F];
-                if (code < 0xFF) {  // not an ignored character
-                    // Wait for the next frame time.
-                    await this.timer.delayUntil(nextFrameStamp);
-                    nextFrameStamp += this.framePeriod;
 
-                    // Wait for any line 23 precession to complete.
-                    if (this.canceled) {
+                // Wait for the next frame time.
+                await this.timer.delayUntil(nextFrameStamp);
+                nextFrameStamp += this.framePeriod;
+
+                // Wait for any line 23 precession to complete.
+                if (this.canceled) {
+                    await precessionComplete;
+                    this.canceled = false;
+                    eob = true;         // definitely canceled -- quit
+                } else if (await precessionComplete) {
+                    eob = true;         // some error detected by Processor -- quit
+                } else {
+                    // Send the tape code to the Processor.
+                    precessionComplete = this.processor.receiveInputCode(code);
+                    switch (code) {
+                    case IOCodes.ioCodeReload:
+                        this.setReaderSpeed(x);
+                        break;
+                    case IOCodes.ioCodeStop:
                         await precessionComplete;
-                        this.canceled = false;
-                        eob = true;                 // definitely canceled -- quit
-                    } else if (await precessionComplete) {
-                        eob = true;                 // some error detected by Processor -- quit
-                    } else {
-                        // Send the tape code to the Processor.
-                        precessionComplete = this.processor.receiveInputCode(code);
-                        switch (code) {
-                        case IOCodes.ioCodeReload:
-                            this.setReaderSpeed(x);
-                            break;
-                        case IOCodes.ioCodeStop:
-                            await precessionComplete;
-                            eob = true;             // end of block -- quit
-                            break;
-                        }
+                        eob = true;     // end of block -- quit
+                        break;
                     }
                 }
             }
@@ -286,9 +424,10 @@ class PaperTapeReader {
         /* Preloads the tape buffer with the PPR tape image and sets the reader
         ready, as if the image had been loaded by the user from a file */
 
-        this.buffer = PPRTapeImage.pprTapeImage;
+        this.prepareBuffer(PPRTapeImage.pprTapeImage.length);
+        this.loadAsPTI(PPRTapeImage.pprTapeImage);
         this.bufIndex = 0;
-        this.bufLength = this.buffer.length;
+        this.bufLength = PPRTapeImage.pprTapeImage.length;
         this.setBlockNr(0);
         this.$$("PRTapeSupplyBar").value = this.bufLength;
         this.$$("PRTapeSupplyBar").max = this.bufLength;
@@ -302,7 +441,6 @@ class PaperTapeReader {
         pointing to the beginning of the buffer. Returns true if an attempt is made
         to reverse past the beginning of the buffer, leaving the I/O hanging */
         let bufLength = this.bufLength; // current buffer length
-        let code = 0;                   // translated frame code
         let nextFrameStamp = performance.now() + this.startStopTime;    // simulate startup time
         let x = this.bufIndex;          // point to current buffer position
 
@@ -319,8 +457,7 @@ class PaperTapeReader {
                 return true;            // and just quit, leaving the I/O hanging
             } else {
                 --x;                    // examine prior character
-                code = IOCodes.ioCodeFilter[this.buffer.charCodeAt(x) & 0x7F];
-                if (code == IOCodes.ioCodeStop) {
+                if (this.buffer[x] == IOCodes.ioCodeStop) {
                     break;              // out of do loop
                 } else {
                     this.tapeSupplyBar.value = bufLength-x;
