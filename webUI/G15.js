@@ -20,17 +20,20 @@ import {Processor} from "../emulator/Processor.js";
 
 import {PaperTapeReader} from "./PaperTapeReader.js";
 import {PaperTapePunch} from "./PaperTapePunch.js";
+import {Plotter} from "./Plotter.js";
+import {SystemConfig} from "./SystemConfig.js";
 import {Typewriter} from "./Typewriter.js";
 import {Sound} from "./Sound.js";
 
 let globalLoad = (ev) => {
-    //let config = new G15SystemConfig(); // system configuration object
+    const config = new SystemConfig();  // system configuration object
     let diagPanel = null;               // handle for the diagnostic panel
     let statusMsgTimer = 0;             // status message timer control cookie
 
     const context = {
         $$,
         closeDiagPanel,
+        config,
         systemShutDown,
         window
     };
@@ -42,17 +45,17 @@ let globalLoad = (ev) => {
     }
 
     /**************************************/
-    function showConfigName() {
-        /* Displays the name of the current system configuration */
+    function configReporter(msg) {
+        /* Displays a configuration result message */
 
-        $$("ConfigName").textContent = config.getConfigName();
+        $$("ConfigMsg").textContent = msg;
     }
 
     /**************************************/
     function configureSystem(ev) {
         /* Opens the system configuration UI */
 
-        config.openConfigUI(showConfigName);
+        config.openConfigUI(configReporter);
     }
 
     /**************************************/
@@ -108,7 +111,7 @@ let globalLoad = (ev) => {
         on drum RPM */
 
         $$("StartUpBtn").disabled = true;
-        //$$("ConfigureBtn").disabled = true;
+        $$("ConfigureBtn").disabled = true;
 
         window.addEventListener("beforeunload", beforeUnload);
         $$("G15Logo").addEventListener("dblclick", openDiagPanel, false);
@@ -119,6 +122,10 @@ let globalLoad = (ev) => {
             "paperTapePunch":           new PaperTapePunch(context),
             "typewriter":               new Typewriter(context),
             "sound":                    new Sound(context)
+        }
+
+        if (config.getNode("Plotter.hasPlotter")) {
+            context.devices.plotter = new Plotter(context);
         }
 
         context.devices.paperTapeReader.preload();      // preload the PPR image
@@ -152,9 +159,9 @@ let globalLoad = (ev) => {
         $$("G15Logo").removeEventListener("dblclick", openDiagPanel, false);
         $$("StartUpBtn").disabled = false;
         $$("StartUpBtn").focus();
+        $$("ConfigureBtn").disabled = false;
         window.removeEventListener("beforeunload", beforeUnload);
-        //$$("ConfigureBtn").disabled = false;
-        //config.flush();
+        config.flush();
 
         if (processor.poweredOn) {
             $$("DCPowerLamp").classList.remove("redLit");
@@ -223,15 +230,19 @@ let globalLoad = (ev) => {
     $$("EmulatorVersion").textContent = Version.g15Version;
     if (checkBrowser()) {
         parseQueryString();
-        context.controlPanel = new ControlPanel(context);
-        $$("StartUpBtn").disabled = false;
-        $$("StartUpBtn").addEventListener("click", systemStartup, false);
-        $$("StartUpBtn").focus();
-        //$$("ConfigureBtn").disabled = false;
-        //$$("ConfigureBtn").addEventListener("click", configureSystem, false);
 
-        //$$("StatusMsg").textContent = "??";
-        //clearStatusMsg(30);
+        config.activate().then((msg) => {
+            configReporter(msg);
+            context.controlPanel = new ControlPanel(context);
+            $$("StartUpBtn").disabled = false;
+            $$("StartUpBtn").addEventListener("click", systemStartup, false);
+            $$("StartUpBtn").focus();
+            $$("ConfigureBtn").disabled = false;
+            $$("ConfigureBtn").addEventListener("click", configureSystem, false);
+
+            //$$("StatusMsg").textContent = "??";
+            //clearStatusMsg(30);
+        });
     }
 }; // globalLoad
 

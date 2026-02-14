@@ -22,6 +22,8 @@ import {Processor} from "../emulator/Processor.js";
 class DiagPanel {
 
     static displayRefreshPeriod = 50;   // ms
+    static windowHeight = 536;          // window innerHeight, pixels
+    static windowWidth =  740;          // window innerWidth, pixels
 
     /**************************************/
     constructor(context) {
@@ -31,10 +33,10 @@ class DiagPanel {
             closeDiagPanel() shuts down this panel
             processor is the Processor object
         */
-        const w = 740;
-        const h = 600;
 
         this.context = context;
+        this.config = context.config;
+
         this.intervalToken = 0;         // interval timer cancel token
         this.bpSetLoc = null;           // drum location of BPSet word
         this.wordTimeOffset = 0;        // drum wordTime offset for display purposes
@@ -61,12 +63,24 @@ class DiagPanel {
             this.context.controlPanel.setComputeSwitch(0);
         };
 
-        // Create the panel window
+        // Create the Diag Panel window
         this.doc = null;
         this.window = null;
+        let geometry = this.config.formatWindowGeometry("DiagPanel");
+        if (geometry.length) {
+            [this.innerWidth, this.innerHeight, this.windowLeft, this.windowTop] =
+                    this.config.getWindowGeometry("DiagPanel");
+        } else {
+            this.innerWidth  = DiagPanel.windowWidth;
+            this.innerHeight = DiagPanel.windowHeight;
+            this.windowLeft =  16;
+            this.windowTop =   16;
+            geometry = `,left=${this.windowLeft},top=${this.windowTop}` +
+                       `,innerWidth=${this.innerWidth},innerHeight=${this.innerHeight}`;
+        }
+
         openPopup(context.window, "./DiagPanel.html", "DiagPanel",
-                "location=no,scrollbars=no,resizable,width=" + w + ",height=" + h +
-                    ",top=16,left=16",
+                "location=no,scrollbars,resizable" + geometry,
                 this, this.diagPanelOnLoad);
     }
 
@@ -385,9 +399,15 @@ class DiagPanel {
             this.$$("RPM").addEventListener("change", this.boundChangeRPM);
         }
 
+        // Recalculate scaling and offsets after initial window resize.
+        this.config.restoreWindowGeometry(this.window,
+                this.innerWidth, this.innerHeight, this.windowLeft, this.windowTop);
+
+        // Start the panel...
         this.updatePanel();
         if (!this.intervalToken) {
-            this.intervalToken = this.window.setInterval(this.boundUpdatePanel, DiagPanel.displayRefreshPeriod);
+            this.intervalToken = this.window.setInterval(
+                    this.boundUpdatePanel, DiagPanel.displayRefreshPeriod);
         }
     }
 
@@ -418,6 +438,7 @@ class DiagPanel {
         if (this.window) {
             this.window.removeEventListener("unload", this.boundShutDown);
             if (!this.window.closed) {
+                this.config.putWindowGeometry(this.window, "DiagPanel");
                 this.window.close();
             }
 

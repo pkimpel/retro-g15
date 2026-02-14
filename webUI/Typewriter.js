@@ -28,7 +28,7 @@ class Typewriter {
     static invKeyFlashTime = 150;       // keyboard lock flash time, ms
     static maxScrollLines = 10000;      // max lines retained in "paper" area
     static maxCols = 132;               // maximum number of columns per line
-    static defaultInputRate = 8.6;      // default max typing rate (used by Type-O-Matic)
+    static defaultInputRate = 8.6*10;   // default max typing rate (used by Type-O-Matic)
 
     static commentRex = /#[^\x0D\x0A]*/g;
     static newLineRex = /[\x0D\x0A\x0C]+/g;

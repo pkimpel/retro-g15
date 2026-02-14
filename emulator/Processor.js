@@ -103,6 +103,7 @@ class Processor {
         this.canceledIO = false;                        // current I/O has been canceled
         this.duplicateIO = false;                       // second I/O of same type initiated while first in progress
         this.hungIO = false;                            // current I/O is intentionally hung, awaiting cancel
+        this.hasPlotter =  context.config.getNode("Plotter.hasPlotter");
         this.ioPrecession = Promise.resolve();          // Promise for I/O line 19 precession
 
         // Bound methods
@@ -2506,12 +2507,24 @@ class Processor {
             await this.transferDriver(this.transferNothing);
             break;
 
-        case 17:        // ring bell & friends
-            await this.ringMyChime();
+        case 17:        // ring bell & friends, plotter commands
+            if (this.hasPlotter && this.C.value == 2) {
+                await this.context.devices.plotter.write(7);  // move downwards (-X)
+            } else if (this.hasPlotter && this.C.value == 3) {
+                await this.context.devices.plotter.write(3);  // move upwards (+X)
+            } else {
+                await this.ringMyChime();
+            }
             break;
 
-        case 18:        // transfer M20.ID to output register
-            await this.transferToOR();
+        case 18:        // transfer M20.ID to output register, plotter commands
+            if (this.hasPlotter && this.C.value == 2) {
+                await this.context.devices.plotter.write(5);  // move left (-Y)
+            } else if (this.hasPlotter && this.C.value == 3) {
+                await this.context.devices.plotter.write(1);  // move right (+Y)
+            } else {
+                await this.transferToOR();
+            }
             break;
 
         case 19:        // start/stop DA-1
@@ -2540,8 +2553,14 @@ class Processor {
             await this.transferDriver(this.transferNothing);
             break;
 
-        case 23:        // clear MQ/ID/PN/IP, etc.
-            await this.clearDPRegisters();
+        case 23:        // clear MQ/ID/PN/IP, plotter commands, etc.
+            if (this.hasPlotter && this.C.value == 1) {
+                await this.context.devices.plotter.write(0);  // pen down
+            } else if (this.hasPlotter && this.C.value == 2) {
+                await this.context.devices.plotter.write(9);  // pen up
+            } else {
+                await this.clearDPRegisters();
+            }
             break;
 
         case 24:        // multiply

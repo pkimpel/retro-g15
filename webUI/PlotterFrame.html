@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>Bendix G-15 Plotter Frame</title>
+<!--
+/***********************************************************************
+* retro-g15/webUI PlotterFrame.html
+************************************************************************
+* Copyright (c) 2026, Paul Kimpel.
+* Licensed under the MIT License, see
+*       http://www.opensource.org/licenses/mit-license.php
+************************************************************************
+* Bendix G-15 user interface blank page for use with Plotter.
+************************************************************************
+* 2026-02-08  P.Kimpel
+*   Original version, from retro-1620 PlotterFrame.html.
+***********************************************************************/
+-->
+<meta name="Author" content="Paul Kimpel">
+<meta http-equiv="Content-Script-Type" content="text/javascript">
+<meta http-equiv="Content-Style-Type" content="text/css">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link id=defaultStyleSheet rel=stylesheet type="text/css" href="Common.css">
+<style id=PlotterFrameStyles>
+BODY {
+    height:             100%;
+    width:              100%;
+    background-color:   white;
+    margin:             0;
+    padding:            0;
+    border:             none}
+#CanvasDiv {
+    position:           absolute;
+    top:                0;
+    left:               0;
+    width:              100%;
+    height:             fit-content}
+#PlotterCanvas {
+    position:           absolute;
+    top:                0;
+    left:               0;
+    width:              100%}
+</style>
+</head>
+
+<body id=FrameBody>
+    <div id=CanvasDiv>
+        <canvas id=PlotterCanvas>
+            Alas, the plotter will not work.<br>
+            This browser does not support the HTML &lt;canvas&gt; element.
+        </canvas>
+    </div>
+</div>
+
+</body>
+</html>

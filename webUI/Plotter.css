@@ -1,0 +1,362 @@
+/***********************************************************************
+* retro-g15/webUI Plotter.css
+************************************************************************
+* Copyright (c) 2026, Paul Kimpel.
+* Licensed under the MIT License, see
+*       http://www.opensource.org/licenses/mit-license.php
+************************************************************************
+* Bendix G-15 emulator Plotter style sheet.
+************************************************************************
+* 2026-02-08  P.Kimpel
+*   Original version, from retro-1620 Plotter.css.
+***********************************************************************/
+
+#PlotterBody {
+    height:             100%;
+    min-height:         100%;
+    overflow:           hidden;
+    padding:            0}
+
+#PlotterDiv {
+    position:           absolute;
+    top:                4px;
+    bottom:             4px;
+    left:               calc(50% - 36px);       /* middle - (ControlDiv(68) + R.margin(4))/2 */
+    width:              calc(100% - 76px);      /* window - ControlDiv(68) - L.margin(4) - R.margin(4) */
+    min-width:          200px;
+    min-height:         200px;
+    transform:          translate(-50%, 0);
+    overflow:           hidden;
+    background-color:   white}
+
+#PlotterFrame {
+    position:           absolute;
+    width:              100%;
+    height:             100%;
+    background-color:   white;
+    margin:             0;
+    padding:            0;
+    border:             none}
+
+#Carriage {
+    position:           absolute;
+    display:            none;
+    left:               0;
+    right:              0;
+    height:             78px;
+    z-index:            5;
+    transform:          translate(0, -50%);
+    overflow:           visible}
+#Carriage .carriageRail {
+    position:           absolute;
+    left:               -8px;
+    right:              0;
+    height:             12px;
+    background-image:   linear-gradient(#666 0%, white 20%, #999 40%, white 50%, #999 60%, #333 100%);
+    box-shadow:         4px 4px 4px #999}
+#CarriageUpperRail {
+    top:                0}
+#CarriageLowerRail {
+    bottom:             0}
+#PenCursor {
+    position:           absolute;
+    left:               0;
+    top:                50%;
+    height:             100%;
+    width:              36px;
+    z-index:            6;
+    transform:          translate(-21px, -50%)} /* x: -17px for scrollbar, -4px for right margin */
+#PenCursor .carriageGuide {
+    position:           absolute;
+    left:               -12px;
+    height:             20px;
+    width:              68px;
+    z-index:            8;
+    background-image:   linear-gradient(135deg, #f5f5dc, #b4b49b);
+    border:             none;           /* was 1px solid white; */
+    border-radius:      4px;
+    box-shadow:         4px 4px 4px #666}
+#CarriageUpperGuide {
+    top:                -4px}
+#CarriageLowerGuide {
+    bottom:             -4px}
+#PenReticle {
+    position:           absolute;
+    left:               0;
+    top:                50%;
+    height:             36px;
+    width:              36px;
+    top:                50%;
+    z-index:            8;
+    transform:          translate(0, -50%);
+    opacity:            0.5;
+    border-radius:      50%;
+    border:             4px solid blue;
+    box-shadow:         4px 4px 8px black, inset 4px 4px 8px black}
+#PenCursor.penDown #PenReticle {
+    border:             4px solid red}
+#PenReticle .hairline {
+    position:           absolute;
+    background-color:   red}
+#LeftHairline {
+    left:               0;
+    top:                50%;
+    height:             1px;
+    width:              25%}
+#RightHairline {
+    right:              0;
+    top:                50%;
+    height:             1px;
+    width:              25%}
+#TopHairline {
+    left:               50%;
+    top:                0;
+    height:             25%;
+    width:              1px}
+#BottomHairline {
+    left:               50%;
+    bottom:             0;
+    height:             25%;
+    width:              1px}
+
+#FPS {
+    position:           absolute;
+    left:               4px;
+    bottom:             4px;
+    width:              6ch;
+    z-index:            2;
+    color:              red;
+    text-align:         right}
+
+#PrintingDiv {
+    position:           absolute;
+    visibility:         hidden;
+    width:              570px;
+    height:             480px;
+    margin:             4px;
+    background-color:   white}
+#PrintingFrame {
+    width:              100%;
+    background-color:   white;
+    padding:            0;
+    border:             none}
+
+#ControlsDiv {
+    position:           absolute;
+    top:                0;
+    right:              0;
+    height:             100%;
+    width:              68px;
+    background-color:   #999;
+    cursor:             auto}
+#ControlsDiv DIV.caption {
+    font-size:          10px}
+
+#BendixLogo {
+    position:           absolute;
+    top:                12px;
+    left:               50%;
+    width:              90%;
+    transform:          translate(-50%, 0)}
+#ModelLogo {
+    position:           absolute;
+    top:                36px;
+    left:               50%;
+    transform:          translate(-50%, 0);
+    white-space:        nowrap;
+    font-family:        DejaVu Sans, Arial, Helvetica, sans-serif;
+    font-size:          16px;
+    font-weight:        bold}
+
+#StepControlsDiv {
+    position:           absolute;
+    top:                76px;
+    width:              100%;
+    height:             72px;
+    text-align:         center}
+#StepCaption {
+    width:              100%}
+#StepLeftBtn {
+    position:           absolute;
+    top:                28px;
+    right:              calc(50% + 8px)}
+#StepRightBtn {
+    position:           absolute;
+    top:                28px;
+    left:               calc(50% + 8px)}
+#StepUpBtn {
+    position:           absolute;
+    top:                12px;
+    left:               calc(50% - 8px)}
+#StepDownBtn {
+    position:           absolute;
+    top:                44px;
+    left:               calc(50% - 8px)}
+
+#CoordDiv {
+    position:           absolute;
+    top:                144px;
+    width:              100%;
+    height:             16px;
+    text-align:         center}
+
+#FastControlsDiv {
+    position:           absolute;
+    top:                168px;
+    width:              100%;
+    height:             72px;
+    text-align:         center}
+#FastCaption {
+    width:              100%}
+#FastLeftBtn {
+    position:           absolute;
+    top:                28px;
+    right:              calc(50% + 8px)}
+#FastRightBtn {
+    position:           absolute;
+    top:                28px;
+    left:               calc(50% + 8px)}
+#FastUpBtn {
+    position:           absolute;
+    top:                12px;
+    left:               calc(50% - 8px)}
+#FastDownBtn {
+    position:           absolute;
+    top:                44px;
+    left:               calc(50% - 8px)}
+
+#PenControlsDiv {
+    position:           absolute;
+    top:                232px;
+    width:              100%;
+    margin-top:         4px;
+    margin-bottom:      4px;
+    height:             48px;
+    text-align:         center}
+#PenCaption {
+    width:              100%}
+#PenUpBtn {
+    position:           absolute;
+    top:                12px;
+    left:               calc(50% - 20px);
+    padding:            1px;
+    border:             2px solid transparent;
+    border-radius:      4px}
+#PenUpLamp {
+    top:                36px;
+    left:               calc(50% - 9px)}
+#PenDownBtn {
+    position:           absolute;
+    top:                12px;
+    right:              calc(50% - 20px);
+    padding:            1px;
+    border:             2px solid transparent;
+    border-radius:      4px}
+#PenDownLamp {
+    top:                36px;
+    left:               calc(50% + 9px)}
+
+#ButtonDiv {
+    position:           absolute;
+    top:                282px;
+    width:              100%;
+    height:             100px}
+#ButtonDiv BUTTON {
+    position:           absolute;
+    left:               50%;
+    transform:          translate(-50%, 0);
+    width:              calc(100% - 8px);
+    height:             24px;
+    font-weight:        bold;
+    border:             2px solid black;
+    border-radius:      8px}
+#PrintBtn {
+    top:                0}
+#SaveBtn {
+    top:                26px}
+#HomeBtn {
+    top:                52px}
+#ClearBtn {
+    top:                78px}
+
+#PaletteDiv {
+    position:           absolute;
+    top:                392px;
+    width:              100%;
+    height:             34px}
+#PaletteDiv .paletteButton {
+    position:           absolute;
+    top:                0;
+    width:              10px;
+    height:             24px;
+    border-radius:      4px}
+#BlackBtn {
+    left:               5px;
+    background-color:   black}
+#BlackLamp {
+    top:                30px;
+    left:               10px}
+#RedBtn {
+    left:               17px;
+    background-color:   red}
+#RedLamp {
+    top:                30px;
+    left:               22px}
+#GreenBtn {
+    left:               29px;
+    background-color:   green}
+#GreenLamp {
+    top:                30px;
+    left:               34px}
+#BlueBtn {
+    left:               41px;
+    background-color:   blue}
+#BlueLamp {
+    top:                30px;
+    left:               46px}
+#BrownBtn {
+    left:               53px;
+    background-color:   #630}
+#BrownLamp {
+    top:                30px;
+    left:               58px}
+
+#LineWidthDiv {
+    position:           absolute;
+    left:               50%;
+    top:                430px;
+    width:              60px;
+    height:             24px;
+    transform:          translate(-50%, 0)}
+#LineWidthCaption {
+    position:           absolute;
+    left:               0;
+    top:                50%;
+    line-height:        1.0;
+    transform:          translate(0, -50%)}
+#LineWidthSelect {
+    position:           absolute;
+    right:              0;
+    top:                50%;
+    font-size:          12px;
+    transform:          translate(0, -50%)}
+#ScaleFactor {
+    position:           absolute;
+    left:               50%;
+    bottom:             4px;
+    width:              7ch;
+    transform:          translate(-50%, 0);
+    text-align:         center;
+    font-size:          10px;
+    padding:            2px;
+    color:              white;
+    background-color:   inherit}
+
+.panelLamp {
+    position:           absolute;
+    display:            none;
+    width:              6px;
+    height:             6px;
+    transform:          translate(-50%, -50%);
+    background-color:   white;
+    border-radius:      50%}

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>G-15 Emulator Plotter</title>
+<!--
+/***********************************************************************
+* retro-g15/webUI Plotter.html
+************************************************************************
+* Copyright (c) 2026, Paul Kimpel.
+* Licensed under the MIT License, see
+*       http://www.opensource.org/licenses/mit-license.php
+************************************************************************
+* Bendix G-15 Emulator PA-3 plotter window.
+************************************************************************
+* 2026-02-08  P.Kimpel
+*   Original version, from retro-1620 Plotter.html.
+***********************************************************************/
+-->
+<meta name="Author" content="Paul Kimpel">
+<meta http-equiv="Content-Script-Type" content="text/javascript">
+<meta http-equiv="Content-Style-Type" content="text/css">
+<link id=defaultStyleSheet rel=stylesheet type="text/css" href="Common.css">
+<link id=plotterStyleSheet rel=stylesheet type="text/css" href="Plotter.css">
+</head>
+
+<body id=PlotterBody class=deviceBody>
+
+<div id=PlotterDiv>
+    <iframe id=PlotterFrame src="./PlotterFrame.html">
+    </iframe>
+    <div id=Carriage>
+        <div id=CarriageUpperRail class=carriageRail></div>
+        <div id=PenCursor>
+            <div id=CarriageUpperGuide class=carriageGuide></div>
+            <div id=PenReticle>
+                <div id=TopHairline class=hairline></div>
+                <div id=LeftHairline class=hairline></div>
+                <div id=BottomHairline class=hairline></div>
+                <div id=RightHairline class=hairline></div>
+            </div>
+            <div id=CarriageLowerGuide class=carriageGuide></div>
+        </div>
+        <div id=CarriageLowerRail class=carriageRail></div>
+    </div>
+    <div id=FPS></div>
+</div>
+
+<div id=PrintingDiv>
+    <iframe id=PrintingFrame src="./PlotterFrame.html">
+    </iframe>
+</div>
+
+<div id=ControlsDiv>
+    <img id=BendixLogo src="./resources/Bendix-Logo-White.png" title="Actually, it's a CALCOMP 560R">
+    <div id=ModelLogo>PA-3</div>
+
+    <div id=StepControlsDiv>
+        <div id=StepCaption class=caption>STEP</div>
+        <img id=StepLeftBtn src="./resources/ArrowLeft-16.png" title="Carriage Step Left">
+        <img id=StepRightBtn src="./resources/ArrowRight-16.png" title="Carriage Step Right">
+        <img id=StepUpBtn src="./resources/ArrowUp-16.png" title="Drum Step Up">
+        <img id=StepDownBtn src="./resources/ArrowDown-16.png" title="Drum Step Down">
+    </div>
+
+    <div id=CoordDiv title="Pen location (horizontal, vertical)">
+        (<span id=VCoordSpan>0</span>,<span id=HCoordSpan>0</span>)
+    </div>
+
+    <div id=FastControlsDiv>
+        <div id=FastCaption class=caption>FAST</div>
+        <img id=FastLeftBtn src="./resources/ArrowLeft-16.png" title="Carriage Fast Left">
+        <img id=FastRightBtn src="./resources/ArrowRight-16.png" title="Carriage Fast Right">
+        <img id=FastUpBtn src="./resources/ArrowUp-16.png" title="Drum Fast Up">
+        <img id=FastDownBtn src="./resources/ArrowDown-16.png" title="Drum Fast Down">
+    </div>
+
+    <div id=PenControlsDiv>
+        <div id=PenCaption class=caption
+             title="Double-click to toggle visibility of the pen carriage">PEN
+        </div>
+        <img id=PenUpBtn src="./resources/ArrowUp-16.png" title="Raise pen">
+        <div id=PenUpLamp class=panelLamp></div>
+        <img id=PenDownBtn src="./resources/ArrowDown-16.png" title="Lower pen">
+        <div id=PenDownLamp class=panelLamp></div>
+    </div>
+
+    <div id=ButtonDiv>
+        <button id=PrintBtn title="Print the plot">PRINT</button>
+        <button id=SaveBtn title="Save the plot as PNG">SAVE</button>
+        <button id=HomeBtn title="Reposition pen to (0,0)">HOME</button>
+        <button id=ClearBtn title="Erase the plot area">CLEAR</button>
+    </div>
+
+    <div id=PaletteDiv>
+        <div id=BlackBtn class=paletteButton title="Draw black lines">&nbsp;</div>
+        <div id=BlackLamp class=panelLamp></div>
+        <div id=RedBtn class=paletteButton title="Draw red lines">&nbsp;</div>
+        <div id=RedLamp class=panelLamp></div>
+        <div id=GreenBtn class=paletteButton title="Draw green lines">&nbsp;</div>
+        <div id=GreenLamp class=panelLamp></div>
+        <div id=BlueBtn class=paletteButton title="Draw blue lines">&nbsp;</div>
+        <div id=BlueLamp class=panelLamp></div>
+        <div id=BrownBtn class=paletteButton title="Draw brown lines">&nbsp;</div>
+        <div id=BrownLamp class=panelLamp></div>
+    </div>
+
+    <div id=LineWidthDiv title="Select the line drawing width">
+        <div id=LineWidthCaption class=caption>LINE</div>
+        <select id=LineWidthSelect>
+            <option value=1 SELECTED>1
+            <option value=2         >2
+            <option value=3         >3
+            <option value=4         >4
+            <option value=5         >5
+            <option value=6         >6
+            <option value=7         >7
+            <option value=8         >8
+            <option value=9         >9
+        </select>
+    </div>
+
+    <div id=ScaleFactor
+         title="Plot display scale factor&mdash;Double-click to restore original window size"></div>
+</div>
+
+</body>
+</html>

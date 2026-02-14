@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>retro-g15 Emulator System Configuration</title>
+<!--
+/***********************************************************************
+* retro-g15/webUI SystemConfig.html
+************************************************************************
+* Copyright (c) 2026, Paul Kimpel.
+* Licensed under the MIT License, see
+*       http://www.opensource.org/licenses/mit-license.php
+************************************************************************
+* Bendix G-15 Emulator System Configuration page.
+*
+* Implements the system configuration user interface for the G-15 emulator.
+*
+************************************************************************
+* 2026-02-08  P.Kimpel
+*   Original version, from retro-1620 webUI/SystemConfig.html.
+***********************************************************************/
+-->
+<meta name="Author" content="Paul Kimpel">
+<meta http-equiv="Content-Script-Type" content="text/javascript">
+<meta http-equiv="Content-Style-Type" content="text/css">
+<link id=defaultStyleSheet rel=stylesheet type="text/css" href="Common.css">
+<link id=configStyleSheet rel=stylesheet type="text/css" href="SystemConfig.css">
+
+</head>
+
+<body id=configBody class=configBody>
+
+<div id=configDiv class=devicePanel>
+    <div id=PageHeading>
+        <span id=SysConfigHeading>Bendix G-15 &ndash; System Configuration</span>
+        <div id=retrog15Logo>
+            <img id=RetroLogoImage src="./resources/retro-g15-Logo.png" alt="retro-g15 logo">
+        </div>
+    </div>
+    <hr>
+
+    <div id=MessageArea></div>
+    <button id=DefaultsBtn class="redButton"
+            title="Set configuration to original defaults">DEFAULTS</button>
+    <button id=CancelBtn class="redButton">CANCEL</button>
+    <button id=SaveBtn class="greenButton">SAVE</button>
+
+
+    <div class=heading>System Properties:</div>
+    <div class=details>
+    <!--
+        <select id=SystemMemorySize>
+            <option          value=20000>20000
+            <option          value=40000>40000
+            <option          value=60000>60000
+        </select> Digit Memory Size<br>
+        <input id=SystemIndexRegisters type=checkbox value=1>
+               <label for=SystemIndexRegisters>Index Registers</label><br>
+    -->
+        <input id=SystemPersistentWin  type=checkbox value=1>
+               <label for=SystemPersistentWin>Persistent Window Positions</label><br>
+        <input id=SystemMultiScreen  type=checkbox value=1 DISABLED>
+               <label for=SystemMultiScreen>Use Multi-Screen Positioning</label><br>
+    </div>
+
+
+    <div class=heading>Model B Numeric Typewriter:</div>
+    <div class=details>
+        Margin Left=<input id=MarginLeft class=rj type=text size=3 maxlength=3>,
+        Columns=<input id=Columns class=rj type=text size=3 maxlength=3><br>
+        Tab Stops: <input id=TabStops type=text size=80 maxlength=255>
+    </div>
+
+
+    <div class=heading>Plotter:</div>
+    <div class=details>
+        <select id=PlotterModel>
+            <option value=0>None
+            <option value=3>PA-3, 11-inch carriage
+        </select>
+            <span class=nowrap>
+            Scale:
+            <select id=PlotterScale>
+                <option value=1>50%
+                <option value=2>100%
+            </select>
+        </span>
+        <span class=nowrap>
+            Height:
+            <select id=PlotterMaxHeight>
+                <option value= 2048> 2,048 pixels ~  1.7ft
+                <option value= 4096> 4,095 pixels ~  3.4ft
+                <option value= 8192> 8,192 pixels ~  6.8ft
+                <option value=12288>12,288 pixels ~ 10.2ft
+                <option value=16384>16,384 pixels ~ 13.7ft
+                <option value=20480>20,480 pixels ~ 17.1ft
+                <option value=24576>24,576 pixels ~ 20.5ft
+                <option value=28672>28,672 pixels ~ 23.9ft
+                <option value=32766>32,766 pixels ~ 27.3ft
+            </select>
+        </span>
+        <span class=nowrap>
+            <label for=PlotterVisibleCarriage>Carriage</label>
+            <input id=PlotterVisibleCarriage type=checkbox value=1 title="Pen carriage visible">
+        </span>
+    </div>
+
+    <div class=heading>&nbsp;</div>
+</div>
+
+</body>
+</html>

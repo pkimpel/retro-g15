@@ -68,6 +68,9 @@ H1 {
     background-color:   #468;
     color:              #999;
     border-color:       #666}
+#ConfigMsg {
+    margin-top:         1ex;
+    font-size:          smaller}
 #PageFooter {
     margin-top:         2em;
     margin-left:        calc(50% - 20em);
