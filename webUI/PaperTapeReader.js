@@ -191,9 +191,6 @@ class PaperTapeReader {
         if (!this.buffer) {
             this.buffer = new Uint8Array(imageLength);
             bufIndex = bufLength = 0;
-        } else if (bufIndex >= bufLength) {
-            bufIndex = bufLength = 0;
-            this.setBlockNr(0);
         }
 
         if (this.buffer.length - bufLength < imageLength) {
