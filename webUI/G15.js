@@ -175,7 +175,7 @@ let globalLoad = (ev) => {
             processor.powerDown();
             context.devices = null;
             context.processor = null;
-        }, processor.poweredOn ? 3000 : 1000);
+        }, processor.poweredOn ? 2000 : 1000);
     }
 
     /**************************************/

@@ -429,7 +429,7 @@ H1 {
     height:             100%;
     width:              calc(100% - 8px);
     min-width:          600px;                  /* same as ControlPanelFrame */
-    max-width:          calc(133ch + 20px);     /* allow for scroll bar */
+    max-width:          100%;
     left:               50%;
     transform:          translate(-50%, 0);
     font-size:          12px;
@@ -439,7 +439,6 @@ H1 {
     height:             100%;
     width:              100%;
     min-width:          600px;                  /* same as ControlPanelFrame */
-    max-width:          calc(133ch + 20px);     /* allow for scroll bar */
     left:               50%;
     transform:          translate(-50%, 0);
     white-space:        pre;

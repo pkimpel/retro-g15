@@ -27,8 +27,8 @@ class Typewriter {
     static pillowChar = "\u2588";       // EOL overprint character
     static invKeyFlashTime = 150;       // keyboard lock flash time, ms
     static maxScrollLines = 10000;      // max lines retained in "paper" area
-    static maxCols = 132;               // maximum number of columns per line
-    static defaultInputRate = 8.6*10;   // default max typing rate (used by Type-O-Matic)
+    static maxCols = 255;               // maximum number of columns per line
+    static defaultTOMRate = 8.6*10;     // default max Type-O-Matic input rate
 
     static commentRex = /#[^\x0D\x0A]*/g;
     static newLineRex = /[\x0D\x0A\x0C]+/g;
@@ -46,6 +46,7 @@ class Typewriter {
             window is the ControlPanel window
         */
         const $$ = this.$$ = context.$$;
+        this.config = context.config;
         this.processor = context.processor;
         this.window = context.window;
         this.doc = this.window.document;
@@ -54,8 +55,10 @@ class Typewriter {
         this.paperDoc.title = this.doc.title + " Paper";
         this.paper = this.paperDoc.getElementById("Paper");
         this.readEnabled = false;       // true when a TYPE IN is active
-        this.tabStop = [6,11,16,21,26,31,36,41,46,51,56,61,66,71,76,81,86,
-                        91,96,101,106,111,116,121,126];
+        this.marginLeft = 0;
+        this.columns = 132;
+        this.tabStops = [5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,
+                        90,95,100,105,110,115,120,125]; // default in case config is bad
         this.timer = new Util.Timer();
 
         this.boundMenuClick = this.menuClick.bind(this);
@@ -71,9 +74,21 @@ class Typewriter {
         this.tomLength = 0;             // current length of the Type-O-Matic text
         this.tomMeter = $$("TypeOMaticMeterBar");
 
+        // Load the configuration preferences.
+        const prefs = this.config.getNode("Typewriter");
+        this.marginLeft = Math.min(Math.max(prefs.marginLeft-1, 0), Typewriter.maxCols-32);
+        this.columns = Math.min(Math.max(prefs.columns, 32) + this.marginLeft, Typewriter.maxCols);
+        $$("TypewriterPaperDiv").style.maxWidth = `calc(${this.columns+1}ch + 20px)`;
+
+        const tabStops = this.parseTabStops(prefs.tabs || "", this.window);
+        if (tabStops !== null) {
+            this.tabStops = tabStops;
+        }
+
         this.clear();
         this.closeTypeOMaticPanel();
 
+        // Wire up Typewriter events.
         $$("FrontPanel").addEventListener("keydown", this.boundPanelKeydown, false);
         $$("FrontPanel").addEventListener("keyup", this.boundPanelKeyup, false);
         $$("FrontPanel").addEventListener("paste", this.boundPanelPaste, true);
@@ -82,7 +97,6 @@ class Typewriter {
         this.paperDoc.addEventListener("paste", this.boundPanelPaste, true);
         $$("TypewriterMenuIcon").addEventListener("click", this.boundMenuClick, false);
         $$("TypeOMaticPanel").addEventListener("click", this.boundTOMPanelClick, false);
-
     }
 
     /**************************************/
@@ -104,6 +118,41 @@ class Typewriter {
         this.busy = false;
         this.readEnabled = false;
         this.processor.cancelTypeIn();
+    }
+
+    /**************************************/
+    parseTabStops(text, alertWin) {
+        /* Parses a comma-delimited list of 1-relative tab stops. If the list is parsed
+        successfully, returns an array of 0-relative tab stop positions; otherwise
+        returns null. An alert is displayed on the window for the first parsing or
+        out-of-sequence error */
+        let copacetic = true;
+        let tabStops = [];
+
+        if (text.search(/\S/) >= 0) {
+            let lastCol = 0;
+            const cols = text.split(",");
+            for (let item of cols) {
+                const raw = item.trim();
+                if (raw.length > 0) {       // ignore empty fields
+                    const col = parseInt(raw, 10);
+                    if (isNaN(col)) {
+                        copacetic = false;
+                        alertWin.alert(`Tab stop "${raw}" is not numeric`);
+                        break; // out of for loop
+                    } else if (col <= lastCol) {
+                        copacetic = false;
+                        alertWin.alert(`Tab stop "${raw}" is out of sequence`);
+                        break; // out of for loop
+                    } else {
+                        lastCol = col;
+                        tabStops.push(col-1);
+                    }
+                }
+            } // for x
+        }
+
+        return (copacetic ? tabStops : null);
     }
 
 
@@ -295,7 +344,7 @@ class Typewriter {
             return;
         }
 
-        const tomPeriod = 1000/Math.min(Typewriter.defaultInputRate*Util.timingFactor, 2500); // ms
+        const tomPeriod = 1000/Math.min(Typewriter.defaultTOMRate*Util.timingFactor, 2500); // ms
         let nextKeystrokeStamp = performance.now();
         this.openTypeOMaticPanel();
 
@@ -307,6 +356,10 @@ class Typewriter {
                 break;
             case "c":
                 key = "Enter";
+                break;
+            case "/":
+                // Ensure that reloads have enough time to complete.
+                nextKeystrokeStamp += Util.drumCycleTime*2;
                 break;
             }
 
@@ -422,9 +475,10 @@ class Typewriter {
 
         this.paper.textContent = "";
 
-        this.paper.appendChild(this.doc.createTextNode(""));
+        this.paper.appendChild(this.doc.createTextNode(
+                `${(" ").repeat(this.marginLeft)}${Typewriter.cursorChar}`));
         this.printerLine = 0;
-        this.printerCol = 0;
+        this.printerCol = this.marginLeft;
         this.paper.scrollTop = this.paper.scrollHeight; // scroll to end
     }
 
@@ -439,10 +493,11 @@ class Typewriter {
             paper.removeChild(paper.firstChild);
         }
 
-        paper.lastChild.nodeValue = line.substring(0, line.length-1) + "\n";
-        paper.appendChild(this.doc.createTextNode(Typewriter.cursorChar));
+        paper.lastChild.nodeValue = line.slice(0, -1) + "\n";
+        paper.appendChild(this.doc.createTextNode(
+                `${(" ").repeat(this.marginLeft)}${Typewriter.cursorChar}`));
+        this.printerCol = this.marginLeft;
         ++this.printerLine;
-        this.printerCol = 0;
         paper.scrollIntoView(false);
     }
 
@@ -456,24 +511,24 @@ class Typewriter {
             this.paper.lastChild.nodeValue = `${char}${Typewriter.cursorChar}`;
             this.printerCol = 1;
             this.paper.scrollTop = this.paper.scrollHeight;     // scroll line into view
-        } else if (len < Typewriter.maxCols) {  // normal char
+        } else if (len <= this.columns) {  // normal char
             this.paper.lastChild.nodeValue =
-                    `${line.substring(0, len-1)}${char}${Typewriter.cursorChar}`;
+                    `${line.slice(0, -1)}${char}${Typewriter.cursorChar}`;
             ++this.printerCol;
         } else {                        // right margin overflow -- overprint last col
             this.paper.lastChild.nodeValue =
-                    `${line.substring(0, Typewriter.maxCols-1)}${Typewriter.pillowChar}${Typewriter.cursorChar}`;
+                    `${line.substring(0, this.columns-1)}${Typewriter.pillowChar}${Typewriter.cursorChar}`;
         }
     }
 
     /**************************************/
     printTab() {
         /* Simulates tabulation by inserting an appropriate number of spaces */
-        let tabCol = Typewriter.maxCols-1;      // tabulation column (defaults to end of carriage)
+        let tabCol = this.columns-1;    // tabulation column (defaults to end of carriage)
 
-        for (let x=0; x<this.tabStop.length; ++x) {
-            if (this.tabStop[x] > this.printerCol) {
-                tabCol = Math.min(this.tabStop[x], tabCol);
+        for (const stop of this.tabStops) {
+            if (stop > this.printerCol) {
+                tabCol = Math.min(stop, tabCol);
                 break; // out of for loop
             }
         } // for x
@@ -610,8 +665,10 @@ class Typewriter {
         this.closeTypeOMaticPanel();
         this.$$("FrontPanel").removeEventListener("keydown", this.boundPanelKeydown, false);
         this.$$("FrontPanel").removeEventListener("keyup", this.boundPanelKeyup, false);
+        this.$$("FrontPanel").removeEventListener("paste", this.boundPanelPaste, true);
         this.paperDoc.removeEventListener("keydown", this.boundPanelKeydown, false);
         this.paperDoc.removeEventListener("keyup", this.boundPanelKeyup, false);
+        this.paperDoc.removeEventListener("paste", this.boundPanelPaste, true);
         this.$$("TypewriterMenuIcon").removeEventListener("click", this.boundMenuClick, false);
     }
 } // class Typewriter

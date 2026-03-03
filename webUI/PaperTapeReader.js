@@ -14,15 +14,17 @@
 * would be typed on the Typewriter (see below). Letter codes are interpreted
 * case-insensitively.
 *
-* The standard binary image format, ".ptr", has one 8-bit byte per tape frame
+* The standard binary image format, ".pt", has one 8-bit byte per tape frame
 * with the following bit arrangement:
 *
 *       _ _ _ 5 4 3.2 1
 *
-* Paul Pierce's binary image format, ".pt", has one 8-bit byte per tape frame
+* Paul Pierce's binary image format, ".ptr", has one 8-bit byte per tape frame
 * with the following bit arrangement. See:
 *       http://www.piercefuller.com/collect/bendix/
-* These channels are in reverse order compared to the .ptr format.
+* These channels are in reverse order compared to the .pt format. Note that just
+* to keep things confusing, these files currently have a ".pt" extension on
+* Pierce's web site, but they are in what this emulator reads as ".ptr".
 *
 *       _ _ _ 1 2 3.4 5
 *
@@ -206,8 +208,8 @@ class PaperTapeReader {
     }
 
     /**************************************/
-    loadAsPT(arrayBuffer) {
-        /* Load the image file as binary in .pt format, which yields G-15
+    loadAsPTR(arrayBuffer) {
+        /* Load the image file as binary in .ptr format, which yields G-15
         binary hole patterns after reversing the low-order five bits in each
         byte */
         const image = new Uint8Array(arrayBuffer);
@@ -229,8 +231,8 @@ class PaperTapeReader {
     }
 
     /**************************************/
-    loadAsPTR(arrayBuffer) {
-        /* Load the image file as binary in .ptr format, which directly yields
+    loadAsPT(arrayBuffer) {
+        /* Load the image file as binary in .pt format, which directly yields
         G-15 binary hole patterns */
         const image = new Uint8Array(arrayBuffer);
         const imageLength = image.length;
@@ -285,6 +287,7 @@ class PaperTapeReader {
         const formatIndex = formatSelect.selectedIndex;
         let tapeFormat = "Auto";
 
+        this.$$("FrontPanel").focus();
         if (formatIndex > 0) {
             tapeFormat = formatSelect.options[formatIndex].value;
         }

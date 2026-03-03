@@ -37,7 +37,7 @@
 *
 * Therefore, in this emulation, X-axis coordinates increase as the plot
 * moves down the plotter's window, and Y-axis coordinates increase as
-* the pen moves to the right. The (0,0) coordinate is at the mid-right
+* the pen moves to the right. The (0,0) coordinate is at the mid-left
 * of the plotting area. All of this will make much better sense if you
 * watch the emulated plotter while standing on your head.
 *
@@ -47,7 +47,7 @@
 * general use. The plotting area is not scaled, only the display of it.
 *
 * Different browsers support different maximum sizes of the <canvas>
-* element. As of late 2023, desktop versions of the following browsers
+* element. As of late 2025, desktop versions of the following browsers
 * support maximum coordinate values of: Firefox 32767, Chrome and Edge
 * 65535, Apple Safari 4,194,303 in width and 8,388,607 in height.
 * There are further restrictions on the total area of a canvas.
@@ -64,7 +64,7 @@
 *
 * Note that canvas pixels are not the same as css (window) pixels,
 * except at a scale factor of 1.000 (100%). At 50% scale, there are
-* two canvas pixels per css pixels, but that relationship will change
+* two canvas pixels per css pixel, but that relationship will change
 * as the Plotter window is resized.
 *
 * See the wiki on the device for more information:
@@ -183,7 +183,7 @@ class Plotter {
             this.innerHeight = Plotter.windowHeight;
             this.innerWidth = Plotter.windowExtraWidth +
                     Math.round(Plotter.canvasMaxWidth*this.viewScaleFactor);
-            this.windowLeft = 8 /***Math.round((screen.availWidth - this.innerWidth)/2)***/;
+            this.windowLeft = 8;
             this.windowTop = screen.availHeight - Plotter.windowHeight;
             geometry = `,left=${this.windowLeft},top=${this.windowTop}` +
                        `,innerWidth=${this.innerWidth},innerHeight=${Plotter.windowHeight}`;
@@ -609,6 +609,7 @@ class Plotter {
         this.$$("CarriageUpperGuide").style.display = display;
         this.$$("CarriageLowerRail").style.display = display;
         this.$$("CarriageLowerGuide").style.display = display;
+        this.window.getSelection().removeAllRanges();   // de-select the PEN caption
         this.config.putNode("Plotter.visibleCarriage", (this.visibleCarriage ? 1 : 0));
     }
 
@@ -689,9 +690,9 @@ class Plotter {
         this.penDownLamp.style.display = "none";
         this.penUpLamp.style.display = "block";
         if (delay < 0) {
-            this.outputReadyStamp = now + Plotter.penPeriod*Util.timingFactor;
+            this.outputReadyStamp = now + Plotter.stepPeriod*Util.timingFactor;
         } else {
-            this.outputReadyStamp += Plotter.penPeriod*Util.timingFactor;
+            this.outputReadyStamp += Plotter.stepPeriod*Util.timingFactor;
             if (delay > Plotter.minWait) {
                 return this.timer.set(delay);
             }

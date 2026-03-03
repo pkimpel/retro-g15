@@ -7,7 +7,8 @@
 ************************************************************************
 * Bendix G-15 paper (photo) tape punch.
 *
-* Defines the paper tape output device.
+* Defines the paper tape output device. See PaperTapeReader.js for a
+* description of the tape formats supported.
 *
 ************************************************************************
 * 2022-03-24  P.Kimpel
@@ -186,7 +187,7 @@ class PaperTapePunch {
 
     /**************************************/
     saveAsPTI() {
-        /* Converts the punch buffer to PTR format, builds a DataURL, and
+        /* Converts the punch buffer to PTI format, builds a DataURL, and
         constructs a link to cause the URL to be "downloaded" to the local
         device */
         const buf = this.buffer;
@@ -218,22 +219,22 @@ class PaperTapePunch {
     }
 
     /**************************************/
-    saveAsPTR() {
-        /* Converts the punch buffer to PTR format, builds a DataURL, and
+    saveAsPT() {
+        /* Converts the punch buffer to PT format, builds a DataURL, and
         constructs a link to cause the URL to be "downloaded" to the local
         device */
 
         const url = "data:application/octet-stream;base64," +
                     this.btoaUint8(this.buffer, 0, this.bufLength);
         const hiddenLink = this.doc.createElement("a");
-        hiddenLink.setAttribute("download", "retro-g15-Paper-Tape.ptr");
+        hiddenLink.setAttribute("download", "retro-g15-Paper-Tape.pt");
         hiddenLink.setAttribute("href", url);
         hiddenLink.click();
     }
 
     /**************************************/
-    saveAsPT() {
-        /* Converts the punch buffer to PT format, builds a DataURL, and
+    saveAsPTR() {
+        /* Converts the punch buffer to PTR format, builds a DataURL, and
         constructs a link to cause the URL to be "downloaded" to the local
         device */
         const buf = this.buffer;
@@ -247,14 +248,14 @@ class PaperTapePunch {
         const url = "data:application/octet-stream;base64," +
                     this.btoaUint8(image, 0, len);
         const hiddenLink = this.doc.createElement("a");
-        hiddenLink.setAttribute("download", "retro-g15-Paper-Tape.pt");
+        hiddenLink.setAttribute("download", "retro-g15-Paper-Tape.ptr");
         hiddenLink.setAttribute("href", url);
         hiddenLink.click();
     }
 
     /**************************************/
     menuOpen() {
-        /* Opens the PT menu panel and wires up events */
+        /* Opens the punch menu panel and wires up events */
 
         this.$$("PTMenu").style.display = "block";
         this.$$("PTMenu").addEventListener("click", this.boundMenuClick, false);
@@ -262,7 +263,7 @@ class PaperTapePunch {
 
     /**************************************/
     menuClose() {
-        /* Closes the PT menu panel and disconnects events */
+        /* Closes the punch menu panel and disconnects events */
 
         this.$$("PTMenu").removeEventListener("click", this.boundMenuClick, false);
         this.$$("PTMenu").style.display = "none";

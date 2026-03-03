@@ -55,6 +55,7 @@ class Processor {
         this.DI = new FlipFlop(this.drum, false);       // immediate/deferred execution bit in command
         this.FO = new FlipFlop(this.drum, false);       // overflow FF
         this.IP = new FlipFlop(this.drum, false);       // sign FF for 2-word registers
+        this.IS = new FlipFlop(this.drum, false);       // whether-to-complement FF
         this.OS = new FlipFlop(this.drum, true);        // I/O sign bit buffer
         this.RC = new FlipFlop(this.drum, false);       // read-command state FF
         this.SA = new FlipFlop(this.drum, false);       // typewriter enable (safety) switch FF
@@ -85,12 +86,14 @@ class Processor {
 
         // Single- and double-precision inter-word globals
         this.dpCarry = 0;                               // inter-word carry bit for double-precision
+        this.dpEvenMag = 0;                             // magnitude of the even word of a double-precision pair
         this.dpEvenSign = 0;                            // sign of the even word of a double-precision pair
         this.lastRCWordTime = 0;                        // word-time of last Read Command state
         this.mqShiftCarry = 0;                          // left-precession carry bit for MQ
         this.pnAddCarry = 0;                            // addition inter-word carry bit for PN
         this.pnAddendSign = 0;                          // sign of double-precision addend
         this.pnAugendSign = 0;                          // sign of double-precision augend (PN)
+        this.pnEvenSum = 0;                             // sum from PN even word
         this.pnSign = 0;                                // sign bit from PN even word
 
         // UI state
@@ -183,7 +186,7 @@ class Processor {
     warning(msg) {
         /* Posts a warning for non-standard command usage */
 
-        console.warn("<WARNING> @%s    L=%s %s : %s",
+        console.info("<WARNING> @%s    L=%s %s : %s",
                 Util.formatDrumLoc(this.cmdLine, this.cmdLoc.value, false),
                 Util.lineHex[this.drum.L.value],
                 Util.disassembleCommand(this.cmdWord), msg);
@@ -202,10 +205,8 @@ class Processor {
         this.C1.updateLampGlow(gamma);
         this.CG.updateLampGlow(gamma);
         this.CH.updateLampGlow(gamma);
-        this.CJ.updateLampGlow(gamma);
         this.CQ.updateLampGlow(gamma);
         this.CS.updateLampGlow(gamma);
-        this.CZ.updateLampGlow(gamma);
         this.DI.updateLampGlow(gamma);
         this.FO.updateLampGlow(gamma);
         this.IP.updateLampGlow(gamma);
@@ -250,10 +251,10 @@ class Processor {
         have been converted to complement form. Sets this.overflowed true
         if the signs of the operands are the same and the sign of the sum
         does not match). Returns the sum in G-15 complement form */
-        let aSign = a & Util.wordSignMask;      // sign of a
+        let aSign = a & Util.wordSignMask;      // sign of a (augend)
         let aMag =  a & Util.absWordMask;       // 2s complement magnitude of a
-        let bSign = b & Util.wordSignMask;      // sign of b
-        let bMag =  b & Util.absWordMask;       // 2s complement magniturde of b
+        let bSign = b & Util.wordSignMask;      // sign of b (addend)
+        let bMag =  b & Util.absWordMask;       // 2s complement magnitude of b
 
         // Develop the raw 2s-complement sum without the sign bits.
         let sum = aMag + bMag;
@@ -261,7 +262,20 @@ class Processor {
         sum &= Util.wordMask;                   // discard any overflow bits in sum
 
         // Check for arithmetic overflow (see drawing 27 in Theory of Operation).
-        this.overflowed = aSign == bSign && (endCarry ? (bSign == 0 || sum == 0) : (bSign != 0));
+        ////this.overflowed = aSign == bSign && (endCarry ? (bSign == 0 || sum == 0) : (bSign != 0));
+        if (aSign != bSign) {
+            this.overflowed = false;
+        } else {
+            if ((this.IS.value && sum != 0) || this.D.value == 31) {
+                this.overflowed = false;
+            } else {
+                this.overflowed = endCarry == 1 /*** && (!this.IS.value || sum == 0) ***/;
+            }
+
+            if (this.IS.value && bMag != 0 && endCarry == 0) {  // IS && addend!=0 => IC
+                this.overflowed = true;
+            }
+        }
 
         // Put the raw sum back into G-15 complement format.
         let sumSign = aSign ^ bSign ^ endCarry;
@@ -285,6 +299,7 @@ class Processor {
 
         // Return the even-word sum (sign bit will be 0).
         sum &= Util.wordMask;
+        this.pnEvenSum = sum;
 
         return sum;
     }
@@ -308,8 +323,29 @@ class Processor {
         this.pnSign = this.pnAugendSign ^ this.pnAddendSign ^ endCarry;
 
         // Check for arithmetic overflow (see drawing 27 in Theory of Operation).
-        this.overflowed = this.pnAugendSign == this.pnAddendSign &&
-                (endCarry ? (this.pnAddendSign == 0 || sum == 0) : (this.pnAddendSign != 0));
+        ////this.overflowed = this.pnAugendSign == this.pnAddendSign &&
+        ////        (endCarry ? (this.pnAddendSign == 0 || sum == 0) : (this.pnAddendSign != 0));
+        if (this.pnAugendSign != this.pnAddendSign) {
+            this.overflowed = false;
+        } else {
+            if ((this.IS.value && (sum != 0 || this.pnEvenSum != 0)) || this.D.value == 31) {
+                this.overflowed = false;
+            } else {
+                this.overflowed = endCarry == 1 /*** && (this.pnAddendSign == 0 || (sum == 0 && this.pnEvenSum == 0)) ***/;
+            }
+
+            if (this.IS.value && (b != 0 || this.dpEvenMag != 0) && endCarry == 0) { // IS && addend!=0 => IC
+                this.overflowed = true;
+            }
+        }
+
+        /********** D E B U G  O N L Y **********/
+        if (this.tracing) {
+            console.debug(`ADO : a=${Util.g15SignedHex(a)}, b=${Util.g15SignedHex(b)}, evenMag=${this.dpEvenMag}, ` +
+                `augS=${this.pnAugendSign}, addS=${this.pnAddendSign}, IS=${this.IS.value}, ` +
+                `evenSum=${Util.g15SignedHex(this.pnEvenSum)}, oddSum=${Util.g15SignedHex(sum)}, ` +
+                `endCarry=${endCarry}, D=${this.D.value}, overflowed=${this.overflowed}`);
+        }
 
         // Return the odd-word sum with the result sign in this.pnSign.
         return sum;
@@ -326,6 +362,7 @@ class Processor {
         let mag = word >> 1;
 
         this.suppressMinus0 = (sign == 1 && mag == 0);
+        this.dpEvenMag = (this.drum.CE ? mag : 0);      // set to 0 on odd words
         this.dpEvenSign = (this.drum.CE ? sign : 0);    // set to 0 on odd words
         if (sign) {
             mag = Util.two28 - mag;     // convert to 2-s complement if negative
@@ -528,9 +565,9 @@ class Processor {
             }
         }
 
-        if (this.C1.value && !this.drum.CE) {
-            this.warning("DP transfer starting on ODD word");
-        }
+        ////if (this.C1.value && !this.drum.CE) {
+        ////    this.warning("DP transfer starting on ODD word");
+        ////}
 
         do {
             transform.call(this, arg);
@@ -953,12 +990,15 @@ class Processor {
         let lb = 0;                         // late bus: dest value written to AR
         let word = this.readSource();       // original source word
 
+        this.IS.value = 0;                              // reset neg. operand FF
+
         switch (this.C.value) {
         case 0: // TR
             lb = word;
             break;
 
         case 1: // AD
+            this.IS.value = word & 1;                   // negative operand
             if (!this.C1.value || this.drum.CE) {       // SP operation or even word
                 lb = this.complementSingle(word);
             } else {                // DP odd word
@@ -977,6 +1017,7 @@ class Processor {
 
         case 3: // SU
             if (!this.C1.value || this.drum.CE) {       // SP operation or even word
+                this.IS.value = 1 - (word & 1);                 // negative operand when negated
                 lb = this.complementSingle(word ^ 1);           // change sign bit
             } else {                // DP odd word
                 lb = this.complementDoubleOdd(word);
@@ -1009,12 +1050,15 @@ class Processor {
         let lb = 0;                     // sum to be written to AR
         let word = this.readSource();   // original value of addend
 
+        this.IS.value = 0;                              // reset neg. operand FF
+
         switch (this.C.value) {
         case 0: // TR
             ib = word;
             break;
 
         case 1: // AD
+            this.IS.value = word & 1;                   // negative operand
             if (!this.C1.value || this.drum.CE) {       // SP operation or even word
                 ib = this.complementSingle(word);
             } else {                                    // DP odd word
@@ -1033,6 +1077,7 @@ class Processor {
 
         case 3: // SU
             if (!this.C1.value || this.drum.CE) {       // SP operation or even word
+                this.IS.value = 1 - (word & 1);                 // negative operand when negated
                 ib = this.complementSingle(word ^ 1);           // change sign bit
             } else {                // DP odd word
                 this.suppressMinus0 = this.suppressMinus0 && word == 0;
@@ -1067,6 +1112,8 @@ class Processor {
         Returns the new value of AR */
         let a = this.drum.read(regAR);
 
+        this.IS.value = 0;              // reset neg. operand FF
+
         if (a == Util.absWordMask) {
             a = 0;                      // simulate AR overflow without affecting FO
         } else {
@@ -1098,12 +1145,14 @@ class Processor {
                 pw = this.addDoubleEven(pw, word);
                 break;
             case 1: // AD
+                this.IS.value = word & 1;   // negative operand
                 pw = this.addDoubleEven(pw, this.complementSingle(word));
                 break;
             case 2: // AV       // since it's absolute value, no complementing is necessary
                 pw = this.addDoubleEven(pw, word & Util.absWordMask);
                 break;
             case 3: // SU
+                this.IS.value = 1 - (word & 1); // negative operand when negated
                 pw = this.addDoubleEven(pw, this.complementSingle(word ^ 1)); // change sign bit
                 break;
             }
@@ -1162,6 +1211,7 @@ class Processor {
         this.pnAddCarry = 0;
         this.pnAddendSign = 0;
         this.pnAugendSign = 0;
+        this.pnEvenSum = 0;
         this.pnSign = 0;
 
         if (this.DI.value) {
@@ -1259,6 +1309,7 @@ class Processor {
         this.pnAddCarry = 0;
         this.pnAddendSign = 0;
         this.pnAugendSign = 0;
+        this.pnEvenSum = 0;
         this.pnSign = 0;
 
         if (this.DI.value) {
@@ -2395,6 +2446,7 @@ class Processor {
             this.pnAddCarry = 0;
             this.pnAddendSign = 0;
             this.pnAugendSign = 0;
+            this.pnEvenSum = 0;
             this.pnSign = 0;
             this.IP.value = 0;
             await this.transferDriver(() => {
@@ -2666,7 +2718,7 @@ class Processor {
         // so that (hopefully) they will behave as the hardware would have.
 
         if (wt == Util.longLineSize-1) {
-            this.warning("Execute command from L=107");
+            ////this.warning("Execute command from L=107");
             this.N.value = (this.N.value - 20 + Util.longLineSize) % Util.longLineSize;
             // Unless it's MUL, DIV, SHIFT, or NORM (D=31, S=24-27), adjust T as well
             if (!(this.D.value == 31 && (this.S.value & 0b11100) == 0b11000)) {
@@ -2759,7 +2811,9 @@ class Processor {
             this.pnAddCarry = 0;        // carry bit from even word to odd word
             this.pnAddendSign = 0;      // raw sign result from even word addition
             this.pnAugendSign = 0;      // sign of augend (PN)
+            this.pnEvenSum = 0;         // sum from PN even word
             this.pnSign = 0;            // final sign to be applied to PN
+            this.IS.value = 0;          // reset neg. operand FF
             this.suppressMinus0 = false;
             if (this.tracing) {
                 this.traceRegisters();

@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>Specification for G-15 ASCII Paper Tape Image Files</title>
+<!--
+/***********************************************************************
+* Copyright (c) 2023, Paul Kimpel.
+* Licensed under the MIT License, see
+*       http://www.opensource.org/licenses/mit-license.php
+************************************************************************
+* Specification for an ASCII-only format for G-15 paper tape image files
+* that can accurately represent the structure and content of binary
+* image files and physical 5-level G-15 paper tapes.
+*
+************************************************************************
+* 2023-06-02  P.Kimpel
+*   Original version, from email to Rob Kolstad of that date.
+***********************************************************************/
+-->
+<meta name="Author" content="Paul Kimpel">
+<meta http-equiv="Content-Script-Type" content="text/javascript">
+<meta http-equiv="Content-Style-Type" content="text/css">
+
+<style>
+BODY {
+    position:           relative;
+    font-family:        DejaVu Sans, Arial, Helvetica, sans-serif;
+    font-size:          11pt;
+    max-width:          40em;
+    left:               50%;
+    transform:          translate(-50%, 0);
+    margin:             1ex}
+
+H1 {
+    font-size:          14pt;
+    font-weight:        bold}
+
+TABLE TR {
+    vertical-align:     top}
+
+.center {
+    text-align:         center}
+.floatRight {
+    float:              right}
+.rj {
+    text-align:         right}
+.header {
+    font-weight:        bold;
+    page-break-after:   avoid}
+</style>
+
+<html>
+  <head>
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+  </head>
+  <body>
+
+<h1 class="center">Specification for Bendix G-15<br>ASCII Paper Tape Image Format</h1>
+
+<p>This specification is intended to provide a data format for storage and interchange of Bendix G-15 5-level paper tape images, primarily for use as input to software emulators for G-15 systems and devices. It may also be used as an archival format for data captured directly from physical G-15 paper tapes.</p>
+
+<p>Since this specification is expected to be used primarily with modern systems and interfaces, considerations that would normally apply to physical G-15 tapes and devices, e.g., providing for appropriate numbers of Space frames (representing unpunched tape) between tape blocks delimited by Stop codes, need not be supported when creating tape images that adhere to this specification, although additional format codes to support such considerations may be included in the tape images if desired.</p>
+
+<p>When used as an archival format for physical paper tape images, all frames from the tape, including Space frames, should be included in the ASCII representation.</p>
+
+<p>This specification includes one feature that never existed in physical G-15 tapes, viz, comments. This feature has been included as a means to provide internal identification and descriptive information for the image data. Comments are never required, but if they exist, must be bypassed by an input mechanism as if they did not exist in the file.</p>
+
+<p>The following abbreviations are used in this specification:</p>
+<ul>
+    <li><b>CR</b> -- ASCII carriage return character, hex 0D. Not to
+        be confused with the G-15 paper tape Carriage Return control
+        code (00010 or 01010 punch), which will always be spelled out.</li>
+    <li><b>LF</b> -- ASCII line feed (newline) character, hex 0A.</li>
+</ul>
+
+<p>A paper tape image file is an ordinary ASCII text file, i.e., a stream of indefinite length containing only 8-bit ASCII character codes. The text stream may be delimited into lines by ASCII CR and/or LF characters, but such line boundaries have no meaning with respect to the G-15 data contained in the image file and must be ignored by an input mechanism. The preferred file name extension for these image files is "<code>.pti</code>".</p>
+
+
+<p class="header">Encoding:</p>
+
+<p>The following ASCII characters are recognized as representing punch combinations on a 5-level G-15 paper tape and must be used to represent those punch combinations in an image file adhering to this specification. Note that both upper- and lower-case letter codes are valid and must be accepted by an input mechanism. For a description of the G-15 functions, see:</p>
+
+<ul>
+    <li>"Punched Paper Tape Entry to G-15," 21 January 1958,<br>
+        <a href="http://bitsavers.org/pdf/bendix/g-15/G15_PaperTapeFormat_Jan58.pdf">http://bitsavers.org/pdf/bendix/g-15/G15_PaperTapeFormat_Jan58.pdf</a>.</li>
+
+    <li><i>Theory of Operation &amp; Simplified Drawings for the Control Data G-15 Computer</i>, November 1964,<br>
+        <a href="http://bitsavers.org/pdf/bendix/g-15/60121600_G15_Theory_Of_Operation_Nov64.pdf">http://bitsavers.org/pdf/bendix/g-15/60121600_G15_Theory_Of_Operation_Nov64.pdf</a>,
+        "SLOW-IN LOGIC," p. 74ff.</li>
+</ul>
+
+<table cellspacing="0" cellpadding="2" border="1" class="center">
+<tbody>
+    <tr>
+      <th>ASCII</th>
+      <th>Punch</th>
+      <th>G-15 Function</th>
+      <th>Description</th>
+    </tr>
+    <tr>
+      <td class="center"><tt>space</tt></td>
+      <td>00000</td>
+      <td>Space</td>
+      <td>Blank frame, no function on input</td>
+    </tr>
+    <tr>
+      <td class="center"><tt>&ndash;</tt></td>
+      <td>00001</td>
+      <td>Minus</td>
+      <td>Minus sign flag for word</td>
+    </tr>
+    <tr>
+      <td class="center"><tt>C,c</tt></td>
+      <td>00010</td>
+      <td>Carriage Return</td>
+      <td>Shifts prior sign flag into word</td>
+    </tr>
+    <tr>
+      <td class="center"><tt>T,t</tt></td>
+      <td>00011</td>
+      <td>Tabulate</td>
+      <td>Shifts prior sign flag into word</td>
+    </tr>
+    <tr>
+      <td class="center"><tt>S,s</tt></td>
+      <td>00100</td>
+      <td>Stop</td>
+      <td>Stop, end of block, halts reader</td>
+    </tr>
+    <tr>
+      <td class="center"><tt>/,R,r</tt></td>
+      <td>00101</td>
+      <td>Reload</td>
+      <td>Precesses 4 words from line 23 to 19</td>
+    </tr>
+    <tr>
+      <td class="center"><tt>.</tt></td>
+      <td>00110</td>
+      <td>Decimal Point</td>
+      <td>No function on input</td>
+    </tr>
+    <tr>
+      <td class="center"><tt>H,h</tt></td>
+      <td>00111</td>
+      <td>Wait</td>
+      <td>Interpreted same as 10000</td>
+    </tr>
+  </tr>
+    <tr>
+      <td class="center"><tt>0</tt></td>
+      <td>10000</td>
+      <td>digit value 0</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="center"><tt>1</tt></td>
+      <td>10001</td>
+      <td>digit value 1</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="center"><tt>2</tt></td>
+      <td>10010</td>
+      <td>digit value 2</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="center"><tt>3</tt></td>
+      <td>10011</td>
+      <td>digit value 3</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="center"><tt>4</tt></td>
+      <td>10100</td>
+      <td>digit value 4</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="center"><tt>5</tt></td>
+      <td>10101</td>
+      <td>digit value 5</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="center"><tt>6</tt></td>
+      <td>10110</td>
+      <td>digit value 6</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="center"><tt>7</tt></td>
+      <td>10111</td>
+      <td>digit value 7</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="center"><tt>8</tt></td>
+      <td>11000</td>
+      <td>digit value 8</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="center"><tt>9</tt></td>
+      <td>11001</td>
+      <td>digit value 9</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="center"><tt>U,u</tt></td>
+      <td>11010</td>
+      <td>digit value 10</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="center"><tt>V,v</tt></td>
+      <td>11011</td>
+      <td>digit value 11</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="center"><tt>W,w</tt></td>
+      <td>11100</td>
+      <td>digit value 12</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="center"><tt>X,x</tt></td>
+      <td>11101</td>
+      <td>digit value 13</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="center"><tt>Y,y</tt></td>
+      <td>11110</td>
+      <td>digit value 14</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="center"><tt>Z,z</tt></td>
+      <td>11111</td>
+      <td>digit value 15</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="center" colspan="4">Optional Use
+    </tr>
+    <tr>
+      <td class="center"><tt>I,i</tt></td>
+      <td>01000</td>
+      <td>Space</td>
+      <td>Interpreted same as 00000</td>
+    </tr>
+    <tr>
+      <td class="center"><tt>J,j</tt></td>
+      <td>01001</td>
+      <td>Minus</td>
+      <td>Interpreted same as 00001</td>
+    </tr>
+    <tr>
+      <td class="center"><tt>K,k</tt></td>
+      <td>01010</td>
+      <td>Carriage Return</td>
+      <td>Interpreted same as 00010</td>
+    </tr>
+    <tr>
+      <td class="center"><tt>L,l</tt></td>
+      <td>01011</td>
+      <td>Tabulate</td>
+      <td>Interpreted same as 00011</td>
+    </tr>
+    <tr>
+      <td class="center"><tt>M,m</tt></td>
+      <td>01100</td>
+      <td>Stop</td>
+      <td>Interpreted same as 00100</td>
+    </tr>
+    <tr>
+      <td class="center"><tt>N,n</tt></td>
+      <td>01101</td>
+      <td>Reload</td>
+      <td>Interpreted same as 00101</td>
+    </tr>
+    <tr>
+      <td class="center"><tt>O,o</tt></td>
+      <td>01110</td>
+      <td>Decimal Point</td>
+      <td>Interpreted same as 00110</td>
+    </tr>
+    <tr>
+      <td class="center"><tt>P,p</tt></td>
+      <td>01111</td>
+      <td>Wait</td>
+      <td>Interpreted same as 00111</td>
+      <tr>
+      <td class="center"><tt>#</tt></td>
+      <td>n/a</td>
+      <td>Comment</td>
+      <td>Starts a comment (see below)</td>
+    </tr>
+</tbody>
+</table>
+
+<p>Preference should be given to using upper-case letters for the control codes (0xxxx) and lower-case letters for the digit values 10-15, but this is not required.</p>
+
+<p>Note that the ASCII characters representing Space (00000, 01000) and Decimal Point (00110, 01110) indicate valid G-15 paper tape codes and may have timing significance in some contexts. They must be maintained when copying, transmitting, and compressing/expanding tape image files adhering to this specification.</p>
+
+<p>Presence of a "<tt>#</tt>" in the text stream signals the start of a comment. The comment is terminated by the next ASCII CR or LF character encountered in the stream. A comment may appear at any point in the text stream, including within the digits of a word or words of a block. All characters in the text stream from and including the "<tt>#</tt>" through and including the next CR or LF must be treated by an input mechanism as if they did not exist in the file.</p>
+
+<p>The presence of any characters in the text stream not specified above must also be treated by an input mechanism as if they did not exist in the file.</p>
+
+
+<p class="header">History:</p>
+<ul>
+    <li>2023-06-02, P.Kimpel, Original version, email to Rob Kolstad.</li>
+
+    <li>2025-05-01, P.Kimpel, Convert to HTML format, add statements on archival use and preferred file name extension.
+</ul>
+</body>
+</html>

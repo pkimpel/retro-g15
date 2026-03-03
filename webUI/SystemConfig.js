@@ -482,14 +482,14 @@ class SystemConfig {
             break;
         case "MarginLeft":
             v = editInteger(ev.target.value, 0, 255, "Margin Left");
-            if (!isNan(v)) {
+            if (!isNaN(v)) {
                 cd.Typewriter.marginLeft = v;
                 ev.target.value = v;
             }
             break;
         case "Columns":
             v = editInteger(ev.target.value, 0, 255, "Columns");
-            if (!isNan(v)) {
+            if (!isNaN(v)) {
                 cd.Typewriter.columns = v;
                 ev.target.value = v;
             }
